@@ -1,0 +1,22 @@
+{
+  "name": "meloop",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "lint": "npm run lint:backend && npm run lint:dart && npm run lint:python",
+    "format": "npm run format:backend && npm run format:dart && npm run format:python",
+    "lint:backend": "npm --prefix backend run lint",
+    "format:backend": "npm --prefix backend run format",
+    "lint:dart": "node -e \"const { spawnSync } = require('child_process'); const check = spawnSync('dart', ['--version'], { stdio: 'ignore', shell: true }); if (check.error || check.status === 127 || (check.status !== 0 && typeof check.status === 'number')) { console.log('Dart SDK not installed. Install Flutter/Dart to enable Dart linting.'); process.exit(0); } const result = spawnSync('dart', ['analyze', 'app/flutter_app'], { stdio: 'inherit', shell: true }); process.exit(result.status ?? 0);\"",
+    "format:dart": "node -e \"const { spawnSync } = require('child_process'); const check = spawnSync('dart', ['--version'], { stdio: 'ignore', shell: true }); if (check.error || check.status === 127 || (check.status !== 0 && typeof check.status === 'number')) { console.log('Dart SDK not installed. Install Flutter/Dart to enable Dart formatting.'); process.exit(0); } const result = spawnSync('dart', ['format', 'app/flutter_app'], { stdio: 'inherit', shell: true }); process.exit(result.status ?? 0);\"",
+    "lint:python": "node -e \"const { spawnSync } = require('child_process'); const check = spawnSync('python', ['-c', 'import importlib.util, sys; sys.exit(0 if importlib.util.find_spec(\"ruff\") else 1)'], { stdio: 'ignore', shell: true }); if (check.error || check.status === 1) { console.log('ruff is not installed. Run: python -m pip install ruff'); process.exit(0); } const result = spawnSync('python', ['-m', 'ruff', 'check', 'ml-service'], { stdio: 'inherit', shell: true }); process.exit(result.status ?? 0);\"",
+    "format:python": "node -e \"const { spawnSync } = require('child_process'); const hasRuff = spawnSync('python', ['-c', 'import importlib.util, sys; sys.exit(0 if importlib.util.find_spec(\"ruff\") else 1)'], { stdio: 'ignore', shell: true }); const hasBlack = spawnSync('python', ['-c', 'import importlib.util, sys; sys.exit(0 if importlib.util.find_spec(\"black\") else 1)'], { stdio: 'ignore', shell: true }); if (hasRuff.status !== 0 || hasBlack.status !== 0) { console.log('Install Python formatting tools with: python -m pip install ruff black'); process.exit(0); } const ruff = spawnSync('python', ['-m', 'ruff', 'format', 'ml-service'], { stdio: 'inherit', shell: true }); if (ruff.status) process.exit(ruff.status); const black = spawnSync('python', ['-m', 'black', 'ml-service'], { stdio: 'inherit', shell: true }); process.exit(black.status ?? 0);\"",
+    "check": "npm run lint && npm run format -- --check"
+  },
+  "devDependencies": {
+    "eslint": "^9.18.0",
+    "eslint-config-prettier": "^10.0.1",
+    "eslint-plugin-prettier": "^5.2.2",
+    "prettier": "^3.4.2"
+  }
+}

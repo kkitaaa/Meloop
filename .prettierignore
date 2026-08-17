@@ -1,0 +1,8 @@
+node_modules
+backend/dist
+backend/coverage
+app/flutter_app/build
+ml-service/.venv
+ml-service/__pycache__
+**/.venv
+**/__pycache__
