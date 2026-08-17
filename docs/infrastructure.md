@@ -131,3 +131,5 @@ La arquitectura sigue los siguientes criterios:
 * **MinIO/S3:** almacenamiento de archivos multimedia.
 
 Estos componentes forman parte de la infraestructura común del sistema y serán ejecutados mediante Docker Compose en el entorno de desarrollo.
+
+
