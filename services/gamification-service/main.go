@@ -1,7 +1,15 @@
 package main
 
-import "fmt"
+import (
+	"log"
+
+	"github.com/meloop/gamification-service/messaging"
+)
 
 func main() {
-	fmt.Println("Gamification Service starting...")
+	log.Println("Gamification Service iniciado")
+
+	if err := messaging.StartConsumer(); err != nil {
+		log.Fatal(err)
+	}
 }
