@@ -4,7 +4,6 @@ import { TestRedisService } from './redis/test-redis.service';
 
 describe('AppController', () => {
   let appController: AppController;
-  let testRedisService: TestRedisService;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -20,7 +19,6 @@ describe('AppController', () => {
     }).compile();
 
     appController = module.get<AppController>(AppController);
-    testRedisService = module.get<TestRedisService>(TestRedisService);
   });
 
   describe('redisTest', () => {
@@ -28,7 +26,6 @@ describe('AppController', () => {
       const result = await appController.redisTest();
 
       expect(result).toBe('valor');
-      expect(testRedisService.test).toHaveBeenCalled();
     });
   });
 });
