@@ -1,22 +1,34 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { AppController } from './app.controller';
-import { AppService } from './app.service';
+import { TestRedisService } from './redis/test-redis.service';
 
 describe('AppController', () => {
   let appController: AppController;
+  let testRedisService: TestRedisService;
 
   beforeEach(async () => {
-    const app: TestingModule = await Test.createTestingModule({
+    const module: TestingModule = await Test.createTestingModule({
       controllers: [AppController],
-      providers: [AppService],
+      providers: [
+        {
+          provide: TestRedisService,
+          useValue: {
+            test: jest.fn().mockResolvedValue('valor'),
+          },
+        },
+      ],
     }).compile();
 
-    appController = app.get<AppController>(AppController);
+    appController = module.get<AppController>(AppController);
+    testRedisService = module.get<TestRedisService>(TestRedisService);
   });
 
-  describe('root', () => {
-    it('should return "Hello World!"', () => {
-      expect(appController.getHello()).toBe('Hello World!');
+  describe('redisTest', () => {
+    it('should return the Redis test value', async () => {
+      const result = await appController.redisTest();
+
+      expect(result).toBe('valor');
+      expect(testRedisService.test).toHaveBeenCalled();
     });
   });
 });
