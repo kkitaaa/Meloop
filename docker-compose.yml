@@ -1,0 +1,82 @@
+services:
+  api-gateway:
+    build:
+      context: ./services/api-gateway
+      dockerfile: Dockerfile
+    container_name: meloop-api-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      GIN_MODE: debug
+      TEST_SERVICE_URL: http://test-service:8081
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/
+      MINIO_ENDPOINT: http://minio:9000
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_KEY: ${SUPABASE_KEY}
+    depends_on:
+      - test-service
+      - redis
+      - rabbitmq
+      - minio
+    networks:
+      - meloop-network
+
+  test-service:
+    build:
+      context: ./services/test-service
+      dockerfile: Dockerfile
+    container_name: meloop-test-service
+    ports:
+      - "8081:8081"
+    networks:
+      - meloop-network
+
+  redis:
+    image: redis:7.2
+    container_name: redis_server
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}"]
+    volumes:
+      - redis_data:/data
+    networks:
+      - meloop-network
+
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    container_name: meloop-rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - meloop-network
+
+  minio:
+    image: minio/minio:latest
+    container_name: meloop-minio
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio_data:/data
+    networks:
+      - meloop-network
+
+networks:
+  meloop-network:
+    driver: bridge
+
+volumes:
+  redis_data:
+  rabbitmq_data:
+  minio_data:
