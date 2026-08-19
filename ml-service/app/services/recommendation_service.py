@@ -1,6 +1,8 @@
-from typing import List
-
-from app.schemas.recommendation_schema import RecommendationItem, RecommendationRequest, RecommendationResponse
+from app.schemas.recommendation_schema import (
+    RecommendationItem,
+    RecommendationRequest,
+    RecommendationResponse,
+)
 
 
 class RecommendationService:
@@ -8,7 +10,7 @@ class RecommendationService:
         self.model_name = "baseline_recommender"
 
     def generate(self, request: RecommendationRequest) -> RecommendationResponse:
-        recommendations: List[RecommendationItem] = []
+        recommendations: list[RecommendationItem] = []
 
         for index in range(1, min(request.limit, 5) + 1):
             recommendations.append(
