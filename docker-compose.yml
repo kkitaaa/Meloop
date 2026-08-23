@@ -1,14 +1,16 @@
 services:
   api-gateway:
     build:
-      context: ./services/api-gateway
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: services/api-gateway/Dockerfile
     container_name: meloop-api-gateway
     ports:
       - "8080:8080"
     environment:
       GIN_MODE: debug
       TEST_SERVICE_URL: http://test-service:8081
+      USER_SERVICE_URL: http://user-service:8082
+      AUTH_SERVICE_URL: http://auth-service:8083
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/
       MINIO_ENDPOINT: http://minio:9000
@@ -16,6 +18,8 @@ services:
       SUPABASE_KEY: ${SUPABASE_KEY}
     depends_on:
       - test-service
+      - user-service
+      - auth-service
       - redis
       - rabbitmq
       - minio
@@ -24,11 +28,31 @@ services:
 
   test-service:
     build:
-      context: ./services/test-service
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: services/test-service/Dockerfile
     container_name: meloop-test-service
     ports:
       - "8081:8081"
+    networks:
+      - meloop-network
+
+  user-service:
+    build:
+      context: .
+      dockerfile: services/user-service/Dockerfile
+    container_name: meloop-user-service
+    ports:
+      - "8082:8082"
+    networks:
+      - meloop-network
+
+  auth-service:
+    build:
+      context: .
+      dockerfile: services/auth-service/Dockerfile
+    container_name: meloop-auth-service
+    ports:
+      - "8083:8083"
     networks:
       - meloop-network
 
