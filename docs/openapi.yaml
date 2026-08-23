@@ -1,0 +1,230 @@
+openapi: 3.0.3
+info:
+  title: Meloop API Common Response & Error System
+  version: 1.0.0
+  description: |
+    Documentación del sistema unificado de respuestas y manejo de errores
+    para los microservicios de Meloop y su integración con Flutter.
+paths:
+  /health:
+    get:
+      summary: Health check de API Gateway
+      responses:
+        '200':
+          description: Éxito
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+              example:
+                success: true
+                data:
+                  status: ok
+                error: null
+  /test/health:
+    get:
+      summary: Health check de Test Service (Enrutado a través del Gateway con prefijo recortado)
+      responses:
+        '200':
+          description: Éxito
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+              example:
+                success: true
+                data:
+                  service: test-service
+                  status: ok
+                error: null
+  /users:
+    get:
+      summary: Listado de usuarios (User Service)
+      responses:
+        '200':
+          description: Éxito
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+              example:
+                success: true
+                data:
+                  - id: 1
+                    username: alanp
+                    email: alanp@example.com
+                  - id: 2
+                    username: antigravity
+                    email: antigravity@example.com
+                error: null
+    post:
+      summary: Crear nuevo usuario (User Service)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - username
+                - email
+              properties:
+                username:
+                  type: string
+                email:
+                  type: string
+      responses:
+        '201':
+          description: Creado con éxito
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+              example:
+                success: true
+                data:
+                  id: 3
+                  username: nuevo_usuario
+                  email: nuevo@meloop.com
+                error: null
+        '400':
+          description: Error de validación (e.g. campo obligatorio faltante)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                data: null
+                error:
+                  code: VALIDATION_ERROR
+                  message: "El campo 'username' es obligatorio"
+                  details:
+                    field: username
+                    issue: required
+
+  /auth/login:
+    post:
+      summary: Iniciar sesión (Auth Service)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                password:
+                  type: string
+      responses:
+        '200':
+          description: Autenticado con éxito
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+              example:
+                success: true
+                data:
+                  token: "ejemplo-token-jwt-seguro"
+                  expires_in: 3600
+                error: null
+        '400':
+          description: Error de validación de credenciales vacías
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                data: null
+                error:
+                  code: VALIDATION_ERROR
+                  message: "El correo electrónico es obligatorio"
+                  details:
+                    field: email
+                    issue: required
+        '401':
+          description: Autenticación fallida (contraseña incorrecta)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                data: null
+                error:
+                  code: UNAUTHORIZED
+                  message: "Credenciales incorrectas"
+
+  /test/panic:
+    get:
+      summary: Ejemplo de pánico del sistema recuperado por el Middleware
+      responses:
+        '500':
+          description: Error interno del servidor (pánico recuperado)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                data: null
+                error:
+                  code: INTERNAL_ERROR
+                  message: "Ha ocurrido un error interno"
+
+components:
+  schemas:
+    SuccessResponse:
+      type: object
+      required:
+        - success
+        - data
+        - error
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          description: Datos devueltos por la API (el formato varía según el endpoint)
+        error:
+          type: object
+          nullable: true
+          example: null
+    ErrorResponse:
+      type: object
+      required:
+        - success
+        - data
+        - error
+      properties:
+        success:
+          type: boolean
+          example: false
+        data:
+          type: object
+          nullable: true
+          example: null
+        error:
+          $ref: '#/components/schemas/ErrorBody'
+    ErrorBody:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          description: Código estandarizado de error (e.g. VALIDATION_ERROR, UNAUTHORIZED, BAD_GATEWAY)
+        message:
+          type: string
+          description: Mensaje legible por humanos explicando el error
+        details:
+          type: object
+          description: Detalles opcionales del error (e.g. lista de campos de validación o detalles técnicos)
