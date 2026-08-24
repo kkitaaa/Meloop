@@ -1,0 +1,18 @@
+go 1.26.6
+
+use (
+	./services/api-gateway
+	./services/auth-service
+	./services/chat-service
+	./services/common
+	./services/gamification-service
+	./services/media-service
+	./services/moderation-service
+	./services/music-service
+	./services/notification-service
+	./services/post-service
+	./services/recommendation-service
+	./services/social-service
+	./services/test-service
+	./services/user-service
+)
