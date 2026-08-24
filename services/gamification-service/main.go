@@ -4,12 +4,15 @@ import (
 	"log"
 
 	"github.com/meloop/gamification-service/messaging"
+	"github.com/meloop/services/common/logging"
 )
 
 func main() {
-	log.Println("Gamification Service iniciado")
+	logger := logging.New("gamification-service")
+	logger.Info("service_started")
 
 	if err := messaging.StartConsumer(); err != nil {
+		logger.Error("event_consumer_failed", "error", err)
 		log.Fatal(err)
 	}
 }

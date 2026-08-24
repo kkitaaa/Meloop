@@ -40,6 +40,7 @@ Si se trabaja con Flutter, instalar el SDK de Dart/Flutter en la máquina del de
 ### Documentación adicional
 
 - [docs/style-guide.md](docs/style-guide.md)
+- [docs/logging.md](docs/logging.md)
 
 ## Entorno de desarrollo con Docker
 

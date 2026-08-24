@@ -1,7 +1,7 @@
 package main
 
-import "fmt"
+import "github.com/meloop/services/common/logging"
 
 func main() {
-	fmt.Println("Notification Service starting...")
+	logging.New("notification-service").Info("service_started")
 }

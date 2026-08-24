@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/meloop/services/common/logging"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
@@ -20,6 +21,7 @@ type PostLikedEvent struct {
 }
 
 func PublishPostLiked(userID string, postID string) error {
+	logger := logging.New("post-service")
 	conn, err := amqp.Dial(rabbitURL)
 	if err != nil {
 		return fmt.Errorf("error conectando a RabbitMQ: %w", err)
@@ -71,7 +73,7 @@ func PublishPostLiked(userID string, postID string) error {
 		return fmt.Errorf("error publicando evento: %w", err)
 	}
 
-	fmt.Println("Evento PostLiked publicado:", string(body))
+	logger.Info("event_published", "event", "post.liked", "payload_bytes", len(body))
 
 	return nil
 }

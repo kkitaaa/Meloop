@@ -3,6 +3,7 @@ package messaging
 import (
 	"fmt"
 
+	"github.com/meloop/services/common/logging"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
@@ -15,6 +16,7 @@ const (
 )
 
 func StartConsumer() error {
+	logger := logging.New("gamification-service")
 	conn, err := amqp.Dial(rabbitURL)
 	if err != nil {
 		return fmt.Errorf("error conectando a RabbitMQ: %w", err)
@@ -83,13 +85,10 @@ func StartConsumer() error {
 		return fmt.Errorf("error creando consumidor: %w", err)
 	}
 
-	fmt.Println("Gamification Service escuchando eventos...")
+	logger.Info("event_consumer_started", "event", routingKey, "queue", queueName)
 
 	for message := range messages {
-		fmt.Printf(
-			"Evento recibido: %s\n",
-			string(message.Body),
-		)
+		logger.Info("event_consumed", "event", routingKey, "payload_bytes", len(message.Body))
 	}
 
 	return nil

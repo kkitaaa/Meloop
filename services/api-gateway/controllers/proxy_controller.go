@@ -2,7 +2,6 @@ package controllers
 
 import (
 	"encoding/json"
-	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -11,10 +10,12 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/meloop/services/common/httpresponse"
+	"github.com/meloop/services/common/logging"
 )
 
 // ProxyToService realiza un proxy inverso hacia un microservicio y maneja errores de comunicación
 func ProxyToService(targetEnvVar string, defaultTarget string, stripPrefix string) gin.HandlerFunc {
+	logger := logging.New("api-gateway")
 	target := os.Getenv(targetEnvVar)
 	if target == "" {
 		target = defaultTarget
@@ -22,14 +23,15 @@ func ProxyToService(targetEnvVar string, defaultTarget string, stripPrefix strin
 
 	targetURL, err := url.Parse(target)
 	if err != nil {
-		log.Fatalf("Invalid target URL for proxy %s: %v", targetEnvVar, err)
+		logger.Error("proxy_target_invalid", "target_env", targetEnvVar, "error", err)
+		panic(err)
 	}
 
 	proxy := httputil.NewSingleHostReverseProxy(targetURL)
 
 	// Manejo personalizado de errores cuando el microservicio de destino no responde o falla
 	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
-		log.Printf("Proxy error calling %s: %v", targetEnvVar, err)
+		logger.Error("proxy_request_failed", "target_env", targetEnvVar, "method", r.Method, "path", r.URL.Path, "error", err)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadGateway)
 

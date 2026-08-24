@@ -1,7 +1,7 @@
 package main
 
-import "fmt"
+import "github.com/meloop/services/common/logging"
 
 func main() {
-	fmt.Println("Media Service starting...")
+	logging.New("media-service").Info("service_started")
 }

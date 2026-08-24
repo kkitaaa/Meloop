@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/meloop/services/common/httpresponse"
+	"github.com/meloop/services/common/logging"
 )
 
 func healthHandler(w http.ResponseWriter, r *http.Request) {
@@ -49,8 +50,9 @@ func panicHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	logger := logging.New("test-service")
 	mux := http.NewServeMux()
-	
+
 	mux.HandleFunc("/health", healthHandler)
 	mux.HandleFunc("/validation-error", validationErrorHandler)
 	mux.HandleFunc("/unauthorized", unauthorizedHandler)
@@ -60,11 +62,12 @@ func main() {
 	mux.HandleFunc("/panic", panicHandler)
 
 	// Envolver el enrutador con el middleware Recovery
-	handler := httpresponse.Recovery(mux)
+	handler := httpresponse.RecoveryWithLogger(logger, logging.HTTPMiddleware(logger, mux))
 
-	log.Println("Test Service listening on port 8081")
+	logger.Info("service_started", "port", 8081)
 
 	if err := http.ListenAndServe(":8081", handler); err != nil {
+		logger.Error("service_stopped", "error", err)
 		log.Fatal(err)
 	}
 }

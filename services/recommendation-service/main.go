@@ -1,7 +1,7 @@
 package main
 
-import "fmt"
+import "github.com/meloop/services/common/logging"
 
 func main() {
-	fmt.Println("Recommendation Service starting...")
+	logging.New("recommendation-service").Info("service_started")
 }
