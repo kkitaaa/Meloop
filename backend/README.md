@@ -25,6 +25,10 @@
 
 [Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
 
+## Infraestructura
+
+- [Guía de Redis](../docs/redis.md)
+
 ## Project setup
 
 ```bash
