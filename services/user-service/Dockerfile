@@ -17,6 +17,7 @@ COPY services/user-service ./services/user-service
 
 # Compilar el binario
 WORKDIR /app/services/user-service
+RUN go mod tidy
 RUN go build -o user-service .
 
 FROM alpine:latest
