@@ -17,6 +17,7 @@ COPY services/auth-service ./services/auth-service
 
 # Compilar el binario
 WORKDIR /app/services/auth-service
+RUN go mod tidy
 RUN go build -o auth-service .
 
 FROM alpine:latest
