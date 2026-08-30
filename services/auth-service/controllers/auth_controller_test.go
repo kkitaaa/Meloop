@@ -3,6 +3,7 @@ package controllers_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -16,7 +17,10 @@ import (
 )
 
 type mockAuthService struct {
-	registerFunc func(ctx context.Context, req *models.RegisterRequest) (*models.RegisterResponse, error)
+	registerFunc        func(ctx context.Context, req *models.RegisterRequest) (*models.RegisterResponse, error)
+	loginFunc           func(ctx context.Context, req *models.LoginRequest) (*models.LoginResponse, error)
+	logoutFunc          func(ctx context.Context, token string) error
+	validateSessionFunc func(ctx context.Context, token string) (*models.SessionUser, error)
 }
 
 func (m *mockAuthService) Register(ctx context.Context, req *models.RegisterRequest) (*models.RegisterResponse, error) {
@@ -29,6 +33,42 @@ func (m *mockAuthService) Register(ctx context.Context, req *models.RegisterRequ
 		Email:     req.Email,
 		CreatedAt: time.Date(2026, 8, 26, 22, 0, 0, 0, time.UTC),
 	}, nil
+}
+
+func (m *mockAuthService) Login(ctx context.Context, req *models.LoginRequest) (*models.LoginResponse, error) {
+	if m.loginFunc != nil {
+		return m.loginFunc(ctx, req)
+	}
+	return &models.LoginResponse{
+		SessionToken: "mock-session-token-abc",
+		ExpiresIn:    86400,
+		User: models.SessionUser{
+			ID:       "mock-uuid-123",
+			Username: "mockuser",
+			Email:    req.Email,
+		},
+	}, nil
+}
+
+func (m *mockAuthService) Logout(ctx context.Context, token string) error {
+	if m.logoutFunc != nil {
+		return m.logoutFunc(ctx, token)
+	}
+	return nil
+}
+
+func (m *mockAuthService) ValidateSession(ctx context.Context, token string) (*models.SessionUser, error) {
+	if m.validateSessionFunc != nil {
+		return m.validateSessionFunc(ctx, token)
+	}
+	if token == "mock-session-token-abc" {
+		return &models.SessionUser{
+			ID:       "mock-uuid-123",
+			Username: "mockuser",
+			Email:    "mock@example.com",
+		}, nil
+	}
+	return nil, errors.New("invalid token")
 }
 
 func TestRegister_HTTP_Success(t *testing.T) {
@@ -202,5 +242,176 @@ func TestRegister_HTTP_DuplicateUsername(t *testing.T) {
 	errObj := resp["error"].(map[string]interface{})
 	if errObj["code"] != "CONFLICT" {
 		t.Errorf("expected CONFLICT, got %v", errObj["code"])
+	}
+}
+
+func TestLogin_HTTP_Success(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+
+	srv := &mockAuthService{
+		loginFunc: func(ctx context.Context, req *models.LoginRequest) (*models.LoginResponse, error) {
+			return &models.LoginResponse{
+				SessionToken: "valid-session-token",
+				ExpiresIn:    86400,
+				User: models.SessionUser{
+					ID:       "user-uuid-1",
+					Username: "alan",
+					Email:    req.Email,
+				},
+			}, nil
+		},
+	}
+	ctrl := controllers.NewAuthController(srv)
+	router.POST("/auth/login", ctrl.Login)
+
+	reqPayload := models.LoginRequest{
+		Email:    "alan@meloop.com",
+		Password: "meloop123",
+	}
+	body, _ := json.Marshal(reqPayload)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/auth/login", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200 OK, got %d", w.Code)
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if resp["success"] != true {
+		t.Errorf("expected success: true, got %v", resp["success"])
+	}
+
+	data := resp["data"].(map[string]interface{})
+	if data["session_token"] != "valid-session-token" {
+		t.Errorf("expected session_token: valid-session-token, got %v", data["session_token"])
+	}
+
+	// Verify no sensitive info is returned
+	if _, exists := data["password"]; exists {
+		t.Error("sensitive info leaked: password found in response")
+	}
+	if _, exists := data["password_hash"]; exists {
+		t.Error("sensitive info leaked: password_hash found in response")
+	}
+}
+
+func TestLogin_HTTP_InvalidCredentials(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+
+	srv := &mockAuthService{
+		loginFunc: func(ctx context.Context, req *models.LoginRequest) (*models.LoginResponse, error) {
+			return nil, services.ErrInvalidCredentials
+		},
+	}
+	ctrl := controllers.NewAuthController(srv)
+	router.POST("/auth/login", ctrl.Login)
+
+	reqPayload := models.LoginRequest{
+		Email:    "wrong@meloop.com",
+		Password: "wrongpassword",
+	}
+	body, _ := json.Marshal(reqPayload)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/auth/login", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401 Unauthorized, got %d", w.Code)
+	}
+
+	var resp map[string]interface{}
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+
+	if resp["success"] != false {
+		t.Errorf("expected success: false, got %v", resp["success"])
+	}
+
+	errObj := resp["error"].(map[string]interface{})
+	if errObj["code"] != "UNAUTHORIZED" {
+		t.Errorf("expected UNAUTHORIZED, got %v", errObj["code"])
+	}
+	if errObj["message"] != "Credenciales incorrectas" {
+		t.Errorf("expected message 'Credenciales incorrectas', got %v", errObj["message"])
+	}
+}
+
+func TestLogout_HTTP_Success(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+
+	srv := &mockAuthService{
+		logoutFunc: func(ctx context.Context, token string) error {
+			if token != "valid-session-token" {
+				return errors.New("invalid token in mock")
+			}
+			return nil
+		},
+	}
+	ctrl := controllers.NewAuthController(srv)
+
+	// Route protected by middleware
+	protected := router.Group("")
+	protected.Use(ctrl.AuthRequired())
+	protected.POST("/auth/logout", ctrl.Logout)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/auth/logout", nil)
+	req.Header.Set("Authorization", "Bearer valid-session-token")
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200 OK, got %d", w.Code)
+	}
+
+	var resp map[string]interface{}
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+
+	if resp["success"] != true {
+		t.Errorf("expected success: true, got %v", resp["success"])
+	}
+}
+
+func TestLogout_HTTP_InvalidOrMissingToken(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+
+	srv := &mockAuthService{}
+	ctrl := controllers.NewAuthController(srv)
+
+	protected := router.Group("")
+	protected.Use(ctrl.AuthRequired())
+	protected.POST("/auth/logout", ctrl.Logout)
+
+	// Case 1: Missing Token
+	w1 := httptest.NewRecorder()
+	req1, _ := http.NewRequest("POST", "/auth/logout", nil)
+	router.ServeHTTP(w1, req1)
+
+	if w1.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401 Unauthorized for missing token, got %d", w1.Code)
+	}
+
+	// Case 2: Invalid/Expired Token
+	w2 := httptest.NewRecorder()
+	req2, _ := http.NewRequest("POST", "/auth/logout", nil)
+	req2.Header.Set("Authorization", "Bearer invalid-token")
+	router.ServeHTTP(w2, req2)
+
+	if w2.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401 Unauthorized for invalid token, got %d", w2.Code)
 	}
 }

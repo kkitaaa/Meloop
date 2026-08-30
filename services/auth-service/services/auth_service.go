@@ -2,6 +2,8 @@ package services
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"regexp"
@@ -15,8 +17,9 @@ import (
 )
 
 var (
-	ErrUsernameExists = errors.New("USERNAME_EXISTS")
-	ErrEmailExists    = errors.New("EMAIL_EXISTS")
+	ErrUsernameExists     = errors.New("USERNAME_EXISTS")
+	ErrEmailExists        = errors.New("EMAIL_EXISTS")
+	ErrInvalidCredentials = errors.New("INVALID_CREDENTIALS")
 )
 
 // ValidationError represents validation error details for response mapping
@@ -30,19 +33,31 @@ func (e *ValidationError) Error() string {
 	return e.Message
 }
 
-// AuthService defines registration business logic operations
+// AuthService defines authentication and session business logic operations
 type AuthService interface {
 	Register(ctx context.Context, req *models.RegisterRequest) (*models.RegisterResponse, error)
+	Login(ctx context.Context, req *models.LoginRequest) (*models.LoginResponse, error)
+	Logout(ctx context.Context, token string) error
+	ValidateSession(ctx context.Context, token string) (*models.SessionUser, error)
 }
 
 type authService struct {
-	config *config.Config
-	repo   repositories.AccountRepository
+	config      *config.Config
+	repo        repositories.AccountRepository
+	sessionRepo repositories.SessionRepository
 }
 
-// NewAuthService creates a new AuthService implementation
-func NewAuthService(cfg *config.Config, repo repositories.AccountRepository) AuthService {
-	return &authService{config: cfg, repo: repo}
+// NewAuthService creates a new AuthService implementation with session support
+func NewAuthService(
+	cfg *config.Config,
+	repo repositories.AccountRepository,
+	sessionRepo repositories.SessionRepository,
+) AuthService {
+	return &authService{
+		config:      cfg,
+		repo:        repo,
+		sessionRepo: sessionRepo,
+	}
 }
 
 // Simple and standard email validation regex
@@ -146,4 +161,83 @@ func isUniqueViolation(err error) bool {
 	}
 	errStr := strings.ToLower(err.Error())
 	return strings.Contains(errStr, "23505") || strings.Contains(errStr, "unique constraint") || strings.Contains(errStr, "duplicate key")
+}
+
+func (s *authService) Login(ctx context.Context, req *models.LoginRequest) (*models.LoginResponse, error) {
+	if req.Email == "" {
+		return nil, &ValidationError{Field: "email", Issue: "required", Message: "El correo electrónico es obligatorio"}
+	}
+	if req.Password == "" {
+		return nil, &ValidationError{Field: "password", Issue: "required", Message: "La contraseña es obligatoria"}
+	}
+
+	account, err := s.repo.GetByEmail(ctx, req.Email)
+	if err != nil {
+		return nil, err
+	}
+
+	if account == nil {
+		// Run dummy comparison to prevent timing attacks
+		_ = bcrypt.CompareHashAndPassword([]byte("$2a$10$dummyhashplaceholderforsecurityreasonsinfo"), []byte(req.Password))
+		return nil, ErrInvalidCredentials
+	}
+
+	err = bcrypt.CompareHashAndPassword([]byte(account.PasswordHash), []byte(req.Password))
+	if err != nil {
+		return nil, ErrInvalidCredentials
+	}
+
+	token, err := generateSessionToken()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate session token: %w", err)
+	}
+
+	sessionUser := &models.SessionUser{
+		ID:       account.ID,
+		Username: account.Username,
+		Email:    account.Email,
+	}
+
+	err = s.sessionRepo.Create(ctx, token, sessionUser, s.config.SessionTTL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to save session in redis: %w", err)
+	}
+
+	expiresInSeconds := int(s.config.SessionTTL.Seconds())
+
+	return &models.LoginResponse{
+		SessionToken: token,
+		ExpiresIn:    expiresInSeconds,
+		User:         *sessionUser,
+	}, nil
+}
+
+func (s *authService) Logout(ctx context.Context, token string) error {
+	if token == "" {
+		return nil
+	}
+	return s.sessionRepo.Delete(ctx, token)
+}
+
+func (s *authService) ValidateSession(ctx context.Context, token string) (*models.SessionUser, error) {
+	if token == "" {
+		return nil, errors.New("empty session token")
+	}
+	user, err := s.sessionRepo.Get(ctx, token)
+	if err != nil {
+		return nil, err
+	}
+	if user == nil {
+		return nil, errors.New("session invalid or expired")
+	}
+	return user, nil
+}
+
+func generateSessionToken() (string, error) {
+	b := make([]byte, 32)
+	_, err := rand.Read(b)
+	if err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
 }

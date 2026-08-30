@@ -26,3 +26,23 @@ type RegisterResponse struct {
 	Email     string    `json:"email"`
 	CreatedAt time.Time `json:"created_at"`
 }
+
+// LoginRequest defines the input payload for POST /auth/login
+type LoginRequest struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
+// SessionUser defines the non-sensitive user data stored in a session
+type SessionUser struct {
+	ID       string `json:"id"`
+	Username string `json:"username"`
+	Email    string `json:"email"`
+}
+
+// LoginResponse defines the successful response returned upon login
+type LoginResponse struct {
+	SessionToken string      `json:"session_token"`
+	ExpiresIn    int         `json:"expires_in"` // in seconds
+	User         SessionUser `json:"user"`
+}

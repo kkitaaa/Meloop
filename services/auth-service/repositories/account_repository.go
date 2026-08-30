@@ -9,7 +9,6 @@ import (
 	"github.com/meloop/auth-service/models"
 )
 
-// AccountRepository defines the database operations for accounts
 type AccountRepository interface {
 	GetByUsername(ctx context.Context, username string) (*models.Account, error)
 	GetByEmail(ctx context.Context, email string) (*models.Account, error)
@@ -20,7 +19,6 @@ type postgresAccountRepository struct {
 	pool *pgxpool.Pool
 }
 
-// NewAccountRepository creates a PostgreSQL implementation of AccountRepository
 func NewAccountRepository(pool *pgxpool.Pool) AccountRepository {
 	return &postgresAccountRepository{pool: pool}
 }

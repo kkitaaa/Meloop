@@ -70,57 +70,73 @@ func httpcallFieldIssue(err *services.ValidationError) string {
 
 const httpcallValidation = httpresponse.ErrValidation
 
-// LoginRequest defines the request body for Login
-type LoginRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
-}
-
-// Login is the mock login handler originally defined in the codebase
-func Login(c *gin.Context) {
-	var req LoginRequest
+// Login handles POST /auth/login
+func (ctrl *AuthController) Login(c *gin.Context) {
+	var req models.LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		httpresponse.BadRequestGin(c, "Formato JSON de petición inválido")
 		return
 	}
 
-	if req.Email == "" {
-		details := map[string]string{
-			"field": "email",
-			"issue": "required",
+	res, err := ctrl.authService.Login(c.Request.Context(), &req)
+	if err != nil {
+		var valErr *services.ValidationError
+		if errors.As(err, &valErr) {
+			details := map[string]string{
+				"field": valErr.Field,
+				"issue": valErr.Issue,
+			}
+			httpcall := httpcallValidation
+			httpresponse.ErrorWithDetailsGin(
+				c,
+				http.StatusBadRequest,
+				httpcall,
+				valErr.Message,
+				details,
+			)
+			return
 		}
-		httpresponse.ErrorWithDetailsGin(
-			c,
-			http.StatusBadRequest,
-			httpcallValidation,
-			"El correo electrónico es obligatorio",
-			details,
-		)
+
+		if errors.Is(err, services.ErrInvalidCredentials) {
+			httpresponse.UnauthorizedGin(c, "Credenciales incorrectas")
+			return
+		}
+
+		httpcall := httpresponse.InternalErrorGin
+		httpcall(c)
 		return
 	}
 
-	if req.Password == "" {
-		details := map[string]string{
-			"field": "password",
-			"issue": "required",
-		}
-		httpresponse.ErrorWithDetailsGin(
-			c,
-			http.StatusBadRequest,
-			httpcallValidation,
-			"La contraseña es obligatoria",
-			details,
-		)
+	httpresponse.SuccessGin(c, http.StatusOK, res)
+}
+
+// Logout handles POST /auth/logout
+func (ctrl *AuthController) Logout(c *gin.Context) {
+	token, exists := c.Get("session_token")
+	if !exists {
+		httpresponse.UnauthorizedGin(c, "No se encontró sesión activa")
 		return
 	}
 
-	if req.Password != "meloop123" {
-		httpresponse.UnauthorizedGin(c, "Credenciales incorrectas")
+	err := ctrl.authService.Logout(c.Request.Context(), token.(string))
+	if err != nil {
+		httpresponse.InternalErrorGin(c)
 		return
 	}
 
 	httpresponse.SuccessGin(c, http.StatusOK, gin.H{
-		"token":      "ejemplo-token-jwt-seguro",
-		"expires_in": 3600,
+		"message": "Sesión cerrada correctamente",
 	})
+}
+
+// Validate handles GET /auth/validate
+func (ctrl *AuthController) Validate(c *gin.Context) {
+	user, exists := c.Get("user")
+	if !exists {
+		httpresponse.UnauthorizedGin(c, "No se encontró sesión activa")
+		return
+	}
+
+	httpcall := httpresponse.SuccessGin
+	httpcall(c, http.StatusOK, user)
 }

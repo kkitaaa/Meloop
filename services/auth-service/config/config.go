@@ -3,11 +3,14 @@ package config
 import (
 	"os"
 	"strconv"
+	"time"
 )
 
 type Config struct {
 	DatabaseURL       string
 	PasswordMinLength int
+	RedisURL          string
+	SessionTTL        time.Duration
 }
 
 // Load loads the configuration from environment variables
@@ -25,8 +28,27 @@ func Load() *Config {
 		}
 	}
 
+	redisURL := os.Getenv("REDIS_URL")
+	if redisURL == "" {
+		redisPassword := os.Getenv("REDIS_PASSWORD")
+		if redisPassword != "" {
+			redisURL = "redis://:" + redisPassword + "@localhost:6379"
+		} else {
+			redisURL = "redis://localhost:6379"
+		}
+	}
+
+	sessionTTL := 24 * time.Hour
+	if ttlStr := os.Getenv("SESSION_TTL_HOURS"); ttlStr != "" {
+		if val, err := strconv.Atoi(ttlStr); err == nil && val > 0 {
+			sessionTTL = time.Duration(val) * time.Hour
+		}
+	}
+
 	return &Config{
 		DatabaseURL:       dbURL,
 		PasswordMinLength: minLen,
+		RedisURL:          redisURL,
+		SessionTTL:        sessionTTL,
 	}
 }

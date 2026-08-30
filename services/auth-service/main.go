@@ -29,9 +29,19 @@ func main() {
 		logger.Info("database_connected", "url", cfg.DatabaseURL)
 	}
 
+	// Initialize Redis connection dynamically
+	rdbClient, err := repositories.InitRedis(ctx, cfg.RedisURL)
+	if err != nil {
+		logger.Warn("redis_connection_failed", "error", err, "url", cfg.RedisURL)
+	} else {
+		defer rdbClient.Close()
+		logger.Info("redis_connected", "url", cfg.RedisURL)
+	}
+
 	// Setup clean architecture layers
+	sessionRepo := repositories.NewSessionRepository(rdbClient)
 	accountRepo := repositories.NewAccountRepository(dbPool)
-	authSrv := services.NewAuthService(cfg, accountRepo)
+	authSrv := services.NewAuthService(cfg, accountRepo, sessionRepo)
 	authCtrl := controllers.NewAuthController(authSrv)
 
 	router := gin.New()
@@ -39,8 +49,16 @@ func main() {
 	router.Use(httpresponse.GinRecoveryWithLogger(logger))
 
 	// Domain routes
-	router.POST("/auth/login", controllers.Login)
+	router.POST("/auth/login", authCtrl.Login)
 	router.POST("/auth/register", authCtrl.Register)
+
+	// Protected routes
+	protected := router.Group("")
+	protected.Use(authCtrl.AuthRequired())
+	{
+		protected.POST("/auth/logout", authCtrl.Logout)
+		protected.GET("/auth/validate", authCtrl.Validate)
+	}
 
 	logger.Info("service_listening", "port", 8083)
 	if err := router.Run(":8083"); err != nil {
