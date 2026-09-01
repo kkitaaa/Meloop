@@ -58,9 +58,9 @@ El `recommendation-service` y el `ml-service` utilizarán inicialmente HTTP/REST
 
 ## 4. Almacenamiento multimedia
 
-Los archivos multimedia no serán almacenados directamente en PostgreSQL.
+Los archivos multimedia no serán almacenados directamente en PostgreSQL/Supabase.
 
-El almacenamiento de imágenes, audios y otros archivos se realizará mediante un sistema de almacenamiento de objetos compatible con S3, utilizando **MinIO/S3**.
+El almacenamiento de imágenes, audios y otros archivos se realizará mediante un sistema de almacenamiento de objetos compatible con S3, utilizando **MinIO** en el entorno local y servicios compatibles con S3 en producción.
 
 La responsabilidad de gestionar estos archivos corresponde a `media-service`.
 
@@ -78,26 +78,39 @@ La separación será:
      │           │
      ▼           ▼
 PostgreSQL     MinIO/S3
-Metadatos      Archivos
+Metadatos      Archivos (Binarios)
 ```
 
 ### PostgreSQL
-
-Almacena información como:
-
-* Nombre del archivo.
-* Tipo.
-* Tamaño.
-* Metadatos.
-* Referencia o ubicación del archivo.
+Almacena exclusivamente los metadatos:
+* Identificador único (`media_id`).
+* Clave de objeto en MinIO (`object_key`).
+* Tipo MIME (`content_type`).
+* Tamaño en bytes.
+* Referencia a la entidad asociada (`user_id`, `post_id`, etc.).
+* Fecha de subida y metadatos complementarios.
 
 ### MinIO/S3
+Almacena físicamente los archivos binarios organizados mediante buckets y object keys.
 
-Almacena físicamente:
+#### Configuración del Bucket y Seguridad
+* **Nombre del Bucket:** `meloop-media`.
+* **Visibilidad:** Estrictamente **privado** (acceso anónimo deshabilitado).
+* **Persistencia:** Volumen persistente dedicado (`minio_data`).
+* **Principio de Mínimo Privilegio:** `media-service` utiliza credenciales propias independientes (`MINIO_MEDIA_USER`) con una política IAM (`media-service-policy`) que restringe sus acciones exclusivamente a operaciones sobre `arn:aws:s3:::meloop-media` y `arn:aws:s3:::meloop-media/*`. Ningún microservicio tiene acceso administrativo o de root.
+* **Presigned URLs:** El acceso y subida de archivos se realiza mediante URLs prefirmadas de subida (`PUT`) y descarga (`GET`) generadas por `media-service`, garantizando que MinIO no esté expuesto públicamente.
 
-* Imágenes.
-* Audios.
-* Otros archivos multimedia.
+#### Estructura lógica de objetos
+Las claves de objetos (*object keys*) generadas por el sistema siguen el estándar:
+
+* **Fotos de perfil:** `profiles/{user_id}/{media_id}`
+* **Banners de perfil:** `banners/{user_id}/{media_id}`
+* **Multimedia de publicaciones:** `posts/{post_id}/{media_id}`
+
+#### Restricciones del MVP
+* **Imágenes:** Formatos soportados `JPEG` y `PNG`, tamaño máximo **5 MB**, resolución hasta **720p**.
+* **Audio:** Formatos soportados `MP3` y `WAV`, tamaño máximo **15 MB**.
+* **Procesamiento:** No se realiza compresión, transcodificación ni transformación previa de archivos antes de su almacenamiento en esta fase.
 
 ## 5. Resumen de infraestructura
 
