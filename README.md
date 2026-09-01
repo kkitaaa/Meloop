@@ -77,8 +77,14 @@ REDIS_PASSWORD=
 RABBITMQ_USER=
 RABBITMQ_PASSWORD=
 
+# MinIO (Almacenamiento de objetos)
 MINIO_ROOT_USER=
 MINIO_ROOT_PASSWORD=
+MINIO_MEDIA_USER=
+MINIO_MEDIA_PASSWORD=
+MINIO_MEDIA_BUCKET=meloop-media
+MINIO_ENDPOINT=http://minio:9000
+MINIO_PUBLIC_ENDPOINT=http://localhost:9000
 
 SUPABASE_URL=
 SUPABASE_KEY=
@@ -98,7 +104,8 @@ Docker Compose levanta inicialmente los siguientes componentes:
 - Microservicio de prueba desarrollado en Go.
 - Redis.
 - RabbitMQ.
-- MinIO.
+- MinIO (servidor de almacenamiento de objetos).
+- MinIO Init (contenedor de aprovisionamiento automatizado de bucket y políticas).
 
 Los servicios se comunican mediante una red interna de Docker Compose.
 
@@ -124,21 +131,22 @@ Para comprobar el estado de los servicios ejecutar:
 docker compose ps
 ```
 
-Los contenedores deberían aparecer en estado `Up` o `Running`.
+Los contenedores deberían aparecer en estado `Up` o `Running` (el contenedor `meloop-minio-init` saldrá con código `0` tras completar el aprovisionamiento).
 
 ### Servicios disponibles
 
 Una vez levantado el entorno se encuentran disponibles los siguientes servicios:
 
-| Servicio | Dirección |
-| --- | --- |
-| API Gateway | `http://localhost:8080` |
-| Health API Gateway | `http://localhost:8080/health` |
-| Test Service | `http://localhost:8081` |
-| Health Test Service | `http://localhost:8081/health` |
-| RabbitMQ Management | `http://localhost:15672` |
-| MinIO Console | `http://localhost:9001` |
-| Redis | `localhost:6379` |
+| Servicio | Dirección | Descripción / Credenciales |
+| --- | --- | --- |
+| API Gateway | `http://localhost:8080` | Punto de entrada del backend |
+| Health API Gateway | `http://localhost:8080/health` | Verificación de estado de API Gateway |
+| Test Service | `http://localhost:8081` | Microservicio de prueba |
+| Health Test Service | `http://localhost:8081/health` | Verificación de estado de Test Service |
+| RabbitMQ Management | `http://localhost:15672` | Consola web con `RABBITMQ_USER` / `RABBITMQ_PASSWORD` |
+| MinIO API (S3) | `http://localhost:9000` | Endpoint de almacenamiento de objetos S3 |
+| MinIO Console | `http://localhost:9001` | Consola web con `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` |
+| Redis | `localhost:6379` | Servidor Redis con autenticación por `REDIS_PASSWORD` |
 
 Las interfaces de RabbitMQ y MinIO utilizan las credenciales definidas en el archivo `.env`.
 
