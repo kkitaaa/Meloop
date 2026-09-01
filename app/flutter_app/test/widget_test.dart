@@ -1,5 +1,5 @@
-import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_app/main.dart';
+import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   testWidgets('Initial structure smoke test', (WidgetTester tester) async {
@@ -7,6 +7,9 @@ void main() {
     await tester.pumpWidget(const MyApp());
 
     // Verify that the initial text is displayed.
-    expect(find.text('Estructura inicial configurada correctamente'), findsOneWidget);
+    expect(
+      find.text('Estructura inicial configurada correctamente'),
+      findsOneWidget,
+    );
   });
 }
