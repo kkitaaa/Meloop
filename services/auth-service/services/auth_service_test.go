@@ -3,60 +3,59 @@ package services_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
-	"time"
 
-	"golang.org/x/crypto/bcrypt"
 	"github.com/meloop/auth-service/config"
 	"github.com/meloop/auth-service/models"
 	"github.com/meloop/auth-service/services"
+	"golang.org/x/crypto/bcrypt"
 )
 
-type mockAccountRepository struct {
-	accounts          map[string]*models.Account
-	getByUsernameFunc func(ctx context.Context, username string) (*models.Account, error)
-	getByEmailFunc    func(ctx context.Context, email string) (*models.Account, error)
-	createFunc        func(ctx context.Context, account *models.Account) error
+type mockUserRepository struct {
+	users             map[string]*models.Usuario
+	getByUsernameFunc func(ctx context.Context, username string) (*models.Usuario, error)
+	getByEmailFunc    func(ctx context.Context, email string) (*models.Usuario, error)
+	createFunc        func(ctx context.Context, user *models.Usuario) error
 }
 
-func (m *mockAccountRepository) GetByUsername(ctx context.Context, username string) (*models.Account, error) {
+func (m *mockUserRepository) GetByUsername(ctx context.Context, username string) (*models.Usuario, error) {
 	if m.getByUsernameFunc != nil {
 		return m.getByUsernameFunc(ctx, username)
 	}
-	for _, acc := range m.accounts {
-		if acc.Username == username {
-			return acc, nil
+	for _, u := range m.users {
+		if u.Username == username {
+			return u, nil
 		}
 	}
 	return nil, nil
 }
 
-func (m *mockAccountRepository) GetByEmail(ctx context.Context, email string) (*models.Account, error) {
+func (m *mockUserRepository) GetByEmail(ctx context.Context, email string) (*models.Usuario, error) {
 	if m.getByEmailFunc != nil {
 		return m.getByEmailFunc(ctx, email)
 	}
-	for _, acc := range m.accounts {
-		if acc.Email == email {
-			return acc, nil
+	for _, u := range m.users {
+		if u.Correo == email {
+			return u, nil
 		}
 	}
 	return nil, nil
 }
 
-func (m *mockAccountRepository) Create(ctx context.Context, account *models.Account) error {
+func (m *mockUserRepository) Create(ctx context.Context, user *models.Usuario) error {
 	if m.createFunc != nil {
-		return m.createFunc(ctx, account)
+		return m.createFunc(ctx, user)
 	}
-	account.ID = "mock-uuid-123"
-	account.CreatedAt = time.Now()
-	account.UpdatedAt = time.Now()
-	m.accounts[account.Username] = account
+	user.IDUsuario = "mock-usuario-uuid-123"
+	m.users[user.Username] = user
 	return nil
 }
 
+// 1. Registro válido
 func TestRegister_Success(t *testing.T) {
 	cfg := &config.Config{PasswordMinLength: 8}
-	repo := &mockAccountRepository{accounts: make(map[string]*models.Account)}
+	repo := &mockUserRepository{users: make(map[string]*models.Usuario)}
 	srv := services.NewAuthService(cfg, repo)
 
 	req := &models.RegisterRequest{
@@ -70,8 +69,8 @@ func TestRegister_Success(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	if res.ID == "" {
-		t.Error("expected valid ID in response")
+	if res.ID != "mock-usuario-uuid-123" {
+		t.Errorf("expected ID 'mock-usuario-uuid-123', got %s", res.ID)
 	}
 	if res.Username != req.Username {
 		t.Errorf("expected username %s, got %s", req.Username, res.Username)
@@ -80,27 +79,31 @@ func TestRegister_Success(t *testing.T) {
 		t.Errorf("expected email %s, got %s", req.Email, res.Email)
 	}
 
-	// Verify that password hash was saved in repository and password is correct
-	savedAcc := repo.accounts[req.Username]
-	if savedAcc == nil {
-		t.Fatal("expected account to be persisted in repo")
+	savedUser := repo.users[req.Username]
+	if savedUser == nil {
+		t.Fatal("expected user to be persisted in repo")
 	}
-	if savedAcc.PasswordHash == "" {
-		t.Error("expected password hash to be set")
+	if savedUser.IDUsuario != "mock-usuario-uuid-123" {
+		t.Errorf("expected IDUsuario 'mock-usuario-uuid-123', got %s", savedUser.IDUsuario)
 	}
-	if savedAcc.PasswordHash == req.Password {
-		t.Error("expected password NOT to be stored in plain text")
+	if savedUser.Username != req.Username {
+		t.Errorf("expected username %s, got %s", req.Username, savedUser.Username)
 	}
-
-	err = bcrypt.CompareHashAndPassword([]byte(savedAcc.PasswordHash), []byte(req.Password))
-	if err != nil {
-		t.Errorf("password verification failed: %v", err)
+	if savedUser.Correo != req.Email {
+		t.Errorf("expected correo %s, got %s", req.Email, savedUser.Correo)
+	}
+	if savedUser.Experiencia != 0 {
+		t.Errorf("expected initial experiencia to be 0, got %d", savedUser.Experiencia)
+	}
+	if savedUser.IDNivel != nil {
+		t.Errorf("expected default IDNivel to be nil when not configured, got %v", savedUser.IDNivel)
 	}
 }
 
+// 2, 3, 4, 5, 6, 7, 8, 9: Validaciones exhaustivas de campos
 func TestRegister_ValidationErrors(t *testing.T) {
 	cfg := &config.Config{PasswordMinLength: 8}
-	repo := &mockAccountRepository{accounts: make(map[string]*models.Account)}
+	repo := &mockUserRepository{users: make(map[string]*models.Usuario)}
 	srv := services.NewAuthService(cfg, repo)
 
 	tests := []struct {
@@ -109,6 +112,7 @@ func TestRegister_ValidationErrors(t *testing.T) {
 		expectedField string
 		expectedIssue string
 	}{
+		// 2. Username vacío
 		{
 			name: "empty username",
 			req: &models.RegisterRequest{
@@ -119,6 +123,7 @@ func TestRegister_ValidationErrors(t *testing.T) {
 			expectedField: "username",
 			expectedIssue: "required",
 		},
+		// 6. Username demasiado largo
 		{
 			name: "username too long",
 			req: &models.RegisterRequest{
@@ -129,6 +134,7 @@ func TestRegister_ValidationErrors(t *testing.T) {
 			expectedField: "username",
 			expectedIssue: "too_long",
 		},
+		// 3. Email vacío
 		{
 			name: "empty email",
 			req: &models.RegisterRequest{
@@ -139,6 +145,7 @@ func TestRegister_ValidationErrors(t *testing.T) {
 			expectedField: "email",
 			expectedIssue: "required",
 		},
+		// 7. Email demasiado largo
 		{
 			name: "email too long",
 			req: &models.RegisterRequest{
@@ -149,16 +156,18 @@ func TestRegister_ValidationErrors(t *testing.T) {
 			expectedField: "email",
 			expectedIssue: "too_long",
 		},
+		// 5. Email inválido
 		{
 			name: "invalid email format",
 			req: &models.RegisterRequest{
 				Username: "validuser",
-				Email:    "invalid-email",
+				Email:    "invalid-email-address",
 				Password: "password123",
 			},
 			expectedField: "email",
 			expectedIssue: "invalid_format",
 		},
+		// 4. Password vacía
 		{
 			name: "empty password",
 			req: &models.RegisterRequest{
@@ -169,16 +178,18 @@ func TestRegister_ValidationErrors(t *testing.T) {
 			expectedField: "password",
 			expectedIssue: "required",
 		},
+		// 9. Password demasiado larga para bcrypt (> 72 caracteres)
 		{
 			name: "password too long",
 			req: &models.RegisterRequest{
 				Username: "validuser",
 				Email:    "test@example.com",
-				Password: "password123password123password123password123password123password123password123", // > 72 chars
+				Password: strings.Repeat("a", 73),
 			},
 			expectedField: "password",
 			expectedIssue: "too_long",
 		},
+		// 8. Password demasiado corta
 		{
 			name: "password too short",
 			req: &models.RegisterRequest{
@@ -213,62 +224,159 @@ func TestRegister_ValidationErrors(t *testing.T) {
 	}
 }
 
-func TestRegister_DuplicateChecks(t *testing.T) {
+// 10. Username duplicado
+func TestRegister_DuplicateUsername(t *testing.T) {
 	cfg := &config.Config{PasswordMinLength: 8}
-	repo := &mockAccountRepository{
-		accounts: map[string]*models.Account{
+	repo := &mockUserRepository{
+		users: map[string]*models.Usuario{
 			"existinguser": {
-				ID:           "uuid-existing-1",
-				Username:     "existinguser",
-				Email:        "existing@example.com",
-				PasswordHash: "somehash",
+				IDUsuario:      "id-1",
+				Username:       "existinguser",
+				Correo:         "first@example.com",
+				ContrasenaHash: "hash1",
 			},
 		},
 	}
 	srv := services.NewAuthService(cfg, repo)
 
-	// Test duplicate username
-	req1 := &models.RegisterRequest{
+	req := &models.RegisterRequest{
 		Username: "existinguser",
-		Email:    "newemail@example.com",
+		Email:    "second@example.com",
 		Password: "password123",
 	}
-	_, err := srv.Register(context.Background(), req1)
+	_, err := srv.Register(context.Background(), req)
 	if !errors.Is(err, services.ErrUsernameExists) {
 		t.Errorf("expected ErrUsernameExists, got %v", err)
 	}
-
-	// Test duplicate email
-	req2 := &models.RegisterRequest{
-		Username: "newuser",
-		Email:    "existing@example.com",
-		Password: "password123",
-	}
-	_, err = srv.Register(context.Background(), req2)
-	if !errors.Is(err, services.ErrEmailExists) {
-		t.Errorf("expected ErrEmailExists, got %v", err)
-	}
 }
 
-func TestRegister_DatabaseUniqueViolationRace(t *testing.T) {
+// 11. Email duplicado
+func TestRegister_DuplicateEmail(t *testing.T) {
 	cfg := &config.Config{PasswordMinLength: 8}
-	repo := &mockAccountRepository{
-		accounts: make(map[string]*models.Account),
-		createFunc: func(ctx context.Context, account *models.Account) error {
-			// Simulate unique violation error (code 23505) from database driver
-			return errors.New("ERROR: duplicate key value violates unique constraint \"idx_accounts_username\" (SQLSTATE 23505)")
+	repo := &mockUserRepository{
+		users: map[string]*models.Usuario{
+			"firstuser": {
+				IDUsuario:      "id-1",
+				Username:       "firstuser",
+				Correo:         "existing@example.com",
+				ContrasenaHash: "hash1",
+			},
 		},
 	}
 	srv := services.NewAuthService(cfg, repo)
 
 	req := &models.RegisterRequest{
-		Username: "duplicateuser",
-		Email:    "new@example.com",
+		Username: "seconduser",
+		Email:    "existing@example.com",
+		Password: "password123",
+	}
+	_, err := srv.Register(context.Background(), req)
+	if !errors.Is(err, services.ErrEmailExists) {
+		t.Errorf("expected ErrEmailExists, got %v", err)
+	}
+}
+
+// 12. Error de persistencia
+func TestRegister_PersistenceError(t *testing.T) {
+	cfg := &config.Config{PasswordMinLength: 8}
+	expectedErr := errors.New("database disk I/O error")
+	repo := &mockUserRepository{
+		users: make(map[string]*models.Usuario),
+		createFunc: func(ctx context.Context, user *models.Usuario) error {
+			return expectedErr
+		},
+	}
+	srv := services.NewAuthService(cfg, repo)
+
+	req := &models.RegisterRequest{
+		Username: "newuser",
+		Email:    "test@example.com",
 		Password: "password123",
 	}
 
 	_, err := srv.Register(context.Background(), req)
+	if !errors.Is(err, expectedErr) {
+		t.Errorf("expected persistence error %v, got %v", expectedErr, err)
+	}
+}
+
+// 13. Verificación de que se almacena un hash bcrypt y nunca la contraseña original
+func TestRegister_BCryptHashVerification(t *testing.T) {
+	cfg := &config.Config{PasswordMinLength: 8}
+	repo := &mockUserRepository{users: make(map[string]*models.Usuario)}
+	srv := services.NewAuthService(cfg, repo)
+
+	rawPassword := "SuperSecretPassword2026!"
+	req := &models.RegisterRequest{
+		Username: "secureuser",
+		Email:    "secure@example.com",
+		Password: rawPassword,
+	}
+
+	_, err := srv.Register(context.Background(), req)
+	if err != nil {
+		t.Fatalf("expected registration to succeed, got %v", err)
+	}
+
+	savedUser := repo.users[req.Username]
+	if savedUser == nil {
+		t.Fatal("expected user to be in repository")
+	}
+
+	// Never store original plaintext password
+	if savedUser.ContrasenaHash == rawPassword {
+		t.Fatal("CRITICAL: Raw plaintext password was saved in contrasena_hash!")
+	}
+
+	// Must be a valid bcrypt hash
+	if !strings.HasPrefix(savedUser.ContrasenaHash, "$2a$") && !strings.HasPrefix(savedUser.ContrasenaHash, "$2b$") {
+		t.Errorf("expected contrasena_hash to start with bcrypt prefix ($2a$ or $2b$), got %s", savedUser.ContrasenaHash)
+	}
+
+	// Verify bcrypt compare succeeds
+	err = bcrypt.CompareHashAndPassword([]byte(savedUser.ContrasenaHash), []byte(rawPassword))
+	if err != nil {
+		t.Errorf("bcrypt verification failed: %v", err)
+	}
+}
+
+func TestRegister_DatabaseUniqueViolationRace(t *testing.T) {
+	cfg := &config.Config{PasswordMinLength: 8}
+
+	// Test username unique constraint violation from DB
+	repoUsernameRace := &mockUserRepository{
+		users: make(map[string]*models.Usuario),
+		createFunc: func(ctx context.Context, user *models.Usuario) error {
+			return errors.New("ERROR: duplicate key value violates unique constraint \"usuario_username_key\" (SQLSTATE 23505)")
+		},
+	}
+	srvUsername := services.NewAuthService(cfg, repoUsernameRace)
+	req1 := &models.RegisterRequest{
+		Username: "duplicateuser",
+		Email:    "new@example.com",
+		Password: "password123",
+	}
+	_, err := srvUsername.Register(context.Background(), req1)
 	if !errors.Is(err, services.ErrUsernameExists) {
 		t.Errorf("expected ErrUsernameExists from database race mapping, got %v", err)
 	}
+
+	// Test correo/email unique constraint violation from DB
+	repoEmailRace := &mockUserRepository{
+		users: make(map[string]*models.Usuario),
+		createFunc: func(ctx context.Context, user *models.Usuario) error {
+			return errors.New("ERROR: duplicate key value violates unique constraint \"usuario_correo_key\" (SQLSTATE 23505)")
+		},
+	}
+	srvEmail := services.NewAuthService(cfg, repoEmailRace)
+	req2 := &models.RegisterRequest{
+		Username: "newuser2",
+		Email:    "duplicate@example.com",
+		Password: "password123",
+	}
+	_, err = srvEmail.Register(context.Background(), req2)
+	if !errors.Is(err, services.ErrEmailExists) {
+		t.Errorf("expected ErrEmailExists from database race mapping, got %v", err)
+	}
 }
+
