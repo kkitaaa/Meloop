@@ -4,10 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/meloop/auth-service/controllers"
@@ -24,10 +24,9 @@ func (m *mockAuthService) Register(ctx context.Context, req *models.RegisterRequ
 		return m.registerFunc(ctx, req)
 	}
 	return &models.RegisterResponse{
-		ID:        "mock-uuid-123",
-		Username:  req.Username,
-		Email:     req.Email,
-		CreatedAt: time.Date(2026, 8, 26, 22, 0, 0, 0, time.UTC),
+		ID:       "mock-uuid-123",
+		Username: req.Username,
+		Email:    req.Email,
 	}, nil
 }
 
@@ -86,6 +85,9 @@ func TestRegister_HTTP_Success(t *testing.T) {
 	}
 	if _, exists := data["password_hash"]; exists {
 		t.Error("security breach: password_hash found in response data")
+	}
+	if _, exists := data["contrasena_hash"]; exists {
+		t.Error("security breach: contrasena_hash found in response data")
 	}
 }
 
@@ -156,6 +158,10 @@ func TestRegister_HTTP_ValidationError(t *testing.T) {
 	var resp map[string]interface{}
 	_ = json.Unmarshal(w.Body.Bytes(), &resp)
 
+	if resp["success"] != false {
+		t.Errorf("expected success: false, got %v", resp["success"])
+	}
+
 	errObj := resp["error"].(map[string]interface{})
 	if errObj["code"] != "VALIDATION_ERROR" {
 		t.Errorf("expected VALIDATION_ERROR, got %v", errObj["code"])
@@ -202,5 +208,81 @@ func TestRegister_HTTP_DuplicateUsername(t *testing.T) {
 	errObj := resp["error"].(map[string]interface{})
 	if errObj["code"] != "CONFLICT" {
 		t.Errorf("expected CONFLICT, got %v", errObj["code"])
+	}
+}
+
+func TestRegister_HTTP_DuplicateEmail(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+
+	srv := &mockAuthService{
+		registerFunc: func(ctx context.Context, req *models.RegisterRequest) (*models.RegisterResponse, error) {
+			return nil, services.ErrEmailExists
+		},
+	}
+	ctrl := controllers.NewAuthController(srv)
+	router.POST("/auth/register", ctrl.Register)
+
+	reqPayload := models.RegisterRequest{
+		Username: "newuser",
+		Email:    "existing@example.com",
+		Password: "password123",
+	}
+	body, _ := json.Marshal(reqPayload)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/auth/register", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusConflict {
+		t.Errorf("expected 409 Conflict, got %d", w.Code)
+	}
+
+	var resp map[string]interface{}
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+
+	errObj := resp["error"].(map[string]interface{})
+	if errObj["code"] != "CONFLICT" {
+		t.Errorf("expected CONFLICT, got %v", errObj["code"])
+	}
+}
+
+func TestRegister_HTTP_InternalServerError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+
+	srv := &mockAuthService{
+		registerFunc: func(ctx context.Context, req *models.RegisterRequest) (*models.RegisterResponse, error) {
+			return nil, errors.New("unexpected database error")
+		},
+	}
+	ctrl := controllers.NewAuthController(srv)
+	router.POST("/auth/register", ctrl.Register)
+
+	reqPayload := models.RegisterRequest{
+		Username: "newuser",
+		Email:    "new@example.com",
+		Password: "password123",
+	}
+	body, _ := json.Marshal(reqPayload)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/auth/register", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500 Internal Server Error, got %d", w.Code)
+	}
+
+	var resp map[string]interface{}
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+
+	errObj := resp["error"].(map[string]interface{})
+	if errObj["code"] != "INTERNAL_ERROR" {
+		t.Errorf("expected INTERNAL_ERROR, got %v", errObj["code"])
 	}
 }

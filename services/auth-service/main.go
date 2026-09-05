@@ -20,7 +20,6 @@ func main() {
 	ctx := context.Background()
 	cfg := config.Load()
 
-	// Initialize database connection pool dynamically
 	dbPool, err := repositories.InitDB(ctx, cfg.DatabaseURL)
 	if err != nil {
 		logger.Warn("database_connection_failed", "error", err, "url", cfg.DatabaseURL)
@@ -29,16 +28,14 @@ func main() {
 		logger.Info("database_connected", "url", cfg.DatabaseURL)
 	}
 
-	// Setup clean architecture layers
-	accountRepo := repositories.NewAccountRepository(dbPool)
-	authSrv := services.NewAuthService(cfg, accountRepo)
+	userRepo := repositories.NewUserRepository(dbPool)
+	authSrv := services.NewAuthService(cfg, userRepo)
 	authCtrl := controllers.NewAuthController(authSrv)
 
 	router := gin.New()
 	router.Use(logging.GinMiddleware(logger))
 	router.Use(httpresponse.GinRecoveryWithLogger(logger))
 
-	// Domain routes
 	router.POST("/auth/login", controllers.Login)
 	router.POST("/auth/register", authCtrl.Register)
 
