@@ -61,7 +61,10 @@ class _MainScreenState extends State<MainScreen> {
       ),
     ),
     const Center(
-      child: Text('Perfil de Usuario', style: TextStyle(fontSize: 24)),
+      child: Text(
+        'Perfil de Usuario',
+        style: TextStyle(fontSize: 24),
+      ),
     ),
   ];
 
@@ -74,8 +77,14 @@ class _MainScreenState extends State<MainScreen> {
       ),
       body: Stack(
         children: [
-          IndexedStack(index: _currentIndex, children: _screens),
-          Align(alignment: Alignment.bottomCenter, child: _buildMiniPlayer()),
+          IndexedStack(
+            index: _currentIndex,
+            children: _screens,
+          ),
+          Align(
+            alignment: Alignment.bottomCenter,
+            child: _buildMiniPlayer(),
+          ),
         ],
       ),
       bottomNavigationBar: BottomNavigationBar(
@@ -84,8 +93,14 @@ class _MainScreenState extends State<MainScreen> {
         backgroundColor: Colors.black,
         selectedItemColor: Colors.deepPurpleAccent,
         items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Feed'),
-          BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Perfil'),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.home),
+            label: 'Feed',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.person),
+            label: 'Perfil',
+          ),
         ],
       ),
     );
@@ -96,7 +111,12 @@ class _MainScreenState extends State<MainScreen> {
       height: 75,
       decoration: BoxDecoration(
         color: Colors.grey[900],
-        border: Border(top: BorderSide(color: Colors.grey[800]!, width: 1)),
+        border: Border(
+          top: BorderSide(
+            color: Colors.grey[800]!,
+            width: 1,
+          ),
+        ),
       ),
       child: Row(
         children: [
@@ -114,11 +134,17 @@ class _MainScreenState extends State<MainScreen> {
               children: [
                 Text(
                   'Pista Local',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
                 ),
                 Text(
                   'Reproduciendo desde assets',
-                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey,
+                  ),
                 ),
               ],
             ),
