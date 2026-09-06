@@ -74,14 +74,8 @@ class _MainScreenState extends State<MainScreen> {
       ),
       body: Stack(
         children: [
-          IndexedStack(
-            index: _currentIndex,
-            children: _screens,
-          ),
-          Align(
-            alignment: Alignment.bottomCenter,
-            child: _buildMiniPlayer(),
-          ),
+          IndexedStack(index: _currentIndex, children: _screens),
+          Align(alignment: Alignment.bottomCenter, child: _buildMiniPlayer()),
         ],
       ),
       bottomNavigationBar: BottomNavigationBar(
@@ -90,14 +84,8 @@ class _MainScreenState extends State<MainScreen> {
         backgroundColor: Colors.black,
         selectedItemColor: Colors.deepPurpleAccent,
         items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.home),
-            label: 'Feed',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.person),
-            label: 'Perfil',
-          ),
+          BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Feed'),
+          BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Perfil'),
         ],
       ),
     );
@@ -108,9 +96,7 @@ class _MainScreenState extends State<MainScreen> {
       height: 75,
       decoration: BoxDecoration(
         color: Colors.grey[900],
-        border: Border(
-          top: BorderSide(color: Colors.grey[800]!, width: 1),
-        ),
+        border: Border(top: BorderSide(color: Colors.grey[800]!, width: 1)),
       ),
       child: Row(
         children: [
