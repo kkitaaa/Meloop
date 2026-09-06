@@ -42,7 +42,7 @@ class _MainScreenState extends State<MainScreen> {
       await _player.setAsset('assets/audio/Sinaka, Easykid - DESCONTROL.mp3');
       _player.play();
     } catch (e) {
-      print('❌ Error cargando audio local: $e');
+      debugPrint('❌ Error cargando audio local: $e');
     }
   }
 
