@@ -61,10 +61,7 @@ class _MainScreenState extends State<MainScreen> {
       ),
     ),
     const Center(
-      child: Text(
-        'Perfil de Usuario',
-        style: TextStyle(fontSize: 24),
-      ),
+      child: Text('Perfil de Usuario', style: TextStyle(fontSize: 24)),
     ),
   ];
 
@@ -112,10 +109,7 @@ class _MainScreenState extends State<MainScreen> {
       decoration: BoxDecoration(
         color: Colors.grey[900],
         border: Border(
-          top: BorderSide(
-            color: Colors.grey[800]!,
-            width: 1,
-          ),
+          top: BorderSide(color: Colors.grey[800]!, width: 1),
         ),
       ),
       child: Row(
@@ -134,17 +128,11 @@ class _MainScreenState extends State<MainScreen> {
               children: [
                 Text(
                   'Pista Local',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                  ),
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                 ),
                 Text(
                   'Reproduciendo desde assets',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey,
-                  ),
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
                 ),
               ],
             ),
