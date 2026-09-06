@@ -379,4 +379,3 @@ func TestRegister_DatabaseUniqueViolationRace(t *testing.T) {
 		t.Errorf("expected ErrEmailExists from database race mapping, got %v", err)
 	}
 }
-

@@ -55,18 +55,23 @@ class _MainScreenState extends State<MainScreen> {
   final List<Widget> _screens = [
     const Center(
       child: Text(
-        'Feed Principal\n(Navega al Perfil y la música no se cortará)', 
-        textAlign: TextAlign.center, 
-        style: TextStyle(fontSize: 18)
-      )
+        'Feed Principal\n(Navega al Perfil y la música no se cortará)',
+        textAlign: TextAlign.center,
+        style: TextStyle(fontSize: 18),
+      ),
     ),
-    const Center(child: Text('Perfil de Usuario', style: TextStyle(fontSize: 24))),
+    const Center(
+      child: Text('Perfil de Usuario', style: TextStyle(fontSize: 24)),
+    ),
   ];
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Meloop'), backgroundColor: Colors.black87),
+      appBar: AppBar(
+        title: const Text('Meloop'),
+        backgroundColor: Colors.black87,
+      ),
       body: Stack(
         children: [
           IndexedStack(index: _currentIndex, children: _screens),
@@ -96,15 +101,25 @@ class _MainScreenState extends State<MainScreen> {
       child: Row(
         children: [
           const SizedBox(width: 16),
-          const Icon(Icons.music_note, color: Colors.deepPurpleAccent, size: 40),
+          const Icon(
+            Icons.music_note,
+            color: Colors.deepPurpleAccent,
+            size: 40,
+          ),
           const SizedBox(width: 16),
           const Expanded(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Pista Local', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                Text('Reproduciendo desde assets', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                Text(
+                  'Pista Local',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                ),
+                Text(
+                  'Reproduciendo desde assets',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
               ],
             ),
           ),
@@ -115,20 +130,23 @@ class _MainScreenState extends State<MainScreen> {
               final processingState = playerState?.processingState;
               final playing = playerState?.playing;
 
-              if (processingState == ProcessingState.loading || processingState == ProcessingState.buffering) {
+              if (processingState == ProcessingState.loading ||
+                  processingState == ProcessingState.buffering) {
                 return const Padding(
-                  padding: EdgeInsets.all(16.0), 
-                  child: CircularProgressIndicator(color: Colors.deepPurpleAccent)
+                  padding: EdgeInsets.all(16.0),
+                  child: CircularProgressIndicator(
+                    color: Colors.deepPurpleAccent,
+                  ),
                 );
               } else if (playing != true) {
                 return IconButton(
-                  icon: const Icon(Icons.play_arrow, size: 36), 
-                  onPressed: _player.play
+                  icon: const Icon(Icons.play_arrow, size: 36),
+                  onPressed: _player.play,
                 );
               } else {
                 return IconButton(
-                  icon: const Icon(Icons.pause, size: 36), 
-                  onPressed: _player.pause
+                  icon: const Icon(Icons.pause, size: 36),
+                  onPressed: _player.pause,
                 );
               }
             },
