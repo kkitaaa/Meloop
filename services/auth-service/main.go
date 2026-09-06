@@ -20,7 +20,6 @@ func main() {
 	ctx := context.Background()
 	cfg := config.Load()
 
-	// Initialize database connection pool dynamically
 	dbPool, err := repositories.InitDB(ctx, cfg.DatabaseURL)
 	if err != nil {
 		logger.Warn("database_connection_failed", "error", err, "url", cfg.DatabaseURL)
@@ -29,7 +28,6 @@ func main() {
 		logger.Info("database_connected", "url", cfg.DatabaseURL)
 	}
 
-	// Initialize Redis connection dynamically
 	rdbClient, err := repositories.InitRedis(ctx, cfg.RedisURL)
 	if err != nil {
 		logger.Warn("redis_connection_failed", "error", err, "url", cfg.RedisURL)
@@ -38,7 +36,6 @@ func main() {
 		logger.Info("redis_connected", "url", cfg.RedisURL)
 	}
 
-	// Setup clean architecture layers
 	sessionRepo := repositories.NewSessionRepository(rdbClient)
 	accountRepo := repositories.NewAccountRepository(dbPool)
 	authSrv := services.NewAuthService(cfg, accountRepo, sessionRepo)
@@ -48,7 +45,6 @@ func main() {
 	router.Use(logging.GinMiddleware(logger))
 	router.Use(httpresponse.GinRecoveryWithLogger(logger))
 
-	// Domain routes
 	router.POST("/auth/login", authCtrl.Login)
 	router.POST("/auth/register", authCtrl.Register)
 
