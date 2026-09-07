@@ -6,9 +6,9 @@ void main() {
     // Build our app and trigger a frame.
     await tester.pumpWidget(const MyApp());
 
-    // Verify that the initial text is displayed.
+    // Verify that the title is displayed.
     expect(
-      find.text('Estructura inicial configurada correctamente'),
+      find.text('Meloop'),
       findsOneWidget,
     );
   });
