@@ -37,6 +37,7 @@ type AuthService interface {
 	Login(ctx context.Context, req *models.LoginRequest) (*models.LoginResponse, error)
 	Logout(ctx context.Context, token string) error
 	ValidateSession(ctx context.Context, token string) (*models.SessionUser, error)
+	ChangePassword(ctx context.Context, userID string, req *models.ChangePasswordRequest) error
 }
 
 type authService struct {
@@ -227,4 +228,73 @@ func generateSessionToken() (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(b), nil
+}
+
+// ChangePassword actualiza la contraseña del usuario tras validar las credenciales actuales
+func (s *authService) ChangePassword(ctx context.Context, userID string, req *models.ChangePasswordRequest) error {
+	if userID == "" {
+		return ErrInvalidCredentials
+	}
+	if req == nil {
+		return &ValidationError{
+			Field:   "current_password",
+			Issue:   "required",
+			Message: "La contraseña actual es obligatoria",
+		}
+	}
+	if req.CurrentPassword == "" {
+		return &ValidationError{
+			Field:   "current_password",
+			Issue:   "required",
+			Message: "La contraseña actual es obligatoria",
+		}
+	}
+	if req.NewPassword == "" {
+		return &ValidationError{
+			Field:   "new_password",
+			Issue:   "required",
+			Message: "La nueva contraseña es obligatoria",
+		}
+	}
+	if len(req.NewPassword) < s.config.PasswordMinLength {
+		return &ValidationError{
+			Field:   "new_password",
+			Issue:   "too_short",
+			Message: fmt.Sprintf("La nueva contraseña debe tener al menos %d caracteres", s.config.PasswordMinLength),
+		}
+	}
+	if len(req.NewPassword) > 72 {
+		return &ValidationError{
+			Field:   "new_password",
+			Issue:   "too_long",
+			Message: "La nueva contraseña no puede superar los 72 caracteres",
+		}
+	}
+	if req.NewPassword == req.CurrentPassword {
+		return &ValidationError{
+			Field:   "new_password",
+			Issue:   "same_as_current",
+			Message: "La nueva contraseña no puede ser igual a la contraseña actual",
+		}
+	}
+
+	usuario, err := s.repo.GetByID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if usuario == nil {
+		return ErrInvalidCredentials
+	}
+
+	err = bcrypt.CompareHashAndPassword([]byte(usuario.ContrasenaHash), []byte(req.CurrentPassword))
+	if err != nil {
+		return ErrInvalidCredentials
+	}
+
+	hashed, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("fallo al generar hash de contraseña: %w", err)
+	}
+
+	return s.repo.UpdatePassword(ctx, userID, string(hashed))
 }

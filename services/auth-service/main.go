@@ -48,12 +48,14 @@ func main() {
 	router.POST("/auth/login", authCtrl.Login)
 	router.POST("/auth/register", authCtrl.Register)
 
-	// Protected routes
+	// Rutas protegidas
 	protected := router.Group("")
 	protected.Use(authCtrl.AuthRequired())
 	{
 		protected.POST("/auth/logout", authCtrl.Logout)
 		protected.GET("/auth/validate", authCtrl.Validate)
+		protected.POST("/auth/change-password", authCtrl.ChangePassword)
+		protected.PATCH("/auth/password", authCtrl.ChangePassword)
 	}
 
 	logger.Info("service_listening", "port", 8083)

@@ -136,3 +136,55 @@ func (ctrl *AuthController) Validate(c *gin.Context) {
 	httpcall := httpresponse.SuccessGin
 	httpcall(c, http.StatusOK, user)
 }
+
+// ChangePassword maneja la petición de cambio de contraseña (POST /auth/change-password)
+func (ctrl *AuthController) ChangePassword(c *gin.Context) {
+	userVal, exists := c.Get("user")
+	if !exists {
+		httpresponse.UnauthorizedGin(c, "No se encontró sesión activa")
+		return
+	}
+
+	sessionUser, ok := userVal.(*models.SessionUser)
+	if !ok || sessionUser == nil || sessionUser.ID == "" {
+		httpresponse.UnauthorizedGin(c, "No se encontró sesión activa")
+		return
+	}
+
+	var req models.ChangePasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		httpresponse.BadRequestGin(c, "Formato JSON de petición inválido")
+		return
+	}
+
+	err := ctrl.authService.ChangePassword(c.Request.Context(), sessionUser.ID, &req)
+	if err != nil {
+		var valErr *services.ValidationError
+		if errors.As(err, &valErr) {
+			details := map[string]string{
+				"field": valErr.Field,
+				"issue": valErr.Issue,
+			}
+			httpresponse.ErrorWithDetailsGin(
+				c,
+				http.StatusBadRequest,
+				httpcallValidation,
+				valErr.Message,
+				details,
+			)
+			return
+		}
+
+		if errors.Is(err, services.ErrInvalidCredentials) {
+			httpresponse.UnauthorizedGin(c, "La contraseña actual es incorrecta")
+			return
+		}
+
+		httpresponse.InternalErrorGin(c)
+		return
+	}
+
+	httpresponse.SuccessGin(c, http.StatusOK, gin.H{
+		"message": "Contraseña actualizada correctamente",
+	})
+}

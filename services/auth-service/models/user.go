@@ -37,3 +37,9 @@ type SessionUser struct {
 	Username string `json:"username"`
 	Email    string `json:"email"`
 }
+
+// ChangePasswordRequest representa los datos para solicitar la actualización de contraseña
+type ChangePasswordRequest struct {
+	CurrentPassword string `json:"current_password"`
+	NewPassword     string `json:"new_password"`
+}

@@ -20,6 +20,7 @@ type mockAuthService struct {
 	loginFunc           func(ctx context.Context, req *models.LoginRequest) (*models.LoginResponse, error)
 	logoutFunc          func(ctx context.Context, token string) error
 	validateSessionFunc func(ctx context.Context, token string) (*models.SessionUser, error)
+	changePasswordFunc  func(ctx context.Context, userID string, req *models.ChangePasswordRequest) error
 }
 
 func (m *mockAuthService) Register(ctx context.Context, req *models.RegisterRequest) (*models.RegisterResponse, error) {
@@ -67,6 +68,13 @@ func (m *mockAuthService) ValidateSession(ctx context.Context, token string) (*m
 		}, nil
 	}
 	return nil, errors.New("invalid token")
+}
+
+func (m *mockAuthService) ChangePassword(ctx context.Context, userID string, req *models.ChangePasswordRequest) error {
+	if m.changePasswordFunc != nil {
+		return m.changePasswordFunc(ctx, userID, req)
+	}
+	return nil
 }
 
 func TestRegister_HTTP_Success(t *testing.T) {
@@ -534,5 +542,146 @@ func TestValidate_HTTP_Success(t *testing.T) {
 
 	if data["username"] != "mockuser" {
 		t.Errorf("expected username: mockuser, got %v", data["username"])
+	}
+}
+
+func TestChangePassword_HTTP_Exitoso(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+
+	srv := &mockAuthService{}
+	ctrl := controllers.NewAuthController(srv)
+
+	protected := router.Group("")
+	protected.Use(ctrl.AuthRequired())
+	protected.POST("/auth/change-password", ctrl.ChangePassword)
+
+	payload := models.ChangePasswordRequest{
+		CurrentPassword: "oldpassword123",
+		NewPassword:     "newpassword456",
+	}
+	body, _ := json.Marshal(payload)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodPost, "/auth/change-password", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer valid-session-token")
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("se esperaba código 200 OK, se obtuvo %d", w.Code)
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("error al parsear JSON: %v", err)
+	}
+
+	if resp["success"] != true {
+		t.Errorf("se esperaba success = true, se obtuvo %v", resp["success"])
+	}
+
+	data := resp["data"].(map[string]interface{})
+	if data["message"] != "Contraseña actualizada correctamente" {
+		t.Errorf("mensaje inesperado: %v", data["message"])
+	}
+}
+
+func TestChangePassword_HTTP_NoAutenticado(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+
+	srv := &mockAuthService{}
+	ctrl := controllers.NewAuthController(srv)
+
+	protected := router.Group("")
+	protected.Use(ctrl.AuthRequired())
+	protected.POST("/auth/change-password", ctrl.ChangePassword)
+
+	payload := models.ChangePasswordRequest{
+		CurrentPassword: "oldpassword123",
+		NewPassword:     "newpassword456",
+	}
+	body, _ := json.Marshal(payload)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodPost, "/auth/change-password", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("se esperaba código 401 Unauthorized, se obtuvo %d", w.Code)
+	}
+}
+
+func TestChangePassword_HTTP_ValidacionFallida(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+
+	srv := &mockAuthService{
+		changePasswordFunc: func(ctx context.Context, userID string, req *models.ChangePasswordRequest) error {
+			return &services.ValidationError{
+				Field:   "new_password",
+				Issue:   "too_short",
+				Message: "La contraseña debe tener al menos 8 caracteres",
+			}
+		},
+	}
+	ctrl := controllers.NewAuthController(srv)
+
+	protected := router.Group("")
+	protected.Use(ctrl.AuthRequired())
+	protected.POST("/auth/change-password", ctrl.ChangePassword)
+
+	payload := models.ChangePasswordRequest{
+		CurrentPassword: "oldpassword123",
+		NewPassword:     "short",
+	}
+	body, _ := json.Marshal(payload)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodPost, "/auth/change-password", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer valid-session-token")
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("se esperaba código 400 Bad Request, se obtuvo %d", w.Code)
+	}
+}
+
+func TestChangePassword_HTTP_CredencialesIncorrectas(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+
+	srv := &mockAuthService{
+		changePasswordFunc: func(ctx context.Context, userID string, req *models.ChangePasswordRequest) error {
+			return services.ErrInvalidCredentials
+		},
+	}
+	ctrl := controllers.NewAuthController(srv)
+
+	protected := router.Group("")
+	protected.Use(ctrl.AuthRequired())
+	protected.POST("/auth/change-password", ctrl.ChangePassword)
+
+	payload := models.ChangePasswordRequest{
+		CurrentPassword: "wrongpassword",
+		NewPassword:     "newpassword456",
+	}
+	body, _ := json.Marshal(payload)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodPost, "/auth/change-password", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer valid-session-token")
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("se esperaba código 401 Unauthorized, se obtuvo %d", w.Code)
 	}
 }

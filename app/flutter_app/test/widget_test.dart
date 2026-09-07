@@ -7,9 +7,6 @@ void main() {
     await tester.pumpWidget(const MyApp());
 
     // Verify that the title is displayed.
-    expect(
-      find.text('Meloop'),
-      findsOneWidget,
-    );
+    expect(find.text('Meloop'), findsOneWidget);
   });
 }

@@ -14,10 +14,24 @@ import (
 )
 
 type mockUserRepository struct {
-	users             map[string]*models.Usuario
-	getByUsernameFunc func(ctx context.Context, username string) (*models.Usuario, error)
-	getByEmailFunc    func(ctx context.Context, email string) (*models.Usuario, error)
-	createFunc        func(ctx context.Context, user *models.Usuario) error
+	users              map[string]*models.Usuario
+	getByIDFunc        func(ctx context.Context, id string) (*models.Usuario, error)
+	getByUsernameFunc  func(ctx context.Context, username string) (*models.Usuario, error)
+	getByEmailFunc     func(ctx context.Context, email string) (*models.Usuario, error)
+	createFunc         func(ctx context.Context, user *models.Usuario) error
+	updatePasswordFunc func(ctx context.Context, id string, passwordHash string) error
+}
+
+func (m *mockUserRepository) GetByID(ctx context.Context, id string) (*models.Usuario, error) {
+	if m.getByIDFunc != nil {
+		return m.getByIDFunc(ctx, id)
+	}
+	for _, u := range m.users {
+		if u.IDUsuario == id {
+			return u, nil
+		}
+	}
+	return nil, nil
 }
 
 func (m *mockUserRepository) GetByUsername(ctx context.Context, username string) (*models.Usuario, error) {
@@ -50,6 +64,19 @@ func (m *mockUserRepository) Create(ctx context.Context, user *models.Usuario) e
 	}
 	user.IDUsuario = "mock-usuario-uuid-123"
 	m.users[user.Username] = user
+	return nil
+}
+
+func (m *mockUserRepository) UpdatePassword(ctx context.Context, id string, passwordHash string) error {
+	if m.updatePasswordFunc != nil {
+		return m.updatePasswordFunc(ctx, id, passwordHash)
+	}
+	for _, u := range m.users {
+		if u.IDUsuario == id {
+			u.ContrasenaHash = passwordHash
+			return nil
+		}
+	}
 	return nil
 }
 
@@ -552,5 +579,168 @@ func TestValidateSession(t *testing.T) {
 	_, err = srv.ValidateSession(context.Background(), "never-existed-token")
 	if err == nil {
 		t.Error("expected error for non-existent session token, got nil")
+	}
+}
+
+func TestChangePassword_Exitoso(t *testing.T) {
+	cfg := &config.Config{PasswordMinLength: 8}
+	initialHash, _ := bcrypt.GenerateFromPassword([]byte("password123"), bcrypt.DefaultCost)
+	user := &models.Usuario{
+		IDUsuario:      "user-uuid-123",
+		Username:       "alan",
+		Correo:         "alan@example.com",
+		ContrasenaHash: string(initialHash),
+	}
+	repo := &mockUserRepository{
+		users: map[string]*models.Usuario{"alan": user},
+	}
+	sessionRepo := &mockSessionRepository{sessions: make(map[string]*models.SessionUser)}
+	srv := services.NewAuthService(cfg, repo, sessionRepo)
+
+	req := &models.ChangePasswordRequest{
+		CurrentPassword: "password123",
+		NewPassword:     "newPassword456",
+	}
+
+	err := srv.ChangePassword(context.Background(), "user-uuid-123", req)
+	if err != nil {
+		t.Fatalf("se esperaba cambio de contraseña exitoso, se obtuvo: %v", err)
+	}
+
+	// Verificar que el nuevo hash coincida con la nueva contraseña
+	err = bcrypt.CompareHashAndPassword([]byte(user.ContrasenaHash), []byte("newPassword456"))
+	if err != nil {
+		t.Errorf("el hash persistido no coincide con la nueva contraseña: %v", err)
+	}
+}
+
+func TestChangePassword_Validaciones(t *testing.T) {
+	cfg := &config.Config{PasswordMinLength: 8}
+	initialHash, _ := bcrypt.GenerateFromPassword([]byte("password123"), bcrypt.DefaultCost)
+	user := &models.Usuario{
+		IDUsuario:      "user-uuid-123",
+		Username:       "alan",
+		Correo:         "alan@example.com",
+		ContrasenaHash: string(initialHash),
+	}
+	repo := &mockUserRepository{
+		users: map[string]*models.Usuario{"alan": user},
+	}
+	sessionRepo := &mockSessionRepository{sessions: make(map[string]*models.SessionUser)}
+	srv := services.NewAuthService(cfg, repo, sessionRepo)
+
+	casos := []struct {
+		nombre        string
+		req           *models.ChangePasswordRequest
+		expectedField string
+		expectedIssue string
+	}{
+		{
+			nombre: "contraseña actual vacía",
+			req: &models.ChangePasswordRequest{
+				CurrentPassword: "",
+				NewPassword:     "newPassword456",
+			},
+			expectedField: "current_password",
+			expectedIssue: "required",
+		},
+		{
+			nombre: "nueva contraseña vacía",
+			req: &models.ChangePasswordRequest{
+				CurrentPassword: "password123",
+				NewPassword:     "",
+			},
+			expectedField: "new_password",
+			expectedIssue: "required",
+		},
+		{
+			nombre: "nueva contraseña menor al mínimo",
+			req: &models.ChangePasswordRequest{
+				CurrentPassword: "password123",
+				NewPassword:     "corta",
+			},
+			expectedField: "new_password",
+			expectedIssue: "too_short",
+		},
+		{
+			nombre: "nueva contraseña mayor a 72 caracteres",
+			req: &models.ChangePasswordRequest{
+				CurrentPassword: "password123",
+				NewPassword:     strings.Repeat("a", 73),
+			},
+			expectedField: "new_password",
+			expectedIssue: "too_long",
+		},
+		{
+			nombre: "nueva contraseña idéntica a la actual",
+			req: &models.ChangePasswordRequest{
+				CurrentPassword: "password123",
+				NewPassword:     "password123",
+			},
+			expectedField: "new_password",
+			expectedIssue: "same_as_current",
+		},
+	}
+
+	for _, c := range casos {
+		t.Run(c.nombre, func(t *testing.T) {
+			err := srv.ChangePassword(context.Background(), "user-uuid-123", c.req)
+			if err == nil {
+				t.Fatal("se esperaba error de validación, pero fue nil")
+			}
+			valErr, ok := err.(*services.ValidationError)
+			if !ok {
+				t.Fatalf("se esperaba *ValidationError, se obtuvo %T", err)
+			}
+			if valErr.Field != c.expectedField {
+				t.Errorf("campo esperado '%s', obtenido '%s'", c.expectedField, valErr.Field)
+			}
+			if valErr.Issue != c.expectedIssue {
+				t.Errorf("issue esperado '%s', obtenido '%s'", c.expectedIssue, valErr.Issue)
+			}
+		})
+	}
+}
+
+func TestChangePassword_ContrasenaActualIncorrecta(t *testing.T) {
+	cfg := &config.Config{PasswordMinLength: 8}
+	initialHash, _ := bcrypt.GenerateFromPassword([]byte("password123"), bcrypt.DefaultCost)
+	user := &models.Usuario{
+		IDUsuario:      "user-uuid-123",
+		Username:       "alan",
+		Correo:         "alan@example.com",
+		ContrasenaHash: string(initialHash),
+	}
+	repo := &mockUserRepository{
+		users: map[string]*models.Usuario{"alan": user},
+	}
+	sessionRepo := &mockSessionRepository{sessions: make(map[string]*models.SessionUser)}
+	srv := services.NewAuthService(cfg, repo, sessionRepo)
+
+	req := &models.ChangePasswordRequest{
+		CurrentPassword: "contrasena_erronea",
+		NewPassword:     "newPassword456",
+	}
+
+	err := srv.ChangePassword(context.Background(), "user-uuid-123", req)
+	if !errors.Is(err, services.ErrInvalidCredentials) {
+		t.Fatalf("se esperaba ErrInvalidCredentials, se obtuvo: %v", err)
+	}
+}
+
+func TestChangePassword_UsuarioNoExiste(t *testing.T) {
+	cfg := &config.Config{PasswordMinLength: 8}
+	repo := &mockUserRepository{users: make(map[string]*models.Usuario)}
+	sessionRepo := &mockSessionRepository{sessions: make(map[string]*models.SessionUser)}
+	srv := services.NewAuthService(cfg, repo, sessionRepo)
+
+	req := &models.ChangePasswordRequest{
+		CurrentPassword: "password123",
+		NewPassword:     "newPassword456",
+	}
+
+	err := srv.ChangePassword(context.Background(), "user-inexistente", req)
+	if !errors.Is(err, services.ErrInvalidCredentials) {
+		t.Fatalf("se esperaba ErrInvalidCredentials cuando el usuario no existe, se obtuvo: %v", err)
 	}
 }

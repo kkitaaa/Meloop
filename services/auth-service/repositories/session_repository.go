@@ -6,8 +6,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/redis/go-redis/v9"
 	"github.com/meloop/auth-service/models"
+	"github.com/redis/go-redis/v9"
 )
 
 // SessionRepository defines operations for temporal session storage in Redis
