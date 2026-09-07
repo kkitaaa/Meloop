@@ -20,3 +20,20 @@ type RegisterResponse struct {
 	Username string `json:"username"`
 	Email    string `json:"email"`
 }
+
+type LoginRequest struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
+type LoginResponse struct {
+	SessionToken string      `json:"session_token"`
+	ExpiresIn    int         `json:"expires_in"`
+	User         SessionUser `json:"user"`
+}
+
+type SessionUser struct {
+	ID       string `json:"id"`
+	Username string `json:"username"`
+	Email    string `json:"email"`
+}

@@ -37,8 +37,8 @@ func main() {
 	}
 
 	sessionRepo := repositories.NewSessionRepository(rdbClient)
-	accountRepo := repositories.NewAccountRepository(dbPool)
-	authSrv := services.NewAuthService(cfg, accountRepo, sessionRepo)
+	userRepo := repositories.NewUserRepository(dbPool)
+	authSrv := services.NewAuthService(cfg, userRepo, sessionRepo)
 	authCtrl := controllers.NewAuthController(authSrv)
 
 	router := gin.New()

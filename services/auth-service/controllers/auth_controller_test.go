@@ -3,7 +3,6 @@ package controllers_test
 import (
 	"bytes"
 	"context"
-	"errors"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -60,7 +59,7 @@ func (m *mockAuthService) ValidateSession(ctx context.Context, token string) (*m
 	if m.validateSessionFunc != nil {
 		return m.validateSessionFunc(ctx, token)
 	}
-	if token == "mock-session-token-abc" {
+	if token == "mock-session-token-abc" || token == "valid-session-token" {
 		return &models.SessionUser{
 			ID:       "mock-uuid-123",
 			Username: "mockuser",
@@ -495,5 +494,45 @@ func TestRegister_HTTP_InternalServerError(t *testing.T) {
 	errObj := resp["error"].(map[string]interface{})
 	if errObj["code"] != "INTERNAL_ERROR" {
 		t.Errorf("expected INTERNAL_ERROR, got %v", errObj["code"])
+	}
+}
+
+func TestValidate_HTTP_Success(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+
+	srv := &mockAuthService{}
+	ctrl := controllers.NewAuthController(srv)
+
+	protected := router.Group("")
+	protected.Use(ctrl.AuthRequired())
+	protected.GET("/auth/validate", ctrl.Validate)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/auth/validate", nil)
+	req.Header.Set("Authorization", "Bearer valid-session-token")
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200 OK, got %d", w.Code)
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+
+	if resp["success"] != true {
+		t.Errorf("expected success: true, got %v", resp["success"])
+	}
+
+	data, ok := resp["data"].(map[string]interface{})
+	if !ok {
+		t.Fatal("expected data object in response")
+	}
+
+	if data["username"] != "mockuser" {
+		t.Errorf("expected username: mockuser, got %v", data["username"])
 	}
 }

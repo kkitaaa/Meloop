@@ -41,13 +41,13 @@ type AuthService interface {
 
 type authService struct {
 	config      *config.Config
-	repo        repositories.AccountRepository
+	repo        repositories.UserRepository
 	sessionRepo repositories.SessionRepository
 }
 
 func NewAuthService(
 	cfg *config.Config,
-	repo repositories.AccountRepository,
+	repo repositories.UserRepository,
 	sessionRepo repositories.SessionRepository,
 ) AuthService {
 	return &authService{
@@ -158,18 +158,18 @@ func (s *authService) Login(ctx context.Context, req *models.LoginRequest) (*mod
 		return nil, &ValidationError{Field: "password", Issue: "required", Message: "La contraseña es obligatoria"}
 	}
 
-	account, err := s.repo.GetByEmail(ctx, req.Email)
+	usuario, err := s.repo.GetByEmail(ctx, req.Email)
 	if err != nil {
 		return nil, err
 	}
 
-	if account == nil {
+	if usuario == nil {
 		// Run dummy comparison to prevent timing attacks
 		_ = bcrypt.CompareHashAndPassword([]byte("$2a$10$dummyhashplaceholderforsecurityreasonsinfo"), []byte(req.Password))
 		return nil, ErrInvalidCredentials
 	}
 
-	err = bcrypt.CompareHashAndPassword([]byte(account.PasswordHash), []byte(req.Password))
+	err = bcrypt.CompareHashAndPassword([]byte(usuario.ContrasenaHash), []byte(req.Password))
 	if err != nil {
 		return nil, ErrInvalidCredentials
 	}
@@ -180,9 +180,9 @@ func (s *authService) Login(ctx context.Context, req *models.LoginRequest) (*mod
 	}
 
 	sessionUser := &models.SessionUser{
-		ID:       account.ID,
-		Username: account.Username,
-		Email:    account.Email,
+		ID:       usuario.IDUsuario,
+		Username: usuario.Username,
+		Email:    usuario.Correo,
 	}
 
 	err = s.sessionRepo.Create(ctx, token, sessionUser, s.config.SessionTTL)

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/meloop/auth-service/config"
 	"github.com/meloop/auth-service/models"
@@ -84,7 +85,7 @@ func (m *mockSessionRepository) Delete(ctx context.Context, token string) error 
 
 func TestRegister_Success(t *testing.T) {
 	cfg := &config.Config{PasswordMinLength: 8}
-	repo := &mockAccountRepository{accounts: make(map[string]*models.Account)}
+	repo := &mockUserRepository{users: make(map[string]*models.Usuario)}
 	sessionRepo := &mockSessionRepository{sessions: make(map[string]*models.SessionUser)}
 	srv := services.NewAuthService(cfg, repo, sessionRepo)
 
@@ -130,10 +131,9 @@ func TestRegister_Success(t *testing.T) {
 	}
 }
 
-// 2, 3, 4, 5, 6, 7, 8, 9: Validaciones exhaustivas de campos
 func TestRegister_ValidationErrors(t *testing.T) {
 	cfg := &config.Config{PasswordMinLength: 8}
-	repo := &mockAccountRepository{accounts: make(map[string]*models.Account)}
+	repo := &mockUserRepository{users: make(map[string]*models.Usuario)}
 	sessionRepo := &mockSessionRepository{sessions: make(map[string]*models.SessionUser)}
 	srv := services.NewAuthService(cfg, repo, sessionRepo)
 
@@ -143,7 +143,6 @@ func TestRegister_ValidationErrors(t *testing.T) {
 		expectedField string
 		expectedIssue string
 	}{
-		// 2. Username vacío
 		{
 			name: "empty username",
 			req: &models.RegisterRequest{
@@ -154,7 +153,6 @@ func TestRegister_ValidationErrors(t *testing.T) {
 			expectedField: "username",
 			expectedIssue: "required",
 		},
-		// 6. Username demasiado largo
 		{
 			name: "username too long",
 			req: &models.RegisterRequest{
@@ -165,7 +163,6 @@ func TestRegister_ValidationErrors(t *testing.T) {
 			expectedField: "username",
 			expectedIssue: "too_long",
 		},
-		// 3. Email vacío
 		{
 			name: "empty email",
 			req: &models.RegisterRequest{
@@ -176,7 +173,6 @@ func TestRegister_ValidationErrors(t *testing.T) {
 			expectedField: "email",
 			expectedIssue: "required",
 		},
-		// 7. Email demasiado largo
 		{
 			name: "email too long",
 			req: &models.RegisterRequest{
@@ -187,7 +183,6 @@ func TestRegister_ValidationErrors(t *testing.T) {
 			expectedField: "email",
 			expectedIssue: "too_long",
 		},
-		// 5. Email inválido
 		{
 			name: "invalid email format",
 			req: &models.RegisterRequest{
@@ -198,7 +193,6 @@ func TestRegister_ValidationErrors(t *testing.T) {
 			expectedField: "email",
 			expectedIssue: "invalid_format",
 		},
-		// 4. Password vacía
 		{
 			name: "empty password",
 			req: &models.RegisterRequest{
@@ -209,7 +203,6 @@ func TestRegister_ValidationErrors(t *testing.T) {
 			expectedField: "password",
 			expectedIssue: "required",
 		},
-		// 9. Password demasiado larga para bcrypt (> 72 caracteres)
 		{
 			name: "password too long",
 			req: &models.RegisterRequest{
@@ -220,7 +213,6 @@ func TestRegister_ValidationErrors(t *testing.T) {
 			expectedField: "password",
 			expectedIssue: "too_long",
 		},
-		// 8. Password demasiado corta
 		{
 			name: "password too short",
 			req: &models.RegisterRequest{
@@ -255,7 +247,6 @@ func TestRegister_ValidationErrors(t *testing.T) {
 	}
 }
 
-// 10. Username duplicado
 func TestRegister_DuplicateUsername(t *testing.T) {
 	cfg := &config.Config{PasswordMinLength: 8}
 	repo := &mockUserRepository{
@@ -282,7 +273,6 @@ func TestRegister_DuplicateUsername(t *testing.T) {
 	}
 }
 
-// 11. Email duplicado
 func TestRegister_DuplicateEmail(t *testing.T) {
 	cfg := &config.Config{PasswordMinLength: 8}
 	repo := &mockUserRepository{
@@ -295,7 +285,8 @@ func TestRegister_DuplicateEmail(t *testing.T) {
 			},
 		},
 	}
-	srv := services.NewAuthService(cfg, repo)
+	sessionRepo := &mockSessionRepository{sessions: make(map[string]*models.SessionUser)}
+	srv := services.NewAuthService(cfg, repo, sessionRepo)
 
 	req := &models.RegisterRequest{
 		Username: "seconduser",
@@ -308,7 +299,6 @@ func TestRegister_DuplicateEmail(t *testing.T) {
 	}
 }
 
-// 12. Error de persistencia
 func TestRegister_PersistenceError(t *testing.T) {
 	cfg := &config.Config{PasswordMinLength: 8}
 	expectedErr := errors.New("database disk I/O error")
@@ -333,11 +323,11 @@ func TestRegister_PersistenceError(t *testing.T) {
 	}
 }
 
-// 13. Verificación de que se almacena un hash bcrypt y nunca la contraseña original
 func TestRegister_BCryptHashVerification(t *testing.T) {
 	cfg := &config.Config{PasswordMinLength: 8}
 	repo := &mockUserRepository{users: make(map[string]*models.Usuario)}
-	srv := services.NewAuthService(cfg, repo)
+	sessionRepo := &mockSessionRepository{sessions: make(map[string]*models.SessionUser)}
+	srv := services.NewAuthService(cfg, repo, sessionRepo)
 
 	rawPassword := "SuperSecretPassword2026!"
 	req := &models.RegisterRequest{
@@ -356,17 +346,14 @@ func TestRegister_BCryptHashVerification(t *testing.T) {
 		t.Fatal("expected user to be in repository")
 	}
 
-	// Never store original plaintext password
 	if savedUser.ContrasenaHash == rawPassword {
 		t.Fatal("CRITICAL: Raw plaintext password was saved in contrasena_hash!")
 	}
 
-	// Must be a valid bcrypt hash
 	if !strings.HasPrefix(savedUser.ContrasenaHash, "$2a$") && !strings.HasPrefix(savedUser.ContrasenaHash, "$2b$") {
 		t.Errorf("expected contrasena_hash to start with bcrypt prefix ($2a$ or $2b$), got %s", savedUser.ContrasenaHash)
 	}
 
-	// Verify bcrypt compare succeeds
 	err = bcrypt.CompareHashAndPassword([]byte(savedUser.ContrasenaHash), []byte(rawPassword))
 	if err != nil {
 		t.Errorf("bcrypt verification failed: %v", err)
@@ -376,14 +363,14 @@ func TestRegister_BCryptHashVerification(t *testing.T) {
 func TestRegister_DatabaseUniqueViolationRace(t *testing.T) {
 	cfg := &config.Config{PasswordMinLength: 8}
 
-	// Test username unique constraint violation from DB
 	repoUsernameRace := &mockUserRepository{
 		users: make(map[string]*models.Usuario),
 		createFunc: func(ctx context.Context, user *models.Usuario) error {
 			return errors.New("ERROR: duplicate key value violates unique constraint \"usuario_username_key\" (SQLSTATE 23505)")
 		},
 	}
-	srvUsername := services.NewAuthService(cfg, repoUsernameRace)
+	sessionRepo := &mockSessionRepository{sessions: make(map[string]*models.SessionUser)}
+	srvUsername := services.NewAuthService(cfg, repoUsernameRace, sessionRepo)
 	req1 := &models.RegisterRequest{
 		Username: "duplicateuser",
 		Email:    "new@example.com",
@@ -394,14 +381,13 @@ func TestRegister_DatabaseUniqueViolationRace(t *testing.T) {
 		t.Errorf("expected ErrUsernameExists from database race mapping, got %v", err)
 	}
 
-	// Test correo/email unique constraint violation from DB
 	repoEmailRace := &mockUserRepository{
 		users: make(map[string]*models.Usuario),
 		createFunc: func(ctx context.Context, user *models.Usuario) error {
 			return errors.New("ERROR: duplicate key value violates unique constraint \"usuario_correo_key\" (SQLSTATE 23505)")
 		},
 	}
-	srvEmail := services.NewAuthService(cfg, repoEmailRace)
+	srvEmail := services.NewAuthService(cfg, repoEmailRace, sessionRepo)
 	req2 := &models.RegisterRequest{
 		Username: "newuser2",
 		Email:    "duplicate@example.com",
@@ -413,16 +399,18 @@ func TestRegister_DatabaseUniqueViolationRace(t *testing.T) {
 	}
 }
 
+// RF-02 Login: 1. Login con usuario existente y contraseña correcta
+// RF-02 Login: 4. Creación de sesión después de login exitoso
 func TestLogin_Success(t *testing.T) {
 	cfg := &config.Config{PasswordMinLength: 8, SessionTTL: 24 * time.Hour}
 	hashedPassword, _ := bcrypt.GenerateFromPassword([]byte("meloop123"), bcrypt.DefaultCost)
-	repo := &mockAccountRepository{
-		accounts: map[string]*models.Account{
+	repo := &mockUserRepository{
+		users: map[string]*models.Usuario{
 			"alan": {
-				ID:           "user-uuid-1",
-				Username:     "alan",
-				Email:        "alan@meloop.com",
-				PasswordHash: string(hashedPassword),
+				IDUsuario:      "user-uuid-1",
+				Username:       "alan",
+				Correo:         "alan@meloop.com",
+				ContrasenaHash: string(hashedPassword),
 			},
 		},
 	}
@@ -459,23 +447,25 @@ func TestLogin_Success(t *testing.T) {
 	}
 }
 
+// RF-02 Login: 2. Login con contraseña incorrecta
+// RF-02 Login: 3. Login con usuario inexistente
 func TestLogin_InvalidCredentials(t *testing.T) {
 	cfg := &config.Config{PasswordMinLength: 8, SessionTTL: 24 * time.Hour}
 	hashedPassword, _ := bcrypt.GenerateFromPassword([]byte("meloop123"), bcrypt.DefaultCost)
-	repo := &mockAccountRepository{
-		accounts: map[string]*models.Account{
+	repo := &mockUserRepository{
+		users: map[string]*models.Usuario{
 			"alan": {
-				ID:           "user-uuid-1",
-				Username:     "alan",
-				Email:        "alan@meloop.com",
-				PasswordHash: string(hashedPassword),
+				IDUsuario:      "user-uuid-1",
+				Username:       "alan",
+				Correo:         "alan@meloop.com",
+				ContrasenaHash: string(hashedPassword),
 			},
 		},
 	}
 	sessionRepo := &mockSessionRepository{sessions: make(map[string]*models.SessionUser)}
 	srv := services.NewAuthService(cfg, repo, sessionRepo)
 
-	// Case 1: Email not found
+	// Case 1: Usuario inexistente (email no encontrado)
 	req1 := &models.LoginRequest{
 		Email:    "wrong@meloop.com",
 		Password: "meloop123",
@@ -485,7 +475,7 @@ func TestLogin_InvalidCredentials(t *testing.T) {
 		t.Errorf("expected ErrInvalidCredentials for non-existent email, got %v", err)
 	}
 
-	// Case 2: Wrong password
+	// Case 2: Contraseña incorrecta
 	req2 := &models.LoginRequest{
 		Email:    "alan@meloop.com",
 		Password: "wrongpassword",
@@ -496,9 +486,10 @@ func TestLogin_InvalidCredentials(t *testing.T) {
 	}
 }
 
+// RF-03 Logout: 5. Logout
 func TestLogout_Success(t *testing.T) {
 	cfg := &config.Config{PasswordMinLength: 8, SessionTTL: 24 * time.Hour}
-	repo := &mockAccountRepository{accounts: make(map[string]*models.Account)}
+	repo := &mockUserRepository{users: make(map[string]*models.Usuario)}
 	sessionRepo := &mockSessionRepository{
 		sessions: map[string]*models.SessionUser{
 			"valid-token-123": {
@@ -521,9 +512,11 @@ func TestLogout_Success(t *testing.T) {
 	}
 }
 
+// RF-03 / Middleware: 6. Rechazo de una sesión después de logout
+// RF-03 / Middleware: 7. Rechazo de una sesión expirada/inexistente
 func TestValidateSession(t *testing.T) {
 	cfg := &config.Config{PasswordMinLength: 8, SessionTTL: 24 * time.Hour}
-	repo := &mockAccountRepository{accounts: make(map[string]*models.Account)}
+	repo := &mockUserRepository{users: make(map[string]*models.Usuario)}
 	sessionRepo := &mockSessionRepository{
 		sessions: map[string]*models.SessionUser{
 			"valid-token-123": {
@@ -544,9 +537,20 @@ func TestValidateSession(t *testing.T) {
 		t.Errorf("unexpected user returned: %+v", user)
 	}
 
-	// Case 2: Invalid/non-existent token
-	_, err = srv.ValidateSession(context.Background(), "invalid-token")
+	// Case 2: Invalidate session with Logout, then test rejection (Scenario 6)
+	err = srv.Logout(context.Background(), "valid-token-123")
+	if err != nil {
+		t.Fatalf("expected successful logout, got %v", err)
+	}
+
+	_, err = srv.ValidateSession(context.Background(), "valid-token-123")
 	if err == nil {
-		t.Error("expected error for invalid session token, got nil")
+		t.Error("expected error when validating session after logout, got nil")
+	}
+
+	// Case 3: Non-existent / expired token (Scenario 7)
+	_, err = srv.ValidateSession(context.Background(), "never-existed-token")
+	if err == nil {
+		t.Error("expected error for non-existent session token, got nil")
 	}
 }

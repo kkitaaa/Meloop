@@ -67,13 +67,8 @@ func httpcallFieldIssue(err *services.ValidationError) string {
 
 const httpcallValidation = httpresponse.ErrValidation
 
-type LoginRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
-}
-
-func Login(c *gin.Context) {
-	var req LoginRequest
+func (ctrl *AuthController) Login(c *gin.Context) {
+	var req models.LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		httpresponse.BadRequestGin(c, "Formato JSON de petición inválido")
 		return
