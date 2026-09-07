@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 
@@ -42,7 +43,7 @@ class _MainScreenState extends State<MainScreen> {
       await _player.setAsset('assets/audio/Sinaka, Easykid - DESCONTROL.mp3');
       _player.play();
     } catch (e) {
-      print('❌ Error cargando audio local: $e');
+      debugPrint('Error cargando audio local: $e');
     }
   }
 

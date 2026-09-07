@@ -66,5 +66,10 @@ def root():
 
 @app.post("/predict", response_model=RecommendationResponse)
 def predict_demo(payload: RecommendationRequest):
-    logger.info("recommendation_requested user_id=%s limit=%s", payload.user_id, payload.limit)
+    logger.info(
+        "recommendation_requested user_id=%s limit=%s interactions=%s",
+        payload.user_id,
+        payload.limit,
+        len(payload.interactions),
+    )
     return recommendation_service.generate(payload)
