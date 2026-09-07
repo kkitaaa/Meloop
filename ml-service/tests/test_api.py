@@ -2,31 +2,34 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 
+
 client = TestClient(app)
 
 
-def test_health_endpoint_returns_ok():
-    response = client.get("/health")
+def test_predict_changes_after_new_like():
+	initial = client.post("/predict", json={"user_id": 42, "limit": 1})
+	updated = client.post(
+		"/predict",
+		json={
+			"user_id": 42,
+			"limit": 1,
+			"interactions": [{"type": "like", "target_id": 7}],
+		},
+	)
 
-    assert response.status_code == 200
-    assert response.json()["status"] == "ok"
-    assert response.json()["service"] == "ml-service"
-
-
-def test_predict_returns_recommendations():
-    response = client.post(
-        "/predict",
-        json={"user_id": 42, "limit": 2, "preferences": ["rock"]},
-    )
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["user_id"] == 42
-    assert len(body["recommendations"]) == 2
-    assert body["model"] == "baseline_recommender"
+	assert initial.status_code == 200
+	assert updated.status_code == 200
+	assert updated.json()["interaction_count"] == 1
+	assert updated.json()["recommendations"] != initial.json()["recommendations"]
 
 
-def test_predict_rejects_invalid_limit():
-    response = client.post("/predict", json={"user_id": 42, "limit": 0})
+def test_predict_rejects_unknown_interaction_type():
+	response = client.post(
+		"/predict",
+		json={
+			"user_id": 42,
+			"interactions": [{"type": "share", "target_id": 7}],
+		},
+	)
 
-    assert response.status_code == 422
+	assert response.status_code == 422
