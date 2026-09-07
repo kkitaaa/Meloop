@@ -1,6 +1,10 @@
 from typing import List
 
-from app.schemas.recommendation_schema import RecommendationItem, RecommendationRequest, RecommendationResponse
+from app.schemas.recommendation_schema import (
+    RecommendationItem,
+    RecommendationRequest,
+    RecommendationResponse,
+)
 
 
 class RecommendationService:

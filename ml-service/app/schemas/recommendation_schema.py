@@ -11,7 +11,9 @@ class Interaction(BaseModel):
 class RecommendationRequest(BaseModel):
     user_id: int = Field(..., description="ID del usuario para generar recomendaciones.")
     limit: int = Field(default=10, ge=1, le=50, description="Cantidad máxima de sugerencias.")
-    preferences: List[str] = Field(default_factory=list, description="Gustos o categorías del usuario.")
+    preferences: List[str] = Field(
+        default_factory=list, description="Gustos o categorías del usuario."
+    )
     interactions: List[Interaction] = Field(
         default_factory=list,
         description="Interacciones recientes que pueden cambiar las sugerencias.",
