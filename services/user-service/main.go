@@ -29,8 +29,16 @@ func main() {
 	}
 
 	userRepo := repositories.NewUserRepository(dbPool)
+	privacyRepo := repositories.NewPrivacyRepository(dbPool)
+	notifRepo := repositories.NewNotificationConfigRepository(dbPool)
+
 	userSrv := services.NewUserService(userRepo)
+	privacySrv := services.NewPrivacyService(privacyRepo, userRepo)
+	notifSrv := services.NewNotificationConfigService(notifRepo, userRepo)
+
 	accountCtrl := controllers.NewAccountController(userSrv)
+	privacyCtrl := controllers.NewPrivacyController(privacySrv)
+	notifCtrl := controllers.NewNotificationController(notifSrv)
 
 	router := gin.New()
 	router.Use(logging.GinMiddleware(logger))
@@ -44,9 +52,27 @@ func main() {
 	protected := router.Group("/users")
 	protected.Use(controllers.AuthRequired())
 	{
+		// Datos básicos de cuenta
 		protected.GET("/me", accountCtrl.GetAccount)
 		protected.PATCH("/me/username", accountCtrl.UpdateUsername)
 		protected.POST("/me/email", accountCtrl.RequestEmailChange)
+
+		// Configuración de Privacidad (RF-05 / RF-55)
+		protected.GET("/me/privacy", privacyCtrl.GetPrivacy)
+		protected.PATCH("/me/privacy", privacyCtrl.UpdatePrivacy)
+		protected.PUT("/me/privacy", privacyCtrl.UpdatePrivacy)
+		protected.GET("/me/privacidad", privacyCtrl.GetPrivacy)
+		protected.PATCH("/me/privacidad", privacyCtrl.UpdatePrivacy)
+
+		// Configuración de Notificaciones (RF-05 / RF-52)
+		protected.GET("/me/notifications/settings", notifCtrl.GetNotificationSettings)
+		protected.PATCH("/me/notifications/settings", notifCtrl.UpdateNotificationSettings)
+		protected.PUT("/me/notifications/settings", notifCtrl.UpdateNotificationSettings)
+		protected.PATCH("/me/notifications/settings/:tipo", notifCtrl.UpdateSingleSetting)
+		protected.GET("/me/notifications", notifCtrl.GetNotificationSettings)
+		protected.PATCH("/me/notifications", notifCtrl.UpdateNotificationSettings)
+		protected.GET("/me/notificaciones", notifCtrl.GetNotificationSettings)
+		protected.PATCH("/me/notificaciones", notifCtrl.UpdateNotificationSettings)
 	}
 
 	logger.Info("service_listening", "port", cfg.Port)
