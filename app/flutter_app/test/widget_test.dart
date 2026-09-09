@@ -8,7 +8,7 @@ void main() {
 
     // Verify that the initial text is displayed.
     expect(
-      find.text('Estructura inicial configurada correctamente'),
+      find.text('Feed Principal\n(Navega al Perfil y la música no se cortará)'),
       findsOneWidget,
     );
   });
