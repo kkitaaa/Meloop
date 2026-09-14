@@ -9,7 +9,10 @@ class FeedScreen extends StatelessWidget {
       backgroundColor: const Color(0xFF1E3D59),
       appBar: AppBar(
         backgroundColor: const Color(0xFF11B49F),
-        title: const Text("Meloop", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+        title: const Text(
+          "Meloop",
+          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+        ),
         centerTitle: true,
       ),
       body: LayoutBuilder(
@@ -35,7 +38,10 @@ class FeedScreen extends StatelessWidget {
                 children: [
                   _buildProfileCard(),
                   const SizedBox(height: 16),
-                  SizedBox(height: 600, child: _buildFeed()), // Altura fija temporal para la lista
+                  SizedBox(
+                    height: 600,
+                    child: _buildFeed(),
+                  ), // Altura fija temporal para la lista
                 ],
               ),
             );
@@ -53,10 +59,16 @@ class FeedScreen extends StatelessWidget {
         child: Column(
           children: const [
             Icon(Icons.person, size: 80),
-            Text("Vicente Flores", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+            Text(
+              "Vicente Flores",
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+            ),
             SizedBox(height: 8),
             Text("Me siento Feliz"),
-            Text("Escuchando: DJ GOUZ", style: TextStyle(fontStyle: FontStyle.italic)),
+            Text(
+              "Escuchando: DJ GOUZ",
+              style: TextStyle(fontStyle: FontStyle.italic),
+            ),
           ],
         ),
       ),
@@ -67,13 +79,19 @@ class FeedScreen extends StatelessWidget {
     return Container(
       decoration: const BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.only(topRight: Radius.circular(20), topLeft: Radius.circular(20)),
+        borderRadius: BorderRadius.only(
+          topRight: Radius.circular(20),
+          topLeft: Radius.circular(20),
+        ),
       ),
       padding: const EdgeInsets.all(24.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text("Últimos Blogs:", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+          const Text(
+            "Últimos Blogs:",
+            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+          ),
           const Divider(),
           Expanded(
             child: ListView.builder(
