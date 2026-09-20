@@ -1,5 +1,3 @@
-from typing import List
-
 from app.schemas.recommendation_schema import (
     RecommendationItem,
     RecommendationRequest,
@@ -12,7 +10,7 @@ class RecommendationService:
         self.model_name = "baseline_recommender"
 
     def generate(self, request: RecommendationRequest) -> RecommendationResponse:
-        recommendations: List[RecommendationItem] = []
+        recommendations: list[RecommendationItem] = []
         interaction_count = len(request.interactions)
         liked_items = {
             interaction.target_id
