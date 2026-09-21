@@ -29,7 +29,9 @@ class RecommendationService:
     def generate_music_recommendations(
         self, request: MusicRecommendationRequest
     ) -> RecommendationResponse:
-        user_data = self._profile_data(request.profile.genres, request.profile.artists, request.profile.songs)
+        user_data = self._profile_data(
+            request.profile.genres, request.profile.artists, request.profile.songs
+        )
         user_data["user_id"] = request.user_id
         processed_user = self.preferences_pipeline.transform(user_data)
         if not processed_user.preference_features:
@@ -44,11 +46,7 @@ class RecommendationService:
         feature_names = tuple(
             sorted(
                 set(processed_user.preference_features)
-                | {
-                    feature
-                    for item in processed_catalog
-                    for feature in item.preference_features
-                }
+                | {feature for item in processed_catalog for feature in item.preference_features}
             )
         )
         user_vector = self._align_vector(
