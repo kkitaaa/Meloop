@@ -32,7 +32,9 @@ class CatalogRecommendation:
     matching_features: tuple[str, ...] = ()
 
 
-CollaborativeScorer = Callable[[Sequence[float] | np.ndarray | spmatrix, Sequence[int]], Sequence[float]]
+CollaborativeScorer = Callable[
+    [Sequence[float] | np.ndarray | spmatrix, Sequence[int]], Sequence[float]
+]
 
 
 @dataclass

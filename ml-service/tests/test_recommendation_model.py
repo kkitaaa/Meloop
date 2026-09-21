@@ -63,9 +63,7 @@ def test_recommend_catalog_ranks_music_by_content_similarity(model):
 
 
 def test_recommend_catalog_allows_injecting_collaborative_scores():
-    model = RecommendationModel(
-        collaborative_scorer=lambda _user_vector, _item_ids: [0.0, 1.0]
-    )
+    model = RecommendationModel(collaborative_scorer=lambda _user_vector, _item_ids: [0.0, 1.0])
 
     recommendations = model.recommend_catalog([1, 0], [[1, 0], [1, 0]], [10, 20])
 
