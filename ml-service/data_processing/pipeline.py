@@ -55,8 +55,7 @@ class UserPreferencesPipeline:
         )
 
         preference_labels = [
-            [f"genre:{genre}" for genre in genres]
-            + [f"artist:{artist}" for artist in artists]
+            [f"genre:{genre}" for genre in genres] + [f"artist:{artist}" for artist in artists]
         ]
         preference_matrix, preference_features = self._encode(preference_labels)
 
@@ -99,9 +98,7 @@ class UserPreferencesPipeline:
 
     def _normalize_friend_values(self, values: list[Any]) -> list[str]:
         normalized_values = (
-            str(value).strip()
-            for value in values
-            if value is not None and str(value).strip()
+            str(value).strip() for value in values if value is not None and str(value).strip()
         )
         return self._unique_sorted(normalized_values)
 
