@@ -73,3 +73,15 @@ def predict_demo(payload: RecommendationRequest):
         len(payload.interactions),
     )
     return recommendation_service.generate(payload)
+
+
+@app.post("/recommendations/friends", response_model=RecommendationResponse)
+def recommend_friends(payload: RecommendationRequest):
+    """Return the best compatible friend candidates for a user profile."""
+    logger.info(
+        "friend_recommendation_requested user_id=%s limit=%s candidates=%s",
+        payload.user_id,
+        payload.limit,
+        len(payload.candidate_profiles),
+    )
+    return recommendation_service.generate_friend_recommendations(payload)
