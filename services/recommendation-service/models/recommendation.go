@@ -8,6 +8,7 @@ type Interaction struct {
 type RecommendationRequest struct {
 	UserID       int           `json:"user_id"`
 	Limit        int           `json:"limit"`
+	Type         string        `json:"type,omitempty"`
 	Preferences  []string      `json:"preferences"`
 	Interactions []Interaction `json:"interactions"`
 }

@@ -23,4 +23,8 @@ func SetupRoutes(router *gin.Engine) {
 	// Enrutar peticiones de relaciones sociales (conservando el prefijo /friends en el destino)
 	router.Any("/friends", controllers.ProxyToService("SOCIAL_SERVICE_URL", "http://localhost:8086", ""))
 	router.Any("/friends/*any", controllers.ProxyToService("SOCIAL_SERVICE_URL", "http://localhost:8086", ""))
+
+	// Enrutar peticiones de recomendaciones (conservando el prefijo /recommendations en el destino)
+	router.Any("/recommendations", controllers.ProxyToService("RECOMMENDATION_SERVICE_URL", "http://localhost:8087", ""))
+	router.Any("/recommendations/*any", controllers.ProxyToService("RECOMMENDATION_SERVICE_URL", "http://localhost:8087", ""))
 }
