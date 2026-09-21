@@ -1,5 +1,5 @@
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
 import numpy as np
 from scipy.sparse import issparse, spmatrix
@@ -81,6 +81,8 @@ class RecommendationModel:
 
         return tuple(
             name
-            for name, first_value, second_value in zip(feature_names, first, second)
+            for name, first_value, second_value in zip(
+                feature_names, first, second, strict=True
+            )
             if first_value > 0 and second_value > 0
         )
