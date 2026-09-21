@@ -81,8 +81,6 @@ class RecommendationModel:
 
         return tuple(
             name
-            for name, first_value, second_value in zip(
-                feature_names, first, second, strict=True
-            )
+            for name, first_value, second_value in zip(feature_names, first, second, strict=True)
             if first_value > 0 and second_value > 0
         )
