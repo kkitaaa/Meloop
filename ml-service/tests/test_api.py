@@ -52,7 +52,11 @@ def test_friend_recommendations_rank_candidates_and_explain_matches():
     assert response.status_code == 200
     assert response.json()["recommendations"] == [
         {"item_id": 7, "score": 0.7071, "reason": "Ambos escuchan a Rock"},
-        {"item_id": 8, "score": 0.0, "reason": "No se encontraron preferencias musicales o sociales en común"},
+        {
+            "item_id": 8,
+            "score": 0.0,
+            "reason": "No se encontraron preferencias musicales o sociales en común",
+        },
     ]
 
 

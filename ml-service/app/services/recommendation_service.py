@@ -61,7 +61,12 @@ class RecommendationService:
             if candidate.user_id != request.user_id
         ]
         feature_names = sorted(
-            user_features | {feature for candidate in candidates for feature in self._candidate_features(candidate)}
+            user_features
+            | {
+                feature
+                for candidate in candidates
+                for feature in self._candidate_features(candidate)
+            }
         )
         user_vector = [float(feature in user_features) for feature in feature_names]
         ranked: list[RecommendationItem] = []
