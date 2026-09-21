@@ -70,9 +70,7 @@ def test_fetch_preferences_adds_user_id_and_decodes_json(monkeypatch):
 
     monkeypatch.setattr("data_processing.source.urlopen", fake_urlopen)
 
-    assert fetch_preferences("http://go-service/preferences?format=raw", 42) == {
-        "genres": ["Rock"]
-    }
+    assert fetch_preferences("http://go-service/preferences?format=raw", 42) == {"genres": ["Rock"]}
     assert captured == {
         "url": "http://go-service/preferences?format=raw&user_id=42",
         "timeout": 10.0,

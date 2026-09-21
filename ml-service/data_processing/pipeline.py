@@ -60,11 +60,13 @@ class UserPreferencesPipeline:
             ]
         )
 
-        preference_labels = [[
-            *[f"genre:{genre}" for genre in genres],
-            *[f"artist:{artist}" for artist in artists],
-            *[f"song:{song}" for song in songs],
-        ]]
+        preference_labels = [
+            [
+                *[f"genre:{genre}" for genre in genres],
+                *[f"artist:{artist}" for artist in artists],
+                *[f"song:{song}" for song in songs],
+            ]
+        ]
         preference_matrix, preference_features = self._encode(preference_labels)
 
         friend_labels = [[f"friend:{friend}" for friend in friends]]
