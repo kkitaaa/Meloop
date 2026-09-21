@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 
 
 class Interaction(BaseModel):
-    type: Literal["like", "friend_added"]
+    type: Literal["like", "friend_added", "comment", "post_interaction"]
     target_id: int
 
 

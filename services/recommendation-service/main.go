@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"log"
 	"log/slog"
 	"net/http"
 	"os"
@@ -9,14 +11,16 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/meloop/recommendation-service/models"
+	"github.com/meloop/recommendation-service/repositories"
 	"github.com/meloop/recommendation-service/services"
 )
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	mlURL := getenv("ML_SERVICE_URL", "http://127.0.0.1:8001")
-	recommendationService := services.NewRecommendationService(services.NewMLClient(mlURL), 30*time.Second)
+	recommendationService := services.NewRecommendationServiceWithRepository(services.NewMLClient(mlURL), 30*time.Second, openProfileRepository())
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", healthHandler)
@@ -28,6 +32,19 @@ func main() {
 	if err := http.ListenAndServe(address, mux); err != nil {
 		logger.Error("service_stopped", "error", err)
 	}
+}
+
+func openProfileRepository() repositories.UserProfileRepository {
+	databaseURL := os.Getenv("DATABASE_URL")
+	if databaseURL == "" {
+		return nil
+	}
+	pool, err := pgxpool.New(context.Background(), databaseURL)
+	if err != nil {
+		log.Printf("recommendation database disabled: %v", err)
+		return nil
+	}
+	return repositories.NewUserProfileRepository(pool)
 }
 
 func healthHandler(writer http.ResponseWriter, request *http.Request) {
