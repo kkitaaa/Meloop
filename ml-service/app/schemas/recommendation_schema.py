@@ -37,6 +37,26 @@ class RecommendationRequest(BaseModel):
     )
 
 
+class MusicCatalogItem(BaseModel):
+    item_id: int = Field(..., ge=1)
+    profile: UserProfile = Field(default_factory=UserProfile)
+
+
+class MusicRecommendationRequest(BaseModel):
+    user_id: int = Field(..., ge=1, description="ID del usuario para generar recomendaciones.")
+    limit: int = Field(default=10, ge=1, le=50, description="Cantidad máxima de sugerencias.")
+    preferences: list[str] = Field(
+        default_factory=list, description="Gustos adicionales del usuario."
+    )
+    profile: UserProfile = Field(default_factory=UserProfile)
+    interactions: list[Interaction] = Field(default_factory=list)
+    catalog: list[MusicCatalogItem] = Field(
+        ...,
+        min_length=1,
+        description="Canciones o artistas candidatos que se deben ordenar.",
+    )
+
+
 class RecommendationItem(BaseModel):
     item_id: int
     score: float

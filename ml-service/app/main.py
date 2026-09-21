@@ -4,7 +4,11 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from app.logging_config import configure_logging
-from app.schemas.recommendation_schema import RecommendationRequest, RecommendationResponse
+from app.schemas.recommendation_schema import (
+    MusicRecommendationRequest,
+    RecommendationRequest,
+    RecommendationResponse,
+)
 from app.services.recommendation_service import RecommendationService
 
 logger = configure_logging()
@@ -85,3 +89,14 @@ def recommend_friends(payload: RecommendationRequest):
         len(payload.candidate_profiles),
     )
     return recommendation_service.generate_friend_recommendations(payload)
+
+
+@app.post("/recommendations/music", response_model=RecommendationResponse)
+def recommend_music(payload: MusicRecommendationRequest):
+    logger.info(
+        "music_recommendation_requested user_id=%s limit=%s catalog=%s",
+        payload.user_id,
+        payload.limit,
+        len(payload.catalog),
+    )
+    return recommendation_service.generate_music_recommendations(payload)

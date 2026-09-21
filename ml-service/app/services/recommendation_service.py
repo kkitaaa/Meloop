@@ -1,16 +1,85 @@
+from scipy.sparse import csr_matrix, vstack
+
 from app.models.recommendation_model import RecommendationModel
 from app.schemas.recommendation_schema import (
     CandidateProfile,
+    MusicRecommendationRequest,
     RecommendationItem,
     RecommendationRequest,
     RecommendationResponse,
 )
+from data_processing import UserPreferencesPipeline
+
+
+class CompatibilityReason:
+    @staticmethod
+    def from_features(features: tuple[str, ...]) -> str:
+        if not features:
+            return "No se encontraron preferencias musicales en común"
+        labels = ", ".join(feature.partition(":")[2].title() for feature in features)
+        return f"Coincide con tus preferencias: {labels}"
 
 
 class RecommendationService:
     def __init__(self) -> None:
         self.model = RecommendationModel()
         self.model_name = self.model.name
+        self.preferences_pipeline = UserPreferencesPipeline()
+
+    def generate_music_recommendations(
+        self, request: MusicRecommendationRequest
+    ) -> RecommendationResponse:
+        user_data = self._profile_data(request.profile.genres, request.profile.artists, request.profile.songs)
+        user_data["user_id"] = request.user_id
+        processed_user = self.preferences_pipeline.transform(user_data)
+        if not processed_user.preference_features:
+            return self._empty_response(request, "El usuario no tiene historial musical suficiente")
+
+        processed_catalog = [
+            self.preferences_pipeline.transform(
+                self._profile_data(item.profile.genres, item.profile.artists, item.profile.songs)
+            )
+            for item in request.catalog
+        ]
+        feature_names = tuple(
+            sorted(
+                set(processed_user.preference_features)
+                | {
+                    feature
+                    for item in processed_catalog
+                    for feature in item.preference_features
+                }
+            )
+        )
+        user_vector = self._align_vector(
+            processed_user.preference_matrix, processed_user.preference_features, feature_names
+        )
+        catalog_vectors = vstack(
+            [
+                self._align_vector(item.preference_matrix, item.preference_features, feature_names)
+                for item in processed_catalog
+            ]
+        )
+        ranked = self.model.recommend_catalog(
+            user_vector,
+            catalog_vectors,
+            [item.item_id for item in request.catalog],
+            feature_names,
+            request.limit,
+        )
+        return RecommendationResponse(
+            user_id=request.user_id,
+            recommendations=[
+                RecommendationItem(
+                    item_id=item.item_id,
+                    score=item.score,
+                    reason=CompatibilityReason.from_features(item.matching_features),
+                )
+                for item in ranked
+            ],
+            model="music_content_similarity",
+            interaction_count=len(request.interactions),
+        )
 
     def generate(self, request: RecommendationRequest) -> RecommendationResponse:
         if request.candidate_profiles:
@@ -100,6 +169,21 @@ class RecommendationService:
             request.profile.artists,
             request.profile.songs,
         ) | set(request.preferences)
+
+    @staticmethod
+    def _profile_data(genres: list[str], artists: list[str], songs: list[str]) -> dict:
+        return {"genres": genres, "artists": artists, "songs": songs}
+
+    @staticmethod
+    def _align_vector(
+        matrix: csr_matrix, names: tuple[str, ...], feature_names: tuple[str, ...]
+    ) -> csr_matrix:
+        positions = {name: index for index, name in enumerate(feature_names)}
+        indices = [positions[name] for name in names]
+        return csr_matrix(
+            (matrix.data, ([0] * len(indices), indices)),
+            shape=(1, len(feature_names)),
+        )
 
     @staticmethod
     def _candidate_features(candidate: CandidateProfile) -> set[str]:

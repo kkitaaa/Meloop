@@ -33,7 +33,39 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8001
 - GET `/` - información general
 - GET `/health` - estado del servicio
 - POST `/predict` - endpoint de prueba para recibir payloads del backend
+- POST `/recommendations/music` - ordena un catálogo de canciones o artistas por similitud
+	con el perfil musical del usuario
 - POST `/recommendations/friends` - devuelve candidatos ordenados por compatibilidad musical
+
+### Recomendaciones musicales
+
+`POST /recommendations/music` valida el payload con Pydantic, normaliza el perfil y el
+catálogo mediante `UserPreferencesPipeline`, y usa similitud coseno de scikit-learn para
+ordenar los candidatos. El servicio no inventa canciones: el backend debe enviar el
+catálogo que quiere que el modelo evalúe.
+
+Ejemplo de petición:
+
+```json
+{
+	"user_id": 42,
+	"limit": 2,
+	"profile": {
+		"genres": ["rock"],
+		"artists": ["Arctic Monkeys"],
+		"songs": []
+	},
+	"catalog": [
+		{"item_id": 101, "profile": {"genres": ["rock"], "artists": ["Arctic Monkeys"]}},
+		{"item_id": 102, "profile": {"genres": ["jazz"], "artists": ["Miles Davis"]}}
+	]
+}
+```
+
+La respuesta usa el contrato común de recomendaciones (`user_id`, `recommendations`,
+`model` e `interaction_count`). Cada recomendación incluye `item_id`, `score` y una
+razón basada en las preferencias compartidas. `catalog` debe contener al menos un
+elemento y `limit` está restringido al intervalo 1-50.
 
 ### Recomendaciones de amigos
 
