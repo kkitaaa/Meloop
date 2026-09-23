@@ -1,6 +1,6 @@
 import numpy as np
 
-from data_processing import UserPreferencesPipeline
+from data_processing import UserPreferencesPipeline, fetch_preferences
 
 
 def test_transform_normalizes_deduplicates_and_vectorizes_preferences():
@@ -38,3 +38,40 @@ def test_transform_accepts_aliases_and_empty_values():
     assert processed.preference_features == ("artist:jazz",)
     assert processed.preference_matrix.shape == (1, 1)
     assert processed.friend_matrix.shape == (1, 0)
+
+
+def test_transform_includes_songs_in_the_model_matrix():
+    processed = UserPreferencesPipeline().transform(
+        {"user_id": 10, "tracks": [" Song A ", None, "song a"]}
+    )
+
+    assert processed.normalized_data.iloc[0]["songs"] == ["song a"]
+    assert processed.preference_features == ("song:song a",)
+    assert np.array_equal(processed.preference_matrix.toarray(), [[1]])
+
+
+def test_fetch_preferences_adds_user_id_and_decodes_json(monkeypatch):
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            return b'{"genres": ["Rock"]}'
+
+    captured = {}
+
+    def fake_urlopen(request, timeout):
+        captured["url"] = request.full_url
+        captured["timeout"] = timeout
+        return FakeResponse()
+
+    monkeypatch.setattr("data_processing.source.urlopen", fake_urlopen)
+
+    assert fetch_preferences("http://go-service/preferences?format=raw", 42) == {"genres": ["Rock"]}
+    assert captured == {
+        "url": "http://go-service/preferences?format=raw&user_id=42",
+        "timeout": 10.0,
+    }

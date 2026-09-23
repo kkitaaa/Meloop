@@ -31,6 +31,9 @@ class UserPreferencesPipeline:
         "music_genres": "genres",
         "artists": "artists",
         "favorite_artists": "artists",
+        "songs": "songs",
+        "tracks": "songs",
+        "favorite_songs": "songs",
         "friends": "friends",
         "friend_ids": "friends",
     }
@@ -42,6 +45,7 @@ class UserPreferencesPipeline:
         user_id = raw_data.get("user_id")
         genres = self._normalize_text_values(self._get_values(raw_data, "genres"))
         artists = self._normalize_text_values(self._get_values(raw_data, "artists"))
+        songs = self._normalize_text_values(self._get_values(raw_data, "songs"))
         friends = self._normalize_friend_values(self._get_values(raw_data, "friends"))
 
         normalized_data = pd.DataFrame(
@@ -50,13 +54,18 @@ class UserPreferencesPipeline:
                     "user_id": user_id,
                     "genres": genres,
                     "artists": artists,
+                    "songs": songs,
                     "friends": friends,
                 }
             ]
         )
 
         preference_labels = [
-            [f"genre:{genre}" for genre in genres] + [f"artist:{artist}" for artist in artists]
+            [
+                *[f"genre:{genre}" for genre in genres],
+                *[f"artist:{artist}" for artist in artists],
+                *[f"song:{song}" for song in songs],
+            ]
         ]
         preference_matrix, preference_features = self._encode(preference_labels)
 
