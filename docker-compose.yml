@@ -98,7 +98,7 @@ services:
       - meloop-network
 
   minio-init:
-    image: minio/mc:latest
+    image: quay.io/minio/mc:latest
     container_name: meloop-minio-init
     depends_on:
       - minio
