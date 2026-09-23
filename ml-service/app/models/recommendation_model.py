@@ -1,4 +1,4 @@
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 import numpy as np
@@ -25,10 +25,23 @@ class CompatibilityResult:
         return value.title() if separator else feature
 
 
+@dataclass(frozen=True)
+class CatalogRecommendation:
+    item_id: int
+    score: float
+    matching_features: tuple[str, ...] = ()
+
+
+CollaborativeScorer = Callable[
+    [Sequence[float] | np.ndarray | spmatrix, Sequence[int]], Sequence[float]
+]
+
+
 @dataclass
 class RecommendationModel:
     name: str = "profile_compatibility"
     version: str = "1.0.0"
+    collaborative_scorer: CollaborativeScorer | None = None
 
     def compare_profiles(
         self,
@@ -57,6 +70,61 @@ class RecommendationModel:
             matching_features=matching_features,
         )
 
+    def recommend_catalog(
+        self,
+        user_vector: Sequence[float] | np.ndarray | spmatrix,
+        catalog_vectors: Sequence[Sequence[float]] | np.ndarray | spmatrix,
+        item_ids: Sequence[int],
+        feature_names: Sequence[str] = (),
+        limit: int = 10,
+    ) -> tuple[CatalogRecommendation, ...]:
+        """Rank catalog items by content similarity with the user's vector.
+
+        ``catalog_vectors`` must use the same feature columns as ``user_vector``.
+        A collaborative scorer can be injected later; when present, its scores are
+        averaged with the content scores without changing this method's contract.
+        """
+        if limit < 1:
+            raise ValueError("El límite debe ser mayor que cero")
+        if len(item_ids) != self._row_count(catalog_vectors):
+            raise ValueError("Debe existir un ID por cada elemento del catálogo")
+
+        user = self._as_row_vector(user_vector)
+        catalog = self._as_catalog_matrix(catalog_vectors)
+        if user.shape[1] != catalog.shape[1]:
+            raise ValueError("El usuario y el catálogo deben tener la misma dimensión")
+        if feature_names and len(feature_names) != user.shape[1]:
+            raise ValueError("Debe existir un nombre por cada componente del vector")
+        if catalog.shape[0] == 0:
+            return ()
+
+        content_scores = cosine_similarity(user, catalog)[0]
+        scores = np.asarray(content_scores, dtype=float)
+        if self.collaborative_scorer is not None:
+            collaborative_scores = np.asarray(
+                self.collaborative_scorer(user_vector, item_ids), dtype=float
+            )
+            if collaborative_scores.shape != scores.shape:
+                raise ValueError("El filtro colaborativo debe devolver un puntaje por elemento")
+            scores = (scores + collaborative_scores) / 2
+
+        user_values = user.toarray().ravel() if issparse(user) else user[0]
+        ranked_indices = sorted(range(len(item_ids)), key=lambda index: (-scores[index], index))
+        return tuple(
+            CatalogRecommendation(
+                item_id=item_ids[index],
+                score=round(float(np.clip(scores[index], 0.0, 1.0)), 4),
+                matching_features=self._matching_features(
+                    user_values,
+                    catalog.getrow(index).toarray().ravel()
+                    if issparse(catalog)
+                    else catalog[index],
+                    feature_names,
+                ),
+            )
+            for index in ranked_indices[:limit]
+        )
+
     @staticmethod
     def _as_row_vector(
         vector: Sequence[float] | np.ndarray | spmatrix,
@@ -67,6 +135,21 @@ class RecommendationModel:
         if values.ndim != 2 or values.shape[0] != 1:
             raise ValueError("Cada perfil debe ser un vector unidimensional")
         return values
+
+    @staticmethod
+    def _as_catalog_matrix(
+        vectors: Sequence[Sequence[float]] | np.ndarray | spmatrix,
+    ) -> np.ndarray | spmatrix:
+        values = vectors.astype(float) if issparse(vectors) else np.asarray(vectors, dtype=float)
+        if values.ndim != 2:
+            raise ValueError("El catálogo debe ser una matriz bidimensional")
+        return values
+
+    @staticmethod
+    def _row_count(vectors: Sequence[Sequence[float]] | np.ndarray | spmatrix) -> int:
+        if not hasattr(vectors, "shape"):
+            return len(vectors)
+        return vectors.shape[0]
 
     @staticmethod
     def _matching_features(
