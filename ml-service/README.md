@@ -33,6 +33,38 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8001
 - GET `/` - información general
 - GET `/health` - estado del servicio
 - POST `/predict` - endpoint de prueba para recibir payloads del backend
+- POST `/recommendations/friends` - devuelve candidatos ordenados por compatibilidad musical
+
+### Recomendaciones de amigos
+
+`POST /recommendations/friends` recibe el `user_id`, el perfil musical del usuario y los
+perfiles candidatos. La respuesta incluye como máximo `limit` candidatos, su puntuación de
+compatibilidad y una razón legible basada en las preferencias compartidas. FastAPI publica
+el contrato interactivo en `/docs` y el esquema OpenAPI en `/openapi.json`.
+
+Ejemplo de petición:
+
+```json
+{
+	"user_id": 42,
+	"limit": 5,
+	"profile": {
+		"genres": ["rock"],
+		"artists": ["Arctic Monkeys"],
+		"songs": []
+	},
+	"candidate_profiles": [
+		{
+			"user_id": 7,
+			"profile": {"genres": ["rock"], "artists": ["Radiohead"], "songs": []}
+		}
+	]
+}
+```
+
+Si el usuario no tiene géneros, artistas, canciones o preferencias, el servicio responde
+`200` con `recommendations: []` y no inventa candidatos. Los IDs deben ser positivos y
+`limit` está restringido al intervalo 1-50.
 
 ## Estructura
 

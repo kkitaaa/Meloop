@@ -1,4 +1,6 @@
+from app.models.recommendation_model import RecommendationModel
 from app.schemas.recommendation_schema import (
+    CandidateProfile,
     RecommendationItem,
     RecommendationRequest,
     RecommendationResponse,
@@ -7,9 +9,13 @@ from app.schemas.recommendation_schema import (
 
 class RecommendationService:
     def __init__(self) -> None:
-        self.model_name = "baseline_recommender"
+        self.model = RecommendationModel()
+        self.model_name = self.model.name
 
     def generate(self, request: RecommendationRequest) -> RecommendationResponse:
+        if request.candidate_profiles:
+            return self.generate_friend_recommendations(request)
+
         recommendations: list[RecommendationItem] = []
         interaction_count = len(request.interactions)
         liked_items = {
@@ -40,4 +46,82 @@ class RecommendationService:
             recommendations=recommendations,
             model=self.model_name,
             interaction_count=interaction_count,
+        )
+
+    def generate_friend_recommendations(
+        self, request: RecommendationRequest
+    ) -> RecommendationResponse:
+        user_features = self._profile_features(request)
+        if not user_features:
+            return self._empty_response(request, "El usuario no tiene historial musical suficiente")
+
+        candidates = [
+            candidate
+            for candidate in request.candidate_profiles
+            if candidate.user_id != request.user_id
+        ]
+        feature_names = sorted(
+            user_features
+            | {
+                feature
+                for candidate in candidates
+                for feature in self._candidate_features(candidate)
+            }
+        )
+        user_vector = [float(feature in user_features) for feature in feature_names]
+        ranked: list[RecommendationItem] = []
+        for candidate in candidates:
+            candidate_features = self._candidate_features(candidate)
+            result = self.model.compare_profiles(
+                user_vector,
+                [float(feature in candidate_features) for feature in feature_names],
+                feature_names,
+            )
+            ranked.append(
+                RecommendationItem(
+                    item_id=candidate.user_id,
+                    score=result.percentage / 100,
+                    reason=result.reason,
+                )
+            )
+
+        ranked.sort(key=lambda item: (-item.score, item.item_id))
+        return RecommendationResponse(
+            user_id=request.user_id,
+            recommendations=ranked[: request.limit],
+            model=self.model_name,
+            interaction_count=len(request.interactions),
+        )
+
+    @staticmethod
+    def _profile_features(request: RecommendationRequest) -> set[str]:
+        return RecommendationService._features(
+            request.profile.genres,
+            request.profile.artists,
+            request.profile.songs,
+        ) | set(request.preferences)
+
+    @staticmethod
+    def _candidate_features(candidate: CandidateProfile) -> set[str]:
+        return RecommendationService._features(
+            candidate.profile.genres,
+            candidate.profile.artists,
+            candidate.profile.songs,
+        )
+
+    @staticmethod
+    def _features(genres: list[str], artists: list[str], songs: list[str]) -> set[str]:
+        return {
+            *{f"genre:{value.casefold().strip()}" for value in genres if value.strip()},
+            *{f"artist:{value.casefold().strip()}" for value in artists if value.strip()},
+            *{f"song:{value.casefold().strip()}" for value in songs if value.strip()},
+        }
+
+    @staticmethod
+    def _empty_response(request: RecommendationRequest, reason: str) -> RecommendationResponse:
+        return RecommendationResponse(
+            user_id=request.user_id,
+            recommendations=[],
+            model="profile_compatibility",
+            interaction_count=len(request.interactions),
         )
