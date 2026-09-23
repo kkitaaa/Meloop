@@ -3,10 +3,12 @@ package services
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"sync"
 	"time"
 
 	"github.com/meloop/recommendation-service/models"
+	"github.com/meloop/recommendation-service/repositories"
 )
 
 type userState struct {
@@ -17,14 +19,20 @@ type userState struct {
 type RecommendationService struct {
 	mlClient *MLClient
 	cache    *RecommendationCache
+	profiles repositories.UserProfileRepository
 	mu       sync.RWMutex
 	users    map[int]userState
 }
 
 func NewRecommendationService(mlClient *MLClient, cacheTTL time.Duration) *RecommendationService {
+	return NewRecommendationServiceWithRepository(mlClient, cacheTTL, nil)
+}
+
+func NewRecommendationServiceWithRepository(mlClient *MLClient, cacheTTL time.Duration, profiles repositories.UserProfileRepository) *RecommendationService {
 	return &RecommendationService{
 		mlClient: mlClient,
 		cache:    NewRecommendationCache(cacheTTL),
+		profiles: profiles,
 		users:    make(map[int]userState),
 	}
 }
@@ -42,9 +50,20 @@ func (service *RecommendationService) GetByType(ctx context.Context, userID int,
 	service.mu.RLock()
 	state := service.users[userID]
 	service.mu.RUnlock()
+	profile := models.UserProfile{}
+	interactions := state.interactions
+	if service.profiles != nil {
+		persistedProfile, persistedInteractions, err := service.profiles.Get(ctx, strconv.Itoa(userID), recommendationType)
+		if err != nil {
+			return models.RecommendationResponse{}, false, fmt.Errorf("load recommendation profile: %w", err)
+		}
+		profile = persistedProfile
+		interactions = append(persistedInteractions, interactions...)
+	}
 	response, err := service.mlClient.Predict(ctx, models.RecommendationRequest{
 		UserID: userID, Limit: limit, Type: recommendationType,
-		Preferences: state.preferences, Interactions: filterInteractions(state.interactions, recommendationType),
+		Preferences: profilePreferences(profile, state.preferences), Profile: profile,
+		Interactions: filterInteractions(interactions, recommendationType),
 	})
 	if err != nil {
 		return fallbackResponse(userID, recommendationType, limit), false, nil
@@ -53,8 +72,22 @@ func (service *RecommendationService) GetByType(ctx context.Context, userID int,
 	return response, false, nil
 }
 
+func profilePreferences(profile models.UserProfile, local []string) []string {
+	preferences := make([]string, 0, len(profile.Genres)+len(profile.Artists)+len(profile.Songs)+len(local))
+	for _, genre := range profile.Genres {
+		preferences = append(preferences, "genre:"+genre)
+	}
+	for _, artist := range profile.Artists {
+		preferences = append(preferences, "artist:"+artist)
+	}
+	for _, song := range profile.Songs {
+		preferences = append(preferences, "song:"+song)
+	}
+	return append(preferences, local...)
+}
+
 func (service *RecommendationService) RecordInteraction(ctx context.Context, userID int, interaction models.Interaction, limit int) (models.RecommendationResponse, error) {
-	if interaction.Type != "like" && interaction.Type != "friend_added" {
+	if interaction.Type != "like" && interaction.Type != "friend_added" && interaction.Type != "comment" && interaction.Type != "post_interaction" {
 		return models.RecommendationResponse{}, fmt.Errorf("unsupported interaction type %q", interaction.Type)
 	}
 	service.mu.Lock()

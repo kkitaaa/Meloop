@@ -5,11 +5,18 @@ type Interaction struct {
 	TargetID int    `json:"target_id"`
 }
 
+type UserProfile struct {
+	Genres  []string `json:"genres"`
+	Artists []string `json:"artists"`
+	Songs   []string `json:"songs"`
+}
+
 type RecommendationRequest struct {
 	UserID       int           `json:"user_id"`
 	Limit        int           `json:"limit"`
 	Type         string        `json:"type,omitempty"`
 	Preferences  []string      `json:"preferences"`
+	Profile      UserProfile   `json:"profile"`
 	Interactions []Interaction `json:"interactions"`
 }
 
