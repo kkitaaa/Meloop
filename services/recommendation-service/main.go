@@ -23,7 +23,7 @@ func main() {
 	mux.HandleFunc("/recommendations/", recommendationHandler(recommendationService))
 	mux.HandleFunc("/interactions", interactionHandler(recommendationService))
 
-	address := getenv("RECOMMENDATION_SERVICE_ADDRESS", ":8082")
+	address := getenv("RECOMMENDATION_SERVICE_ADDRESS", ":8087")
 	logger.Info("service_started", "address", address, "ml_service", mlURL)
 	if err := http.ListenAndServe(address, mux); err != nil {
 		logger.Error("service_stopped", "error", err)
@@ -44,19 +44,43 @@ func recommendationHandler(service *services.RecommendationService) http.Handler
 			http.Error(writer, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		userID, err := strconv.Atoi(strings.TrimPrefix(request.URL.Path, "/recommendations/"))
+		userID, recommendationType, err := parseRecommendationPath(request.URL.Path)
 		if err != nil || userID < 1 {
 			http.Error(writer, "invalid user id", http.StatusBadRequest)
 			return
 		}
-		response, cached, err := service.Get(request.Context(), userID, queryLimit(request))
+		response, cached, err := service.GetByType(request.Context(), userID, recommendationType, queryLimit(request))
 		if err != nil {
 			http.Error(writer, "recommendations unavailable", http.StatusBadGateway)
 			return
 		}
 		writer.Header().Set("X-Recommendations-Cache", cacheStatus(cached))
+		if response.Model == "fallback" {
+			writer.Header().Set("X-Recommendations-Source", "fallback")
+		} else {
+			writer.Header().Set("X-Recommendations-Source", "ml")
+		}
 		writeJSON(writer, http.StatusOK, response)
 	}
+}
+
+func parseRecommendationPath(path string) (int, string, error) {
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(parts) == 2 && parts[0] == "recommendations" {
+		userID, err := strconv.Atoi(parts[1])
+		return userID, "all", err
+	}
+	if len(parts) == 3 && parts[0] == "recommendations" {
+		if parts[2] == "music" || parts[2] == "friends" {
+			userID, err := strconv.Atoi(parts[1])
+			return userID, parts[2], err
+		}
+		if parts[1] == "music" || parts[1] == "friends" {
+			userID, err := strconv.Atoi(parts[2])
+			return userID, parts[1], err
+		}
+	}
+	return 0, "", strconv.ErrSyntax
 }
 
 func interactionHandler(service *services.RecommendationService) http.HandlerFunc {
