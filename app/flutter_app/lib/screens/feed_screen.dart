@@ -61,7 +61,7 @@ class _FeedScreenState extends State<FeedScreen> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.2),
+                color: Colors.white.withValues(alpha: 0.2),
                 borderRadius: BorderRadius.circular(20),
               ),
               child: Row(
@@ -178,7 +178,7 @@ class _FeedScreenState extends State<FeedScreen> {
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
               color: Colors.white, // Blanco puro
-              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 8)],
+              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 8)],
             ),
             child: Column(
               children: [
@@ -204,7 +204,7 @@ class _FeedScreenState extends State<FeedScreen> {
             child: Container(
               width: 50,
               height: 18,
-              color: Colors.white.withOpacity(0.7), // Efecto masking tape
+              color: Colors.white.withValues(alpha: 0.7), // Efecto masking tape
             ),
           ),
         ),
@@ -306,7 +306,7 @@ class _FeedScreenState extends State<FeedScreen> {
     return Container(
       decoration: BoxDecoration(
         color: const Color(0xFFFDFDFD), // Blanco papel
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 20)],
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 20)],
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 32.0, vertical: 24.0),
