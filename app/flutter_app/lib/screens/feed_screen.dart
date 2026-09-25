@@ -172,13 +172,18 @@ class _FeedScreenState extends State<FeedScreen> {
       clipBehavior: Clip.none,
       children: [
         Transform.rotate(
-          angle: -0.02, 
+          angle: -0.02,
           child: Container(
             margin: const EdgeInsets.only(top: 10),
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
               color: Colors.white, // Blanco puro
-              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 8)],
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.1),
+                  blurRadius: 8,
+                ),
+              ],
             ),
             child: Column(
               children: [
@@ -189,7 +194,14 @@ class _FeedScreenState extends State<FeedScreen> {
                   child: const Icon(Icons.pets, size: 50, color: Colors.grey),
                 ),
                 const SizedBox(height: 16),
-                const Text("Nombre de usuario", style: TextStyle(fontFamily: 'Comic Sans MS', fontWeight: FontWeight.bold, fontSize: 14)),
+                const Text(
+                  "Nombre de usuario",
+                  style: TextStyle(
+                    fontFamily: 'Comic Sans MS',
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
+                ),
                 const SizedBox(height: 4),
                 const Text("Me siento Feliz", style: TextStyle(fontSize: 11, color: Colors.black54)),
               ],
@@ -306,7 +318,12 @@ class _FeedScreenState extends State<FeedScreen> {
     return Container(
       decoration: BoxDecoration(
         color: const Color(0xFFFDFDFD), // Blanco papel
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 20)],
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.15),
+            blurRadius: 20,
+          ),
+        ],
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 32.0, vertical: 24.0),
