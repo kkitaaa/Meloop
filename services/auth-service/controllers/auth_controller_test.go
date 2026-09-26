@@ -16,11 +16,13 @@ import (
 )
 
 type mockAuthService struct {
-	registerFunc        func(ctx context.Context, req *models.RegisterRequest) (*models.RegisterResponse, error)
-	loginFunc           func(ctx context.Context, req *models.LoginRequest) (*models.LoginResponse, error)
-	logoutFunc          func(ctx context.Context, token string) error
-	validateSessionFunc func(ctx context.Context, token string) (*models.SessionUser, error)
-	changePasswordFunc  func(ctx context.Context, userID string, req *models.ChangePasswordRequest) error
+	registerFunc                func(ctx context.Context, req *models.RegisterRequest) (*models.RegisterResponse, error)
+	loginFunc                   func(ctx context.Context, req *models.LoginRequest) (*models.LoginResponse, error)
+	logoutFunc                  func(ctx context.Context, token string) error
+	validateSessionFunc         func(ctx context.Context, token string) (*models.SessionUser, error)
+	changePasswordFunc          func(ctx context.Context, userID string, req *models.ChangePasswordRequest) error
+	requestPasswordRecoveryFunc func(ctx context.Context, req *models.PasswordRecoveryRequest) error
+	resetPasswordFunc           func(ctx context.Context, req *models.ResetPasswordRequest) error
 }
 
 func (m *mockAuthService) Register(ctx context.Context, req *models.RegisterRequest) (*models.RegisterResponse, error) {
@@ -73,6 +75,20 @@ func (m *mockAuthService) ValidateSession(ctx context.Context, token string) (*m
 func (m *mockAuthService) ChangePassword(ctx context.Context, userID string, req *models.ChangePasswordRequest) error {
 	if m.changePasswordFunc != nil {
 		return m.changePasswordFunc(ctx, userID, req)
+	}
+	return nil
+}
+
+func (m *mockAuthService) RequestPasswordRecovery(ctx context.Context, req *models.PasswordRecoveryRequest) error {
+	if m.requestPasswordRecoveryFunc != nil {
+		return m.requestPasswordRecoveryFunc(ctx, req)
+	}
+	return nil
+}
+
+func (m *mockAuthService) ResetPassword(ctx context.Context, req *models.ResetPasswordRequest) error {
+	if m.resetPasswordFunc != nil {
+		return m.resetPasswordFunc(ctx, req)
 	}
 	return nil
 }
@@ -683,5 +699,215 @@ func TestChangePassword_HTTP_CredencialesIncorrectas(t *testing.T) {
 
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("se esperaba código 401 Unauthorized, se obtuvo %d", w.Code)
+	}
+}
+
+// =============================================================================
+// PRUEBAS HTTP RF-04: Recuperación de acceso mediante correo
+// =============================================================================
+
+func TestRequestPasswordRecovery_HTTP_Success(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+
+	srv := &mockAuthService{
+		requestPasswordRecoveryFunc: func(ctx context.Context, req *models.PasswordRecoveryRequest) error {
+			return nil
+		},
+	}
+	ctrl := controllers.NewAuthController(srv)
+	router.POST("/auth/password-recovery", ctrl.RequestPasswordRecovery)
+
+	payload := models.PasswordRecoveryRequest{
+		Email: "alan@meloop.com",
+	}
+	body, _ := json.Marshal(payload)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodPost, "/auth/password-recovery", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("se esperaba código 200 OK, se obtuvo %d", w.Code)
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("error al parsear respuesta JSON: %v", err)
+	}
+	if resp["success"] != true {
+		t.Errorf("se esperaba success: true, se obtuvo: %v", resp["success"])
+	}
+}
+
+func TestRequestPasswordRecovery_HTTP_InvalidJSON(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+
+	srv := &mockAuthService{}
+	ctrl := controllers.NewAuthController(srv)
+	router.POST("/auth/password-recovery", ctrl.RequestPasswordRecovery)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodPost, "/auth/password-recovery", bytes.NewBufferString("{invalid json"))
+	req.Header.Set("Content-Type", "application/json")
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("se esperaba código 400 Bad Request, se obtuvo %d", w.Code)
+	}
+}
+
+func TestRequestPasswordRecovery_HTTP_ValidationError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+
+	srv := &mockAuthService{
+		requestPasswordRecoveryFunc: func(ctx context.Context, req *models.PasswordRecoveryRequest) error {
+			return &services.ValidationError{
+				Field:   "email",
+				Issue:   "invalid_format",
+				Message: "El correo electrónico no tiene un formato válido",
+			}
+		},
+	}
+	ctrl := controllers.NewAuthController(srv)
+	router.POST("/auth/password-recovery", ctrl.RequestPasswordRecovery)
+
+	payload := models.PasswordRecoveryRequest{Email: "formato-invalido"}
+	body, _ := json.Marshal(payload)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodPost, "/auth/password-recovery", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("se esperaba código 400 Bad Request, se obtuvo %d", w.Code)
+	}
+}
+
+func TestResetPassword_HTTP_Success(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+
+	srv := &mockAuthService{
+		resetPasswordFunc: func(ctx context.Context, req *models.ResetPasswordRequest) error {
+			return nil
+		},
+	}
+	ctrl := controllers.NewAuthController(srv)
+	router.POST("/auth/password-recovery/reset", ctrl.ResetPassword)
+
+	payload := models.ResetPasswordRequest{
+		Token:       "mock-recovery-token-12345",
+		NewPassword: "NuevaPasswordSegura2026!",
+	}
+	body, _ := json.Marshal(payload)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodPost, "/auth/password-recovery/reset", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("se esperaba código 200 OK, se obtuvo %d", w.Code)
+	}
+	var resp map[string]interface{}
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["success"] != true {
+		t.Errorf("se esperaba success: true, se obtuvo: %v", resp["success"])
+	}
+}
+
+func TestResetPassword_HTTP_TokenNotFound(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+
+	srv := &mockAuthService{
+		resetPasswordFunc: func(ctx context.Context, req *models.ResetPasswordRequest) error {
+			return services.ErrTokenNotFound
+		},
+	}
+	ctrl := controllers.NewAuthController(srv)
+	router.POST("/auth/password-recovery/reset", ctrl.ResetPassword)
+
+	payload := models.ResetPasswordRequest{
+		Token:       "non-existent-token",
+		NewPassword: "NewValidP@ssword2026",
+	}
+	body, _ := json.Marshal(payload)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodPost, "/auth/password-recovery/reset", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("se esperaba código 400 Bad Request, se obtuvo %d", w.Code)
+	}
+}
+
+func TestResetPassword_HTTP_TokenExpired(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+
+	srv := &mockAuthService{
+		resetPasswordFunc: func(ctx context.Context, req *models.ResetPasswordRequest) error {
+			return services.ErrTokenExpired
+		},
+	}
+	ctrl := controllers.NewAuthController(srv)
+	router.POST("/auth/password-recovery/reset", ctrl.ResetPassword)
+
+	payload := models.ResetPasswordRequest{
+		Token:       "expired-token",
+		NewPassword: "NewValidP@ssword2026",
+	}
+	body, _ := json.Marshal(payload)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodPost, "/auth/password-recovery/reset", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("se esperaba código 400 Bad Request, se obtuvo %d", w.Code)
+	}
+}
+
+func TestResetPassword_HTTP_TokenAlreadyUsed(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+
+	srv := &mockAuthService{
+		resetPasswordFunc: func(ctx context.Context, req *models.ResetPasswordRequest) error {
+			return services.ErrTokenAlreadyUsed
+		},
+	}
+	ctrl := controllers.NewAuthController(srv)
+	router.POST("/auth/password-recovery/reset", ctrl.ResetPassword)
+
+	payload := models.ResetPasswordRequest{
+		Token:       "already-used-token",
+		NewPassword: "NewValidP@ssword2026",
+	}
+	body, _ := json.Marshal(payload)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodPost, "/auth/password-recovery/reset", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("se esperaba código 400 Bad Request, se obtuvo %d", w.Code)
 	}
 }
