@@ -24,9 +24,25 @@ type mockFriendshipService struct {
 	cancelRequestFunc       func(ctx context.Context, requestID int, senderID string) (*models.FriendRequest, error)
 	listFriendsFunc         func(ctx context.Context, userID string) ([]models.Friend, error)
 	removeFriendFunc        func(ctx context.Context, userID, targetID string) error
-	getFriendProfileFunc    func(ctx context.Context, userID, friendID string) (*models.FriendProfile, error)
-	blockUserFunc           func(ctx context.Context, blockerID, blockedID string) error
-	validateInteractionFunc func(ctx context.Context, user1ID, user2ID string) error
+	getFriendProfileFunc     func(ctx context.Context, userID, friendID string) (*models.FriendProfile, error)
+	blockUserFunc            func(ctx context.Context, blockerID, blockedID string) error
+	validateInteractionFunc  func(ctx context.Context, user1ID, user2ID string) error
+	getFriendSuggestionsFunc func(ctx context.Context, userID string) ([]models.FriendSuggestion, error)
+}
+
+func (m *mockFriendshipService) GetFriendSuggestions(ctx context.Context, userID string) ([]models.FriendSuggestion, error) {
+	if m.getFriendSuggestionsFunc != nil {
+		return m.getFriendSuggestionsFunc(ctx, userID)
+	}
+	return []models.FriendSuggestion{
+		{
+			IDUsuario:     "user-sugg-1",
+			Username:      "suggested_user",
+			MatchScore:    75,
+			MutualFriends: 2,
+			Motivo:        "Ambos escuchan a The Strokes",
+		},
+	}, nil
 }
 
 func (m *mockFriendshipService) SendRequest(ctx context.Context, senderID, receiverID string) (*models.FriendRequest, error) {
@@ -377,5 +393,74 @@ func TestValidateInteraction_HTTP_Bloqueado(t *testing.T) {
 
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("se esperaba 403 Forbidden, se obtuvo %d", w.Code)
+	}
+}
+
+// =========================================================================
+// Tests HTTP para RF-14: Sugerencias de Amigos
+// =========================================================================
+
+func TestGetFriendSuggestions_HTTP_Exitoso(t *testing.T) {
+	router := setupTestRouter(&mockFriendshipService{})
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodGet, "/friends/suggestions", nil)
+	req.Header.Set("X-User-ID", "usr-123")
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("se esperaba 200 OK, se obtuvo %d", w.Code)
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("error deserializando json: %v", err)
+	}
+	if resp["success"] != true {
+		t.Errorf("se esperaba success = true")
+	}
+	data, ok := resp["data"].([]interface{})
+	if !ok || len(data) != 1 {
+		t.Fatalf("se esperaba 1 sugerencia, se obtuvo: %v", resp["data"])
+	}
+	sugg := data[0].(map[string]interface{})
+	if sugg["id_usuario"] != "user-sugg-1" {
+		t.Errorf("id_usuario inesperado: %v", sugg["id_usuario"])
+	}
+	if sugg["motivo"] != "Ambos escuchan a The Strokes" {
+		t.Errorf("motivo inesperado: %v", sugg["motivo"])
+	}
+}
+
+func TestGetFriendSuggestions_HTTP_NoAutenticado(t *testing.T) {
+	router := setupTestRouter(&mockFriendshipService{})
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodGet, "/friends/suggestions", nil)
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("se esperaba 401 Unauthorized, se obtuvo %d", w.Code)
+	}
+}
+
+func TestGetFriendSuggestions_HTTP_ErrorServicio(t *testing.T) {
+	mockSvc := &mockFriendshipService{
+		getFriendSuggestionsFunc: func(ctx context.Context, userID string) ([]models.FriendSuggestion, error) {
+			return nil, services.ErrInvalidUser
+		},
+	}
+	router := setupTestRouter(mockSvc)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodGet, "/friends/suggestions", nil)
+	req.Header.Set("X-User-ID", "usr-123")
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("se esperaba 401 Unauthorized para ErrInvalidUser, se obtuvo %d", w.Code)
 	}
 }

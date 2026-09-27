@@ -42,15 +42,21 @@ type FriendshipService interface {
 	GetFriendProfile(ctx context.Context, userID, friendID string) (*models.FriendProfile, error)
 	BlockUser(ctx context.Context, blockerID, blockedID string) error
 	ValidateInteraction(ctx context.Context, user1ID, user2ID string) error
+	GetFriendSuggestions(ctx context.Context, userID string) ([]models.FriendSuggestion, error)
 }
 
 type friendshipService struct {
-	repo      repositories.FriendshipRepository
-	publisher EventPublisher
+	repo       repositories.FriendshipRepository
+	publisher  EventPublisher
+	compatRepo repositories.CompatibilityRepository
 }
 
-func NewFriendshipService(repo repositories.FriendshipRepository, publisher EventPublisher) FriendshipService {
-	return &friendshipService{repo: repo, publisher: publisher}
+func NewFriendshipService(repo repositories.FriendshipRepository, publisher EventPublisher, compatRepo ...repositories.CompatibilityRepository) FriendshipService {
+	var cr repositories.CompatibilityRepository
+	if len(compatRepo) > 0 {
+		cr = compatRepo[0]
+	}
+	return &friendshipService{repo: repo, publisher: publisher, compatRepo: cr}
 }
 
 func (s *friendshipService) SendRequest(ctx context.Context, senderID, receiverID string) (*models.FriendRequest, error) {

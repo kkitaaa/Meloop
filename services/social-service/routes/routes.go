@@ -28,5 +28,9 @@ func SetupRoutes(router *gin.Engine, controller *controllers.FriendshipControlle
 		protected.POST("/block", controller.BlockUser)
 		protected.GET("/validate-interaction", controller.ValidateInteraction)
 		protected.POST("/validate-interaction", controller.ValidateInteraction)
+
+		// RF-14: Sugerencias de amistad
+		protected.GET("/suggestions", controller.GetFriendSuggestions)
+		protected.GET("/recommendations", controller.GetFriendSuggestions)
 	}
 }
