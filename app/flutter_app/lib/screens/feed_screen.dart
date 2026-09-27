@@ -8,7 +8,7 @@ class FeedScreen extends StatefulWidget {
 }
 
 class _FeedScreenState extends State<FeedScreen> {
-  final Color bgColor = const Color(0xFF0D5C5E); 
+  final Color bgColor = const Color(0xFF0D5C5E);
   final Color tealAccent = const Color(0xFF1ABC9C);
 
   @override
@@ -22,9 +22,7 @@ class _FeedScreenState extends State<FeedScreen> {
         children: [
           _buildCustomTopBar(isDesktop),
           Expanded(
-            child: isDesktop 
-              ? _buildDesktopLayout() 
-              : _buildMobileLayout(),
+            child: isDesktop ? _buildDesktopLayout() : _buildMobileLayout(),
           ),
         ],
       ),
@@ -42,12 +40,12 @@ class _FeedScreenState extends State<FeedScreen> {
         children: [
           // Logo ajustado
           Image.asset(
-            'assets/imagenes/meloop.png', 
+            'assets/imagenes/meloop.png',
             height: 24, // Mucho más pequeño
-            color: Colors.white, 
+            color: Colors.white,
             fit: BoxFit.contain, // Evita que se estire o se vea gordo
           ),
-          
+
           if (isDesktop) ...[
             // Menú central
             Row(
@@ -61,21 +59,24 @@ class _FeedScreenState extends State<FeedScreen> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.2),
+                color: Colors.white.withValues(alpha: 0.2),
                 borderRadius: BorderRadius.circular(20),
               ),
               child: Row(
                 children: const [
                   Icon(Icons.play_circle_fill, color: Colors.white, size: 18),
                   SizedBox(width: 8),
-                  Text("Playing... DJ Gouz", style: TextStyle(color: Colors.white, fontSize: 12)),
+                  Text(
+                    "Playing... DJ Gouz",
+                    style: TextStyle(color: Colors.white, fontSize: 12),
+                  ),
                   SizedBox(width: 8),
                   Icon(Icons.graphic_eq, color: Colors.white, size: 16),
                 ],
               ),
             ),
           ],
-          
+
           // Iconos derechos
           Row(
             children: const [
@@ -87,7 +88,7 @@ class _FeedScreenState extends State<FeedScreen> {
                 child: Icon(Icons.person, color: Color(0xFF1ABC9C), size: 18),
               ),
             ],
-          )
+          ),
         ],
       ),
     );
@@ -141,7 +142,9 @@ class _FeedScreenState extends State<FeedScreen> {
           const SizedBox(width: 24),
           // Feed Central
           ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 650), // Ancho máximo para el papel
+            constraints: const BoxConstraints(
+              maxWidth: 650,
+            ), // Ancho máximo para el papel
             child: _buildFeedPaper(),
           ),
         ],
@@ -172,13 +175,18 @@ class _FeedScreenState extends State<FeedScreen> {
       clipBehavior: Clip.none,
       children: [
         Transform.rotate(
-          angle: -0.02, 
+          angle: -0.02,
           child: Container(
             margin: const EdgeInsets.only(top: 10),
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
               color: Colors.white, // Blanco puro
-              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 8)],
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.1),
+                  blurRadius: 8,
+                ),
+              ],
             ),
             child: Column(
               children: [
@@ -189,9 +197,19 @@ class _FeedScreenState extends State<FeedScreen> {
                   child: const Icon(Icons.pets, size: 50, color: Colors.grey),
                 ),
                 const SizedBox(height: 16),
-                const Text("Nombre de usuario", style: TextStyle(fontFamily: 'Comic Sans MS', fontWeight: FontWeight.bold, fontSize: 14)),
+                const Text(
+                  "Nombre de usuario",
+                  style: TextStyle(
+                    fontFamily: 'Comic Sans MS',
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
+                ),
                 const SizedBox(height: 4),
-                const Text("Me siento Feliz", style: TextStyle(fontSize: 11, color: Colors.black54)),
+                const Text(
+                  "Me siento Feliz",
+                  style: TextStyle(fontSize: 11, color: Colors.black54),
+                ),
               ],
             ),
           ),
@@ -204,12 +222,15 @@ class _FeedScreenState extends State<FeedScreen> {
             child: Container(
               width: 50,
               height: 18,
-              color: Colors.white.withOpacity(0.7), // Efecto masking tape
+              color: Colors.white.withValues(alpha: 0.7), // Efecto masking tape
             ),
           ),
         ),
         // Pin rojo
-        Positioned(top: 8, child: CircleAvatar(radius: 5, backgroundColor: Colors.red[700])),
+        Positioned(
+          top: 8,
+          child: CircleAvatar(radius: 5, backgroundColor: Colors.red[700]),
+        ),
       ],
     );
   }
@@ -224,19 +245,36 @@ class _FeedScreenState extends State<FeedScreen> {
       child: Row(
         children: [
           Container(
-            width: 40, height: 40, 
-            decoration: BoxDecoration(color: Colors.purple[800], borderRadius: BorderRadius.circular(4)), 
-            child: const Icon(Icons.music_note, color: Colors.white)
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: Colors.purple[800],
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: const Icon(Icons.music_note, color: Colors.white),
           ),
           const SizedBox(width: 12),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: const [
-              Text("Escuchando:", style: TextStyle(color: Colors.black54, fontSize: 10)),
-              Text("Finding Urself", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 12)),
-              Text("DJ GOUZ", style: TextStyle(color: Colors.black54, fontSize: 10)),
+              Text(
+                "Escuchando:",
+                style: TextStyle(color: Colors.black54, fontSize: 10),
+              ),
+              Text(
+                "Finding Urself",
+                style: TextStyle(
+                  color: Colors.black,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                ),
+              ),
+              Text(
+                "DJ GOUZ",
+                style: TextStyle(color: Colors.black54, fontSize: 10),
+              ),
             ],
-          )
+          ),
         ],
       ),
     );
@@ -255,7 +293,14 @@ class _FeedScreenState extends State<FeedScreen> {
             children: [
               Icon(Icons.star, color: tealAccent, size: 14),
               const SizedBox(width: 4),
-              const Text("Nivel 3 -> Buen progreso", style: TextStyle(color: Colors.black87, fontSize: 11, fontWeight: FontWeight.bold)),
+              const Text(
+                "Nivel 3 -> Buen progreso",
+                style: TextStyle(
+                  color: Colors.black87,
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 8),
@@ -265,7 +310,7 @@ class _FeedScreenState extends State<FeedScreen> {
             valueColor: AlwaysStoppedAnimation<Color>(tealAccent),
             minHeight: 6,
             borderRadius: BorderRadius.circular(3),
-          )
+          ),
         ],
       ),
     );
@@ -274,11 +319,21 @@ class _FeedScreenState extends State<FeedScreen> {
   Widget _buildSuggestions() {
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8)),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text("Artistas que te podrían gustar", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.black87)),
+          const Text(
+            "Artistas que te podrían gustar",
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              color: Colors.black87,
+            ),
+          ),
           const Divider(),
           _artistListTile("Kidd Voodoo"),
           _artistListTile("Tiago PZK"),
@@ -293,9 +348,16 @@ class _FeedScreenState extends State<FeedScreen> {
       padding: const EdgeInsets.only(bottom: 10.0),
       child: Row(
         children: [
-          const CircleAvatar(radius: 10, backgroundColor: Colors.black12, child: Icon(Icons.person, size: 12, color: Colors.black54)),
+          const CircleAvatar(
+            radius: 10,
+            backgroundColor: Colors.black12,
+            child: Icon(Icons.person, size: 12, color: Colors.black54),
+          ),
           const SizedBox(width: 8),
-          Text(name, style: const TextStyle(fontSize: 11, color: Colors.black87)),
+          Text(
+            name,
+            style: const TextStyle(fontSize: 11, color: Colors.black87),
+          ),
         ],
       ),
     );
@@ -306,7 +368,12 @@ class _FeedScreenState extends State<FeedScreen> {
     return Container(
       decoration: BoxDecoration(
         color: const Color(0xFFFDFDFD), // Blanco papel
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 20)],
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.15),
+            blurRadius: 20,
+          ),
+        ],
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 32.0, vertical: 24.0),
@@ -318,7 +385,13 @@ class _FeedScreenState extends State<FeedScreen> {
               children: [
                 Row(
                   children: [
-                    const Text("Ultimos Blogs:", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    const Text(
+                      "Ultimos Blogs:",
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                     const SizedBox(width: 16),
                     _filterChip("recientes", isActive: true),
                     _filterChip("tendencias", isActive: false),
@@ -329,17 +402,29 @@ class _FeedScreenState extends State<FeedScreen> {
                 OutlinedButton.icon(
                   style: OutlinedButton.styleFrom(
                     side: BorderSide(color: tealAccent),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12)
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
                   ),
                   onPressed: () {},
                   icon: Icon(Icons.edit, color: tealAccent, size: 14),
-                  label: Text("escribir blog", style: TextStyle(color: tealAccent, fontSize: 12, fontWeight: FontWeight.bold)),
-                )
+                  label: Text(
+                    "escribir blog",
+                    style: TextStyle(
+                      color: tealAccent,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
               ],
             ),
             const Divider(height: 32, thickness: 1, color: Colors.black12),
-            
+
             // Lista de Publicaciones
             Expanded(
               child: ListView.builder(
@@ -353,12 +438,17 @@ class _FeedScreenState extends State<FeedScreen> {
             ElevatedButton(
               style: ElevatedButton.styleFrom(
                 backgroundColor: tealAccent,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
                 elevation: 0,
               ),
               onPressed: () {},
-              child: const Text("Cargar más blogs", style: TextStyle(color: Colors.white, fontSize: 12)),
-            )
+              child: const Text(
+                "Cargar más blogs",
+                style: TextStyle(color: Colors.white, fontSize: 12),
+              ),
+            ),
           ],
         ),
       ),
@@ -372,10 +462,19 @@ class _FeedScreenState extends State<FeedScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       decoration: BoxDecoration(
         color: isActive ? Colors.white : Colors.grey[200],
-        border: isActive ? Border.all(color: tealAccent, width: 1) : Border.all(color: Colors.transparent),
+        border: isActive
+            ? Border.all(color: tealAccent, width: 1)
+            : Border.all(color: Colors.transparent),
         borderRadius: BorderRadius.circular(12),
       ),
-      child: Text(label, style: TextStyle(color: isActive ? tealAccent : Colors.grey[600], fontSize: 10, fontWeight: FontWeight.bold)),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: isActive ? tealAccent : Colors.grey[600],
+          fontSize: 10,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
     );
   }
 
@@ -390,13 +489,26 @@ class _FeedScreenState extends State<FeedScreen> {
             children: [
               Row(
                 children: [
-                  const CircleAvatar(radius: 16, backgroundColor: Colors.black87, child: Icon(Icons.person, color: Colors.white, size: 18)),
+                  const CircleAvatar(
+                    radius: 16,
+                    backgroundColor: Colors.black87,
+                    child: Icon(Icons.person, color: Colors.white, size: 18),
+                  ),
                   const SizedBox(width: 12),
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: const [
-                      Text("UsuarioEjemplo", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                      Text("Hace 20 minutos", style: TextStyle(fontSize: 10, color: Colors.grey)),
+                      Text(
+                        "UsuarioEjemplo",
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
+                      Text(
+                        "Hace 20 minutos",
+                        style: TextStyle(fontSize: 10, color: Colors.grey),
+                      ),
                     ],
                   ),
                 ],
@@ -406,48 +518,105 @@ class _FeedScreenState extends State<FeedScreen> {
           ),
           const SizedBox(height: 12),
           const Text(
-            "No les parece raro como es que el sonido cambió después del 2011? Es un tema de discusión muy interesante en la producción musical actual.", 
-            style: TextStyle(fontSize: 13, color: Colors.black87, height: 1.4)
+            "No les parece raro como es que el sonido cambió después del 2011? Es un tema de discusión muy interesante en la producción musical actual.",
+            style: TextStyle(fontSize: 13, color: Colors.black87, height: 1.4),
           ),
           const SizedBox(height: 12),
-          
+
           Container(
             padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(color: tealAccent, borderRadius: BorderRadius.circular(6)),
+            decoration: BoxDecoration(
+              color: tealAccent,
+              borderRadius: BorderRadius.circular(6),
+            ),
             child: Row(
               children: [
-                Container(width: 36, height: 36, color: Colors.black87, child: const Icon(Icons.play_arrow, color: Colors.white, size: 20)),
+                Container(
+                  width: 36,
+                  height: 36,
+                  color: Colors.black87,
+                  child: const Icon(
+                    Icons.play_arrow,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: const [
-                      Text("Bangarang (feat. Sirah)", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
-                      Text("Skrillex, Sirah", style: TextStyle(color: Colors.white70, fontSize: 10)),
+                      Text(
+                        "Bangarang (feat. Sirah)",
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
+                      Text(
+                        "Skrillex, Sirah",
+                        style: TextStyle(color: Colors.white70, fontSize: 10),
+                      ),
                     ],
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                   child: Row(
                     children: [
                       Icon(Icons.graphic_eq, color: tealAccent, size: 12),
                       const SizedBox(width: 4),
-                      Text("Escuchar", style: TextStyle(color: tealAccent, fontSize: 10, fontWeight: FontWeight.bold)),
+                      Text(
+                        "Escuchar",
+                        style: TextStyle(
+                          color: tealAccent,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ],
                   ),
-                )
+                ),
               ],
             ),
           ),
           const SizedBox(height: 12),
-          
+
           Row(
             children: [
-              Row(children: const [Icon(Icons.favorite, color: Colors.red, size: 16), SizedBox(width: 4), Text("21 Likes", style: TextStyle(color: Colors.grey, fontSize: 11))]),
+              Row(
+                children: const [
+                  Icon(Icons.favorite, color: Colors.red, size: 16),
+                  SizedBox(width: 4),
+                  Text(
+                    "21 Likes",
+                    style: TextStyle(color: Colors.grey, fontSize: 11),
+                  ),
+                ],
+              ),
               const SizedBox(width: 16),
-              Row(children: const [Icon(Icons.mode_comment_outlined, color: Colors.grey, size: 16), SizedBox(width: 4), Text("3 Comentarios", style: TextStyle(color: Colors.grey, fontSize: 11))]),
+              Row(
+                children: const [
+                  Icon(
+                    Icons.mode_comment_outlined,
+                    color: Colors.grey,
+                    size: 16,
+                  ),
+                  SizedBox(width: 4),
+                  Text(
+                    "3 Comentarios",
+                    style: TextStyle(color: Colors.grey, fontSize: 11),
+                  ),
+                ],
+              ),
             ],
           ),
           const SizedBox(height: 16),

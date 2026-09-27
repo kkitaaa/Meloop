@@ -16,14 +16,14 @@ import (
 )
 
 type mockFriendshipService struct {
-	sendRequestFunc         func(ctx context.Context, senderID, receiverID string) (*models.FriendRequest, error)
-	receivedRequestsFunc    func(ctx context.Context, userID string) ([]models.FriendRequest, error)
-	sentRequestsFunc        func(ctx context.Context, userID string) ([]models.FriendRequest, error)
-	acceptRequestFunc       func(ctx context.Context, requestID int, receiverID string) (*models.FriendRequest, error)
-	rejectRequestFunc       func(ctx context.Context, requestID int, receiverID string) (*models.FriendRequest, error)
-	cancelRequestFunc       func(ctx context.Context, requestID int, senderID string) (*models.FriendRequest, error)
-	listFriendsFunc         func(ctx context.Context, userID string) ([]models.Friend, error)
-	removeFriendFunc        func(ctx context.Context, userID, targetID string) error
+	sendRequestFunc          func(ctx context.Context, senderID, receiverID string) (*models.FriendRequest, error)
+	receivedRequestsFunc     func(ctx context.Context, userID string) ([]models.FriendRequest, error)
+	sentRequestsFunc         func(ctx context.Context, userID string) ([]models.FriendRequest, error)
+	acceptRequestFunc        func(ctx context.Context, requestID int, receiverID string) (*models.FriendRequest, error)
+	rejectRequestFunc        func(ctx context.Context, requestID int, receiverID string) (*models.FriendRequest, error)
+	cancelRequestFunc        func(ctx context.Context, requestID int, senderID string) (*models.FriendRequest, error)
+	listFriendsFunc          func(ctx context.Context, userID string) ([]models.Friend, error)
+	removeFriendFunc         func(ctx context.Context, userID, targetID string) error
 	getFriendProfileFunc     func(ctx context.Context, userID, friendID string) (*models.FriendProfile, error)
 	blockUserFunc            func(ctx context.Context, blockerID, blockedID string) error
 	validateInteractionFunc  func(ctx context.Context, user1ID, user2ID string) error
