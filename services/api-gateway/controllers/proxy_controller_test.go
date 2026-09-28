@@ -10,6 +10,22 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+type closeNotifyingRecorder struct {
+	*httptest.ResponseRecorder
+	closed chan bool
+}
+
+func newCloseNotifyingRecorder() *closeNotifyingRecorder {
+	return &closeNotifyingRecorder{
+		ResponseRecorder: httptest.NewRecorder(),
+		closed:           make(chan bool, 1),
+	}
+}
+
+func (c *closeNotifyingRecorder) CloseNotify() <-chan bool {
+	return c.closed
+}
+
 func TestProxyToServiceForwardsRequest(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	service := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -37,7 +53,7 @@ func TestProxyToServiceForwardsRequest(t *testing.T) {
 	router.POST("/users", ProxyToService(envVar, "", ""))
 
 	request := httptest.NewRequest(http.MethodPost, "/users?source=flutter", strings.NewReader(`{"name":"Ada"}`))
-	response := httptest.NewRecorder()
+	response := newCloseNotifyingRecorder()
 	router.ServeHTTP(response, request)
 
 	if response.Code != http.StatusCreated {
@@ -55,7 +71,7 @@ func TestProxyToServiceReturnsBadGatewayWhenUnavailable(t *testing.T) {
 	router := gin.New()
 	router.GET("/users", ProxyToService(envVar, "", ""))
 
-	response := httptest.NewRecorder()
+	response := newCloseNotifyingRecorder()
 	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/users", nil))
 
 	if response.Code != http.StatusBadGateway {
@@ -75,7 +91,7 @@ func TestProxyToServiceUsesDefaultTarget(t *testing.T) {
 	router := gin.New()
 	router.GET("/health", ProxyToService(envVar, service.URL, ""))
 
-	response := httptest.NewRecorder()
+	response := newCloseNotifyingRecorder()
 	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/health", nil))
 
 	if response.Code != http.StatusNoContent {
