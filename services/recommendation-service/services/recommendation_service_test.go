@@ -12,6 +12,31 @@ import (
 	"github.com/meloop/recommendation-service/models"
 )
 
+type profileRepositoryFake struct{}
+
+func (profileRepositoryFake) Get(context.Context, string, string) (models.UserProfile, []models.Interaction, error) {
+	return models.UserProfile{Genres: []string{"jazz"}, Artists: []string{"Miles Davis"}, Songs: []string{"So What"}}, []models.Interaction{{Type: "comment", TargetID: 9}}, nil
+}
+
+func TestRecommendationServiceLoadsPersistedProfile(t *testing.T) {
+	mlServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		var payload models.RecommendationRequest
+		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode ML request: %v", err)
+		}
+		if len(payload.Profile.Genres) != 1 || payload.Profile.Genres[0] != "jazz" || len(payload.Interactions) != 1 {
+			t.Fatalf("persisted profile was not packaged: %+v", payload)
+		}
+		_ = json.NewEncoder(writer).Encode(models.RecommendationResponse{UserID: payload.UserID, Model: "test-model"})
+	}))
+	defer mlServer.Close()
+
+	service := NewRecommendationServiceWithRepository(NewMLClient(mlServer.URL), time.Minute, profileRepositoryFake{})
+	if _, _, err := service.Get(context.Background(), 42, 10); err != nil {
+		t.Fatalf("get recommendations: %v", err)
+	}
+}
+
 func TestRecommendationServiceCachesAndRefreshesAfterInteraction(t *testing.T) {
 	var calls atomic.Int32
 	mlServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
