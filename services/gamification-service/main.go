@@ -2,7 +2,6 @@ package main
 
 import (
 	"log"
-	"os"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/driver/postgres"
@@ -16,36 +15,38 @@ import (
 )
 
 func main() {
-	// 1. Conectar a Supabase Local (PostgreSQL)
-	dbURL := os.Getenv("DB_URL")
-	if dbURL == "" {
-		dbURL = "postgresql://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable"
-	}
+	// 1. Usando localhost para evitar problemas de ruteo de red en Windows
+	dbURL := "host=localhost user=postgres password=postgres dbname=postgres port=54322 sslmode=disable"
 
-	db, err := gorm.Open(postgres.Open(dbURL), &gorm.Config{})
+	// 2. Pasamos explícitamente dbURL al parámetro DSN
+	db, err := gorm.Open(postgres.New(postgres.Config{
+		DSN:                  dbURL,
+		PreferSimpleProtocol: true, 
+	}), &gorm.Config{})
+
 	if err != nil {
 		log.Fatalf("Error crítico: No se pudo conectar a la base de datos: %v", err)
 	}
 
-	// 2. Auto-migrar las nuevas tablas
+	// 3. Auto-migrar las nuevas tablas
 	err = db.AutoMigrate(&models.UserProgress{}, &models.LevelRule{}, &models.UserReward{})
 	if err != nil {
 		log.Fatalf("Error migrando la base de datos: %v", err)
 	}
 
-	// 3. Sembrar reglas de nivel (Tabla Paramétrica) para poder probar
+	// 4. Sembrar reglas de nivel (Tabla Paramétrica) para poder probar
 	seedLevelRules(db)
 
-	// 4. Inyectar dependencias
+	// 5. Inyectar dependencias
 	repo := repositories.NewGamificationRepository(db)
 	gamificationService := services.NewGamificationService(repo)
 	gamificationController := controllers.NewGamificationController(gamificationService)
 
-	// 5. Configurar Gin y Rutas
+	// 6. Configurar Gin y Rutas
 	router := gin.Default()
 	routes.SetupRoutes(router, gamificationController)
 
-	// 6. Arrancar servidor en un puerto diferente (8085)
+	// 7. Arrancar servidor en el puerto 8085
 	log.Println("Gamification Service corriendo en puerto 8085")
 	if err := router.Run(":8085"); err != nil {
 		log.Fatalf("Error al iniciar servidor: %v", err)
