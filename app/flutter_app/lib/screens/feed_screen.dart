@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+
 import 'dart:async';
+
 import 'friends_screen.dart';
-import '../../features/comments/presentation/comments_screen.dart'; 
+import '../../features/comments/presentation/comments_screen.dart';
 
 class FeedScreen extends StatefulWidget {
   const FeedScreen({super.key});
@@ -25,10 +27,11 @@ class _FeedScreenState extends State<FeedScreen> {
   void initState() {
     super.initState();
     _fetchInitialPosts();
-    
+
     // Listener para el scroll infinito
     _scrollController.addListener(() {
-      if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200) {
+      if (_scrollController.position.pixels >=
+          _scrollController.position.maxScrollExtent - 200) {
         if (!_isLoadingMore) {
           _fetchMorePosts();
         }
@@ -45,9 +48,9 @@ class _FeedScreenState extends State<FeedScreen> {
   // Simulación de petición HTTP inicial al API Gateway
   Future<void> _fetchInitialPosts() async {
     setState(() => _isInitialLoading = true);
-    
+
     await Future.delayed(const Duration(seconds: 2)); // Simula latencia de red
-    
+
     setState(() {
       _posts = _generateMockPosts(1, 5);
       _isInitialLoading = false;
@@ -57,9 +60,9 @@ class _FeedScreenState extends State<FeedScreen> {
   // Simulación de petición HTTP para paginación (Scroll Infinito)
   Future<void> _fetchMorePosts() async {
     setState(() => _isLoadingMore = true);
-    
+
     await Future.delayed(const Duration(seconds: 2)); // Simula latencia de red
-    
+
     setState(() {
       _currentPage++;
       _posts.addAll(_generateMockPosts(_currentPage, 3));
@@ -75,7 +78,8 @@ class _FeedScreenState extends State<FeedScreen> {
         "id": id,
         "user": "Usuario_0$id",
         "time": "Hace ${id * 5} minutos",
-        "content": "Esta es la publicación dinámica número $id cargada desde el servidor simulado. Probando el scroll infinito y la paginación.",
+        "content":
+            "Esta es la publicación dinámica número $id cargada desde el servidor simulado. Probando el scroll infinito y la paginación.",
         "song": "Canción $id",
         "artist": "Artista Generado",
         "likes": 10 * id,
@@ -121,12 +125,17 @@ class _FeedScreenState extends State<FeedScreen> {
             Row(
               children: [
                 _navLink('Inicio', isActive: true),
-                _navLink('Amigos', onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => const FriendsScreen()),
-                  );
-                }),
+                _navLink(
+                  'Amigos',
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const FriendsScreen(),
+                      ),
+                    );
+                  },
+                ),
                 _navLink('Artistas y canciones'),
               ],
             ),
@@ -235,10 +244,7 @@ class _FeedScreenState extends State<FeedScreen> {
           const SizedBox(height: 16),
           _buildListeningTo(),
           const SizedBox(height: 24),
-          SizedBox(
-            height: 700,
-            child: _buildFeedPaper(),
-          ),
+          SizedBox(height: 700, child: _buildFeedPaper()),
         ],
       ),
     );
@@ -312,7 +318,10 @@ class _FeedScreenState extends State<FeedScreen> {
   Widget _buildListeningTo() {
     return Container(
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8)),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+      ),
       child: Row(
         children: [
           Container(
@@ -354,7 +363,10 @@ class _FeedScreenState extends State<FeedScreen> {
   Widget _buildLevelCard() {
     return Container(
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8)),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+      ),
       child: Column(
         children: [
           Row(
@@ -494,21 +506,25 @@ class _FeedScreenState extends State<FeedScreen> {
             // Lista de Publicaciones
             
             Expanded(
-              child: _isInitialLoading 
-                ? Center(child: CircularProgressIndicator(color: tealAccent))
-                : ListView.builder(
-                    controller: _scrollController,
-                    itemCount: _posts.length + (_isLoadingMore ? 1 : 0),
-                    itemBuilder: (context, index) {
-                      if (index == _posts.length) {
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 24.0),
-                          child: Center(child: CircularProgressIndicator(color: tealAccent)),
-                        );
-                      }
-                      return _buildPostCard(_posts[index]);
-                    },
-                  ),
+              child: _isInitialLoading
+                  ? Center(child: CircularProgressIndicator(color: tealAccent))
+                  : ListView.builder(
+                      controller: _scrollController,
+                      itemCount: _posts.length + (_isLoadingMore ? 1 : 0),
+                      itemBuilder: (context, index) {
+                        if (index == _posts.length) {
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 24.0),
+                            child: Center(
+                              child: CircularProgressIndicator(
+                                color: tealAccent,
+                              ),
+                            ),
+                          );
+                        }
+                        return _buildPostCard(_posts[index]);
+                      },
+                    ),
             ),
             // Botón inferior
             ElevatedButton(
