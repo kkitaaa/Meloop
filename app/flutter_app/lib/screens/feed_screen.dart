@@ -116,10 +116,11 @@ class _FeedScreenState extends State<FeedScreen> {
         children: [
           Image.asset(
             'assets/imagenes/meloop.png',
-            height: 24,
+            height: 24, // Mucho más pequeño
             color: Colors.white,
-            fit: BoxFit.contain,
+            fit: BoxFit.contain, // Evita que se estire o se vea gordo
           ),
+
           if (isDesktop) ...[
             Row(
               children: [
@@ -141,7 +142,7 @@ class _FeedScreenState extends State<FeedScreen> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.2),
+                color: Colors.white.withValues(alpha: 0.2),
                 borderRadius: BorderRadius.circular(20),
               ),
               child: Row(
@@ -158,6 +159,8 @@ class _FeedScreenState extends State<FeedScreen> {
               ),
             ),
           ],
+
+          // Iconos derechos
           Row(
             children: const [
               Icon(Icons.notifications, color: Colors.white, size: 20),
@@ -222,7 +225,9 @@ class _FeedScreenState extends State<FeedScreen> {
           ),
           const SizedBox(width: 24),
           ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 650),
+            constraints: const BoxConstraints(
+              maxWidth: 650,
+            ), // Ancho máximo para el papel
             child: _buildFeedPaper(),
           ),
         ],
@@ -256,9 +261,12 @@ class _FeedScreenState extends State<FeedScreen> {
             margin: const EdgeInsets.only(top: 10),
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: Colors.white, // Blanco puro
               boxShadow: [
-                BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 8),
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.1),
+                  blurRadius: 8,
+                ),
               ],
             ),
             child: Column(
@@ -294,10 +302,11 @@ class _FeedScreenState extends State<FeedScreen> {
             child: Container(
               width: 50,
               height: 18,
-              color: Colors.white.withOpacity(0.7),
+              color: Colors.white.withValues(alpha: 0.7), // Efecto masking tape
             ),
           ),
         ),
+        // Pin rojo
         Positioned(
           top: 8,
           child: CircleAvatar(radius: 5, backgroundColor: Colors.red[700]),
@@ -438,9 +447,12 @@ class _FeedScreenState extends State<FeedScreen> {
   Widget _buildFeedPaper() {
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFFFDFDFD),
+        color: const Color(0xFFFDFDFD), // Blanco papel
         boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 20),
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.15),
+            blurRadius: 20,
+          ),
         ],
       ),
       child: Padding(
@@ -491,6 +503,8 @@ class _FeedScreenState extends State<FeedScreen> {
             ),
             const Divider(height: 32, thickness: 1, color: Colors.black12),
 
+            // Lista de Publicaciones
+            
             Expanded(
               child: _isInitialLoading
                   ? Center(child: CircularProgressIndicator(color: tealAccent))
@@ -511,6 +525,21 @@ class _FeedScreenState extends State<FeedScreen> {
                         return _buildPostCard(_posts[index]);
                       },
                     ),
+            ),
+            // Botón inferior
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: tealAccent,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                elevation: 0,
+              ),
+              onPressed: () {},
+              child: const Text(
+                "Cargar más blogs",
+                style: TextStyle(color: Colors.white, fontSize: 12),
+              ),
             ),
           ],
         ),
@@ -560,20 +589,17 @@ class _FeedScreenState extends State<FeedScreen> {
                   const SizedBox(width: 12),
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
+                    children: const [
                       Text(
-                        postData["user"],
-                        style: const TextStyle(
+                        "UsuarioEjemplo",
+                        style: TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 13,
                         ),
                       ),
                       Text(
-                        postData["time"],
-                        style: const TextStyle(
-                          fontSize: 10,
-                          color: Colors.grey,
-                        ),
+                        "Hace 20 minutos",
+                        style: TextStyle(fontSize: 10, color: Colors.grey),
                       ),
                     ],
                   ),
@@ -583,15 +609,12 @@ class _FeedScreenState extends State<FeedScreen> {
             ],
           ),
           const SizedBox(height: 12),
-          Text(
-            postData["content"],
-            style: const TextStyle(
-              fontSize: 13,
-              color: Colors.black87,
-              height: 1.4,
-            ),
+          const Text(
+            "No les parece raro como es que el sonido cambió después del 2011? Es un tema de discusión muy interesante en la producción musical actual.",
+            style: TextStyle(fontSize: 13, color: Colors.black87, height: 1.4),
           ),
           const SizedBox(height: 12),
+
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
@@ -614,21 +637,18 @@ class _FeedScreenState extends State<FeedScreen> {
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
+                    children: const [
                       Text(
-                        postData["song"],
-                        style: const TextStyle(
+                        "Bangarang (feat. Sirah)",
+                        style: TextStyle(
                           color: Colors.white,
                           fontWeight: FontWeight.bold,
                           fontSize: 12,
                         ),
                       ),
                       Text(
-                        postData["artist"],
-                        style: const TextStyle(
-                          color: Colors.white70,
-                          fontSize: 10,
-                        ),
+                        "Skrillex, Sirah",
+                        style: TextStyle(color: Colors.white70, fontSize: 10),
                       ),
                     ],
                   ),
@@ -661,44 +681,33 @@ class _FeedScreenState extends State<FeedScreen> {
             ),
           ),
           const SizedBox(height: 12),
+
           Row(
             children: [
               Row(
-                children: [
-                  const Icon(Icons.favorite, color: Colors.red, size: 16),
-                  const SizedBox(width: 4),
+                children: const [
+                  Icon(Icons.favorite, color: Colors.red, size: 16),
+                  SizedBox(width: 4),
                   Text(
-                    "${postData["likes"]} Likes",
-                    style: const TextStyle(color: Colors.grey, fontSize: 11),
+                    "21 Likes",
+                    style: TextStyle(color: Colors.grey, fontSize: 11),
                   ),
                 ],
               ),
               const SizedBox(width: 16),
-
-              // CONEXIÓN A LA VISTA DE COMENTARIOS
-              InkWell(
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => CommentsScreen(postData: postData),
-                    ),
-                  );
-                },
-                child: Row(
-                  children: [
-                    const Icon(
-                      Icons.mode_comment_outlined,
-                      color: Colors.grey,
-                      size: 16,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      "${postData["comments"]} Comentarios",
-                      style: const TextStyle(color: Colors.grey, fontSize: 11),
-                    ),
-                  ],
-                ),
+              Row(
+                children: const [
+                  Icon(
+                    Icons.mode_comment_outlined,
+                    color: Colors.grey,
+                    size: 16,
+                  ),
+                  SizedBox(width: 4),
+                  Text(
+                    "3 Comentarios",
+                    style: TextStyle(color: Colors.grey, fontSize: 11),
+                  ),
+                ],
               ),
             ],
           ),

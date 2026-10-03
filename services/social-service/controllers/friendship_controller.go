@@ -152,6 +152,16 @@ func (ctrl *FriendshipController) ValidateInteraction(c *gin.Context) {
 	})
 }
 
+func (ctrl *FriendshipController) GetFriendSuggestions(c *gin.Context) {
+	userID := c.GetString(ContextUserIDKey)
+	result, err := ctrl.service.GetFriendSuggestions(c, userID)
+	if err != nil {
+		ctrl.handleError(c, err)
+		return
+	}
+	httpresponse.SuccessGin(c, http.StatusOK, result)
+}
+
 func (ctrl *FriendshipController) process(c *gin.Context, action func(int, string) (*models.FriendRequest, error)) {
 	requestID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || requestID <= 0 {
