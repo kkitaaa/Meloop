@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
+import 'friends_screen.dart';
+import '../../features/comments/presentation/comments_screen.dart'; 
 
 class FeedScreen extends StatefulWidget {
   const FeedScreen({super.key});
@@ -11,16 +14,86 @@ class _FeedScreenState extends State<FeedScreen> {
   final Color bgColor = const Color(0xFF0D5C5E);
   final Color tealAccent = const Color(0xFF1ABC9C);
 
+  // --- Lógica de Paginación y Estado Dinámico ---
+  final ScrollController _scrollController = ScrollController();
+  List<Map<String, dynamic>> _posts = [];
+  bool _isInitialLoading = true;
+  bool _isLoadingMore = false;
+  int _currentPage = 1;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchInitialPosts();
+    
+    // Listener para el scroll infinito
+    _scrollController.addListener(() {
+      if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200) {
+        if (!_isLoadingMore) {
+          _fetchMorePosts();
+        }
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  // Simulación de petición HTTP inicial al API Gateway
+  Future<void> _fetchInitialPosts() async {
+    setState(() => _isInitialLoading = true);
+    
+    await Future.delayed(const Duration(seconds: 2)); // Simula latencia de red
+    
+    setState(() {
+      _posts = _generateMockPosts(1, 5);
+      _isInitialLoading = false;
+    });
+  }
+
+  // Simulación de petición HTTP para paginación (Scroll Infinito)
+  Future<void> _fetchMorePosts() async {
+    setState(() => _isLoadingMore = true);
+    
+    await Future.delayed(const Duration(seconds: 2)); // Simula latencia de red
+    
+    setState(() {
+      _currentPage++;
+      _posts.addAll(_generateMockPosts(_currentPage, 3));
+      _isLoadingMore = false;
+    });
+  }
+
+  // Generador de datos simulados para la lista dinámica
+  List<Map<String, dynamic>> _generateMockPosts(int page, int count) {
+    return List.generate(count, (index) {
+      int id = (page - 1) * count + index + 1;
+      return {
+        "id": id,
+        "user": "Usuario_0$id",
+        "time": "Hace ${id * 5} minutos",
+        "content": "Esta es la publicación dinámica número $id cargada desde el servidor simulado. Probando el scroll infinito y la paginación.",
+        "song": "Canción $id",
+        "artist": "Artista Generado",
+        "likes": 10 * id,
+        "comments": id,
+      };
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    double screenWidth = MediaQuery.of(context).size.width;
-    bool isDesktop = screenWidth > 900;
+    final double screenWidth = MediaQuery.of(context).size.width;
+    final bool isDesktop = screenWidth > 900;
 
     return Scaffold(
       backgroundColor: bgColor,
       body: Column(
         children: [
-          _buildCustomTopBar(isDesktop),
+          _buildTopBar(isDesktop),
           Expanded(
             child: isDesktop ? _buildDesktopLayout() : _buildMobileLayout(),
           ),
@@ -29,16 +102,14 @@ class _FeedScreenState extends State<FeedScreen> {
     );
   }
 
-  // --- 1. TOP BAR CORREGIDA ---
-  Widget _buildCustomTopBar(bool isDesktop) {
+  Widget _buildTopBar(bool isDesktop) {
     return Container(
-      height: 55, // Más delgada como en Figma
+      height: 55,
       color: tealAccent,
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // Logo ajustado
           Image.asset(
             'assets/imagenes/meloop.png',
             height: 24, // Mucho más pequeño
@@ -47,15 +118,18 @@ class _FeedScreenState extends State<FeedScreen> {
           ),
 
           if (isDesktop) ...[
-            // Menú central
             Row(
               children: [
                 _navLink('Inicio', isActive: true),
-                _navLink('Amigos'),
+                _navLink('Amigos', onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const FriendsScreen()),
+                  );
+                }),
                 _navLink('Artistas y canciones'),
               ],
             ),
-            // Reproductor superior
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
               decoration: BoxDecoration(
@@ -94,37 +168,38 @@ class _FeedScreenState extends State<FeedScreen> {
     );
   }
 
-  // Pastilla de navegación exacta a Figma
-  Widget _navLink(String text, {bool isActive = false}) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 4.0),
-      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 6.0),
-      decoration: BoxDecoration(
-        color: isActive ? Colors.white : Colors.transparent,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Text(
-        text,
-        style: TextStyle(
-          color: isActive ? tealAccent : Colors.white,
-          fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-          fontSize: 12,
+  Widget _navLink(String text, {bool isActive = false, VoidCallback? onTap}) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 4.0),
+        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 6.0),
+        decoration: BoxDecoration(
+          color: isActive ? Colors.white : Colors.transparent,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Text(
+          text,
+          style: TextStyle(
+            color: isActive ? tealAccent : Colors.white,
+            fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+            fontSize: 12,
+          ),
         ),
       ),
     );
   }
 
-  // --- LAYOUT ESCRITORIO ---
   Widget _buildDesktopLayout() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 32.0, vertical: 24.0),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.center, // Centra el contenido
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          // Sidebar Izquierdo
           SizedBox(
-            width: 220, // Un poco más angosto
+            width: 220,
             child: SingleChildScrollView(
               child: Column(
                 children: [
@@ -140,7 +215,6 @@ class _FeedScreenState extends State<FeedScreen> {
             ),
           ),
           const SizedBox(width: 24),
-          // Feed Central
           ConstrainedBox(
             constraints: const BoxConstraints(
               maxWidth: 650,
@@ -161,13 +235,14 @@ class _FeedScreenState extends State<FeedScreen> {
           const SizedBox(height: 16),
           _buildListeningTo(),
           const SizedBox(height: 24),
-          _buildFeedPaper(),
+          SizedBox(
+            height: 700,
+            child: _buildFeedPaper(),
+          ),
         ],
       ),
     );
   }
-
-  // --- 2. TARJETAS LATERALES BLANCAS COMO EN FIGMA ---
 
   Widget _buildPolaroidProfile() {
     return Stack(
@@ -193,7 +268,7 @@ class _FeedScreenState extends State<FeedScreen> {
                 Container(
                   height: 140,
                   width: double.infinity,
-                  color: Colors.grey[200], // Fondo foto
+                  color: Colors.grey[200],
                   child: const Icon(Icons.pets, size: 50, color: Colors.grey),
                 ),
                 const SizedBox(height: 16),
@@ -214,7 +289,6 @@ class _FeedScreenState extends State<FeedScreen> {
             ),
           ),
         ),
-        // Cinta adhesiva superior
         Positioned(
           top: 0,
           child: Transform.rotate(
@@ -238,10 +312,7 @@ class _FeedScreenState extends State<FeedScreen> {
   Widget _buildListeningTo() {
     return Container(
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white, // Corregido: Era blanco en Figma
-        borderRadius: BorderRadius.circular(8),
-      ),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8)),
       child: Row(
         children: [
           Container(
@@ -283,10 +354,7 @@ class _FeedScreenState extends State<FeedScreen> {
   Widget _buildLevelCard() {
     return Container(
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white, // Corregido: Era blanco en Figma
-        borderRadius: BorderRadius.circular(8),
-      ),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8)),
       child: Column(
         children: [
           Row(
@@ -363,7 +431,7 @@ class _FeedScreenState extends State<FeedScreen> {
     );
   }
 
-  // --- 3. MURO DE PUBLICACIONES ---
+  // --- CONTENEDOR DEL FEED DINÁMICO ---
   Widget _buildFeedPaper() {
     return Container(
       decoration: BoxDecoration(
@@ -379,7 +447,6 @@ class _FeedScreenState extends State<FeedScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 32.0, vertical: 24.0),
         child: Column(
           children: [
-            // Cabecera del Feed
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -398,7 +465,6 @@ class _FeedScreenState extends State<FeedScreen> {
                     _filterChip("amigos", isActive: false),
                   ],
                 ),
-                // Botón Outlined (Borde Verde, texto verde)
                 OutlinedButton.icon(
                   style: OutlinedButton.styleFrom(
                     side: BorderSide(color: tealAccent),
@@ -426,13 +492,23 @@ class _FeedScreenState extends State<FeedScreen> {
             const Divider(height: 32, thickness: 1, color: Colors.black12),
 
             // Lista de Publicaciones
+            
             Expanded(
-              child: ListView.builder(
-                itemCount: 2,
-                itemBuilder: (context, index) {
-                  return _buildPostCard();
-                },
-              ),
+              child: _isInitialLoading 
+                ? Center(child: CircularProgressIndicator(color: tealAccent))
+                : ListView.builder(
+                    controller: _scrollController,
+                    itemCount: _posts.length + (_isLoadingMore ? 1 : 0),
+                    itemBuilder: (context, index) {
+                      if (index == _posts.length) {
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 24.0),
+                          child: Center(child: CircularProgressIndicator(color: tealAccent)),
+                        );
+                      }
+                      return _buildPostCard(_posts[index]);
+                    },
+                  ),
             ),
             // Botón inferior
             ElevatedButton(
@@ -455,7 +531,6 @@ class _FeedScreenState extends State<FeedScreen> {
     );
   }
 
-  // Chips corregidos
   Widget _filterChip(String label, {required bool isActive}) {
     return Container(
       margin: const EdgeInsets.only(right: 8),
@@ -478,7 +553,8 @@ class _FeedScreenState extends State<FeedScreen> {
     );
   }
 
-  Widget _buildPostCard() {
+  // --- TARJETA DINÁMICA ---
+  Widget _buildPostCard(Map<String, dynamic> postData) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 24.0),
       child: Column(
