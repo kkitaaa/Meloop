@@ -63,7 +63,7 @@ class _CommentsScreenState extends State<CommentsScreen> {
     if (text.isEmpty) return;
 
     setState(() => _isSubmitting = true);
-    
+
     // Ocultar teclado
     FocusScope.of(context).unfocus();
 
@@ -76,7 +76,9 @@ class _CommentsScreenState extends State<CommentsScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text("Error: El comentario incumple las normas de la comunidad (RN-03)."),
+            content: Text(
+              "Error: El comentario incumple las normas de la comunidad (RN-03).",
+            ),
             backgroundColor: Colors.redAccent,
           ),
         );
@@ -108,13 +110,18 @@ class _CommentsScreenState extends State<CommentsScreen> {
       backgroundColor: bgColor,
       appBar: AppBar(
         backgroundColor: tealAccent,
-        title: const Text("Comentarios", style: TextStyle(color: Colors.white, fontSize: 16)),
+        title: const Text(
+          "Comentarios",
+          style: TextStyle(color: Colors.white, fontSize: 16),
+        ),
         iconTheme: const IconThemeData(color: Colors.white),
         elevation: 0,
       ),
       body: Center(
         child: ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: isDesktop ? 650 : double.infinity),
+          constraints: BoxConstraints(
+            maxWidth: isDesktop ? 650 : double.infinity,
+          ),
           child: Container(
             color: const Color(0xFFFDFDFD),
             child: Column(
@@ -122,19 +129,20 @@ class _CommentsScreenState extends State<CommentsScreen> {
                 // Post Original (Contexto)
                 _buildOriginalPost(),
                 const Divider(height: 1, thickness: 4, color: Colors.black12),
-                
+
                 // Lista de Comentarios
                 Expanded(
                   child: ListView.separated(
                     padding: const EdgeInsets.all(24.0),
                     itemCount: _comments.length,
-                    separatorBuilder: (context, index) => const Divider(height: 32),
+                    separatorBuilder: (context, index) =>
+                        const Divider(height: 32),
                     itemBuilder: (context, index) {
                       return _buildCommentTile(_comments[index]);
                     },
                   ),
                 ),
-                
+
                 // Barra fija inferior para comentar
                 _buildCommentInputBar(),
               ],
@@ -153,13 +161,30 @@ class _CommentsScreenState extends State<CommentsScreen> {
         children: [
           Row(
             children: [
-              const CircleAvatar(radius: 16, backgroundColor: Colors.black87, child: Icon(Icons.person, color: Colors.white, size: 18)),
+              const CircleAvatar(
+                radius: 16,
+                backgroundColor: Colors.black87,
+                child: Icon(Icons.person, color: Colors.white, size: 18),
+              ),
               const SizedBox(width: 12),
-              Text(widget.postData["user"] ?? "Usuario", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+              Text(
+                widget.postData["user"] ?? "Usuario",
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 12),
-          Text(widget.postData["content"] ?? "", style: const TextStyle(fontSize: 14, color: Colors.black87, height: 1.4)),
+          Text(
+            widget.postData["content"] ?? "",
+            style: const TextStyle(
+              fontSize: 14,
+              color: Colors.black87,
+              height: 1.4,
+            ),
+          ),
         ],
       ),
     );
@@ -169,7 +194,11 @@ class _CommentsScreenState extends State<CommentsScreen> {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const CircleAvatar(radius: 14, backgroundColor: Colors.grey, child: Icon(Icons.person, color: Colors.white, size: 16)),
+        const CircleAvatar(
+          radius: 14,
+          backgroundColor: Colors.grey,
+          child: Icon(Icons.person, color: Colors.white, size: 16),
+        ),
         const SizedBox(width: 12),
         Expanded(
           child: Column(
@@ -177,24 +206,46 @@ class _CommentsScreenState extends State<CommentsScreen> {
             children: [
               Row(
                 children: [
-                  Text(comment["user"], style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                  Text(
+                    comment["user"],
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                    ),
+                  ),
                   const SizedBox(width: 8),
-                  Text(comment["time"], style: const TextStyle(fontSize: 10, color: Colors.grey)),
+                  Text(
+                    comment["time"],
+                    style: const TextStyle(fontSize: 10, color: Colors.grey),
+                  ),
                 ],
               ),
               const SizedBox(height: 4),
-              Text(comment["text"], style: const TextStyle(fontSize: 13, color: Colors.black87)),
+              Text(
+                comment["text"],
+                style: const TextStyle(fontSize: 13, color: Colors.black87),
+              ),
               const SizedBox(height: 8),
               Row(
                 children: [
-                  Text("${comment["likes"]} Likes", style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                  Text(
+                    "${comment["likes"]} Likes",
+                    style: const TextStyle(fontSize: 11, color: Colors.grey),
+                  ),
                   const SizedBox(width: 16),
                   InkWell(
                     onTap: () => _startReply(comment["user"]),
-                    child: const Text("Responder", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey)),
+                    child: const Text(
+                      "Responder",
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.grey,
+                      ),
+                    ),
                   ),
                 ],
-              )
+              ),
             ],
           ),
         ),
@@ -206,7 +257,13 @@ class _CommentsScreenState extends State<CommentsScreen> {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha:0.05), blurRadius: 10, offset: const Offset(0, -5))],
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 10,
+            offset: const Offset(0, -5),
+          ),
+        ],
       ),
       child: SafeArea(
         child: Column(
@@ -215,23 +272,40 @@ class _CommentsScreenState extends State<CommentsScreen> {
             // Indicador de "Respondiendo a..."
             if (_replyingToUser != null)
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 8,
+                ),
                 color: Colors.grey[100],
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text("Respondiendo a @$_replyingToUser", style: TextStyle(fontSize: 12, color: tealAccent, fontWeight: FontWeight.bold)),
+                    Text(
+                      "Respondiendo a @$_replyingToUser",
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: tealAccent,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                     InkWell(
                       onTap: _cancelReply,
-                      child: const Icon(Icons.close, size: 16, color: Colors.grey),
-                    )
+                      child: const Icon(
+                        Icons.close,
+                        size: 16,
+                        color: Colors.grey,
+                      ),
+                    ),
                   ],
                 ),
               ),
-            
+
             // Campo de texto y botón enviar
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+              padding: const EdgeInsets.symmetric(
+                horizontal: 16.0,
+                vertical: 12.0,
+              ),
               child: Row(
                 children: [
                   Expanded(
@@ -241,7 +315,10 @@ class _CommentsScreenState extends State<CommentsScreen> {
                       decoration: InputDecoration(
                         hintText: "Escribe un comentario...",
                         hintStyle: const TextStyle(fontSize: 13),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
+                        ),
                         filled: true,
                         fillColor: Colors.grey[100],
                         border: OutlineInputBorder(
@@ -254,7 +331,14 @@ class _CommentsScreenState extends State<CommentsScreen> {
                   ),
                   const SizedBox(width: 8),
                   _isSubmitting
-                      ? const Padding(padding: EdgeInsets.all(12.0), child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)))
+                      ? const Padding(
+                          padding: EdgeInsets.all(12.0),
+                          child: SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        )
                       : IconButton(
                           onPressed: _submitComment,
                           icon: Icon(Icons.send, color: tealAccent),

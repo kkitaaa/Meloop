@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+
 import 'dart:async';
+
 import 'friends_screen.dart';
 import '../../features/comments/presentation/comments_screen.dart';
 
@@ -114,9 +116,9 @@ class _FeedScreenState extends State<FeedScreen> {
         children: [
           Image.asset(
             'assets/imagenes/meloop.png',
-            height: 24, 
+            height: 24,
             color: Colors.white,
-            fit: BoxFit.contain, 
+            fit: BoxFit.contain,
           ),
 
           if (isDesktop) ...[
@@ -222,9 +224,7 @@ class _FeedScreenState extends State<FeedScreen> {
           ),
           const SizedBox(width: 24),
           ConstrainedBox(
-            constraints: const BoxConstraints(
-              maxWidth: 650,
-            ), 
+            constraints: const BoxConstraints(maxWidth: 650),
             child: _buildFeedPaper(),
           ),
         ],
@@ -258,7 +258,7 @@ class _FeedScreenState extends State<FeedScreen> {
             margin: const EdgeInsets.only(top: 10),
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: Colors.white, 
+              color: Colors.white,
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withValues(alpha: 0.1),
@@ -299,7 +299,7 @@ class _FeedScreenState extends State<FeedScreen> {
             child: Container(
               width: 50,
               height: 18,
-              color: Colors.white.withValues(alpha: 0.7), 
+              color: Colors.white.withValues(alpha: 0.7),
             ),
           ),
         ),
@@ -442,7 +442,7 @@ class _FeedScreenState extends State<FeedScreen> {
   Widget _buildFeedPaper() {
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFFFDFDFD), 
+        color: const Color(0xFFFDFDFD),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.15),
@@ -519,7 +519,7 @@ class _FeedScreenState extends State<FeedScreen> {
                       },
                     ),
             ),
-            
+
             ElevatedButton(
               style: ElevatedButton.styleFrom(
                 backgroundColor: tealAccent,
@@ -591,7 +591,10 @@ class _FeedScreenState extends State<FeedScreen> {
                       ),
                       Text(
                         postData["time"],
-                        style: const TextStyle(fontSize: 10, color: Colors.grey),
+                        style: const TextStyle(
+                          fontSize: 10,
+                          color: Colors.grey,
+                        ),
                       ),
                     ],
                   ),
@@ -603,7 +606,11 @@ class _FeedScreenState extends State<FeedScreen> {
           const SizedBox(height: 12),
           Text(
             postData["content"],
-            style: const TextStyle(fontSize: 13, color: Colors.black87, height: 1.4),
+            style: const TextStyle(
+              fontSize: 13,
+              color: Colors.black87,
+              height: 1.4,
+            ),
           ),
           const SizedBox(height: 12),
 
@@ -640,7 +647,10 @@ class _FeedScreenState extends State<FeedScreen> {
                       ),
                       Text(
                         postData["artist"],
-                        style: const TextStyle(color: Colors.white70, fontSize: 10),
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 10,
+                        ),
                       ),
                     ],
                   ),
@@ -687,7 +697,7 @@ class _FeedScreenState extends State<FeedScreen> {
                 ],
               ),
               const SizedBox(width: 16),
-              
+
               // BOTÓN DE COMENTARIOS RESTAURADO
               InkWell(
                 onTap: () {
