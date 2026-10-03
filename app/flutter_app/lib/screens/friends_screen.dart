@@ -52,7 +52,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
             ),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-              decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(20)),
+              decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(20)),
               child: Row(
                 children: const [
                   Icon(Icons.play_circle_fill, color: Colors.white, size: 18),
@@ -134,7 +134,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
           child: Container(
             margin: const EdgeInsets.only(top: 10),
             padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(color: Colors.white, boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 8)]),
+            decoration: BoxDecoration(color: Colors.white, boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 8)]),
             child: Column(
               children: [
                 Container(height: 140, width: double.infinity, color: Colors.grey[200], child: const Icon(Icons.pets, size: 50, color: Colors.grey)),
@@ -146,7 +146,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
             ),
           ),
         ),
-        Positioned(top: 0, child: Transform.rotate(angle: -0.08, child: Container(width: 50, height: 18, color: Colors.white.withOpacity(0.7)))),
+        Positioned(top: 0, child: Transform.rotate(angle: -0.08, child: Container(width: 50, height: 18, color: Colors.white.withValues(alpha: 0.7)))),
         Positioned(top: 8, child: CircleAvatar(radius: 5, backgroundColor: Colors.red[700])),
       ],
     );
@@ -158,7 +158,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
       height: 650, 
       decoration: BoxDecoration(
         color: const Color(0xFFFDFDFD),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 20)],
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 20)],
       ),
       child: DefaultTabController(
         length: 3,
@@ -296,9 +296,9 @@ class _FriendsScreenState extends State<FriendsScreen> {
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             color: Colors.white,
-            border: Border.all(color: Colors.grey.withOpacity(0.2)),
+            border: Border.all(color: Colors.grey.withValues(alpha:0.2)),
             borderRadius: BorderRadius.circular(12),
-            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 4, offset: const Offset(0, 2))],
+            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha:0.02), blurRadius: 4, offset: const Offset(0, 2))],
           ),
           child: Row(
             children: [
@@ -316,9 +316,9 @@ class _FriendsScreenState extends State<FriendsScreen> {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
-                        color: tealAccent.withOpacity(0.1),
+                        color: tealAccent.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: tealAccent.withOpacity(0.5)),
+                        border: Border.all(color: tealAccent.withValues(alpha:0.5)),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
