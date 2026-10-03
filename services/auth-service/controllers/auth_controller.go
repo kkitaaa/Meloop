@@ -188,3 +188,120 @@ func (ctrl *AuthController) ChangePassword(c *gin.Context) {
 		"message": "Contraseña actualizada correctamente",
 	})
 }
+
+// RequestPasswordRecovery maneja la petición de inicio de recuperación de contraseña (POST /auth/password-recovery)
+func (ctrl *AuthController) RequestPasswordRecovery(c *gin.Context) {
+	var req models.PasswordRecoveryRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		httpresponse.BadRequestGin(c, "Formato JSON de petición inválido")
+		return
+	}
+
+	err := ctrl.authService.RequestPasswordRecovery(c.Request.Context(), &req)
+	if err != nil {
+		var valErr *services.ValidationError
+		if errors.As(err, &valErr) {
+			details := map[string]string{
+				"field": valErr.Field,
+				"issue": valErr.Issue,
+			}
+			httpresponse.ErrorWithDetailsGin(
+				c,
+				http.StatusBadRequest,
+				httpcallValidation,
+				valErr.Message,
+				details,
+			)
+			return
+		}
+
+		httpresponse.InternalErrorGin(c)
+		return
+	}
+
+	httpresponse.SuccessGin(c, http.StatusOK, gin.H{
+		"message": "Si el correo electrónico está registrado, recibirás un enlace de recuperación",
+	})
+}
+
+// ResetPassword maneja la petición para restablecer la contraseña mediante token (POST /auth/password-recovery/reset)
+func (ctrl *AuthController) ResetPassword(c *gin.Context) {
+	var req models.ResetPasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		httpresponse.BadRequestGin(c, "Formato JSON de petición inválido")
+		return
+	}
+
+	err := ctrl.authService.ResetPassword(c.Request.Context(), &req)
+	if err != nil {
+		var valErr *services.ValidationError
+		if errors.As(err, &valErr) {
+			details := map[string]string{
+				"field": valErr.Field,
+				"issue": valErr.Issue,
+			}
+			httpresponse.ErrorWithDetailsGin(
+				c,
+				http.StatusBadRequest,
+				httpcallValidation,
+				valErr.Message,
+				details,
+			)
+			return
+		}
+
+		if errors.Is(err, services.ErrTokenNotFound) {
+			httpresponse.ErrorWithDetailsGin(
+				c,
+				http.StatusBadRequest,
+				httpcallValidation,
+				"El token de recuperación es inválido o no existe",
+				map[string]string{
+					"field": "token",
+					"issue": "invalid",
+				},
+			)
+			return
+		}
+
+		if errors.Is(err, services.ErrTokenExpired) {
+			httpresponse.ErrorWithDetailsGin(
+				c,
+				http.StatusBadRequest,
+				httpcallValidation,
+				"El token de recuperación ha expirado",
+				map[string]string{
+					"field": "token",
+					"issue": "expired",
+				},
+			)
+			return
+		}
+
+		if errors.Is(err, services.ErrTokenAlreadyUsed) {
+			httpresponse.ErrorWithDetailsGin(
+				c,
+				http.StatusBadRequest,
+				httpcallValidation,
+				"El token de recuperación ya ha sido utilizado",
+				map[string]string{
+					"field": "token",
+					"issue": "already_used",
+				},
+			)
+			return
+		}
+
+		if errors.Is(err, services.ErrInvalidCredentials) {
+			httpresponse.UnauthorizedGin(c, "Credenciales inválidas")
+			return
+		}
+
+		httpresponse.InternalErrorGin(c)
+		return
+	}
+
+	httpresponse.SuccessGin(c, http.StatusOK, gin.H{
+		"message": "Contraseña restablecida exitosamente",
+	})
+}
