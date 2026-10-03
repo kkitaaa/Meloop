@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-
 import 'dart:async';
-
 import 'friends_screen.dart';
 import '../../features/comments/presentation/comments_screen.dart';
 
@@ -116,9 +114,9 @@ class _FeedScreenState extends State<FeedScreen> {
         children: [
           Image.asset(
             'assets/imagenes/meloop.png',
-            height: 24, // Mucho más pequeño
+            height: 24, 
             color: Colors.white,
-            fit: BoxFit.contain, // Evita que se estire o se vea gordo
+            fit: BoxFit.contain, 
           ),
 
           if (isDesktop) ...[
@@ -160,7 +158,6 @@ class _FeedScreenState extends State<FeedScreen> {
             ),
           ],
 
-          // Iconos derechos
           Row(
             children: const [
               Icon(Icons.notifications, color: Colors.white, size: 20),
@@ -227,7 +224,7 @@ class _FeedScreenState extends State<FeedScreen> {
           ConstrainedBox(
             constraints: const BoxConstraints(
               maxWidth: 650,
-            ), // Ancho máximo para el papel
+            ), 
             child: _buildFeedPaper(),
           ),
         ],
@@ -261,7 +258,7 @@ class _FeedScreenState extends State<FeedScreen> {
             margin: const EdgeInsets.only(top: 10),
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: Colors.white, // Blanco puro
+              color: Colors.white, 
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withValues(alpha: 0.1),
@@ -302,11 +299,10 @@ class _FeedScreenState extends State<FeedScreen> {
             child: Container(
               width: 50,
               height: 18,
-              color: Colors.white.withValues(alpha: 0.7), // Efecto masking tape
+              color: Colors.white.withValues(alpha: 0.7), 
             ),
           ),
         ),
-        // Pin rojo
         Positioned(
           top: 8,
           child: CircleAvatar(radius: 5, backgroundColor: Colors.red[700]),
@@ -443,11 +439,10 @@ class _FeedScreenState extends State<FeedScreen> {
     );
   }
 
-  // --- CONTENEDOR DEL FEED DINÁMICO ---
   Widget _buildFeedPaper() {
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFFFDFDFD), // Blanco papel
+        color: const Color(0xFFFDFDFD), 
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.15),
@@ -503,8 +498,6 @@ class _FeedScreenState extends State<FeedScreen> {
             ),
             const Divider(height: 32, thickness: 1, color: Colors.black12),
 
-            // Lista de Publicaciones
-            
             Expanded(
               child: _isInitialLoading
                   ? Center(child: CircularProgressIndicator(color: tealAccent))
@@ -526,7 +519,7 @@ class _FeedScreenState extends State<FeedScreen> {
                       },
                     ),
             ),
-            // Botón inferior
+            
             ElevatedButton(
               style: ElevatedButton.styleFrom(
                 backgroundColor: tealAccent,
@@ -569,7 +562,6 @@ class _FeedScreenState extends State<FeedScreen> {
     );
   }
 
-  // --- TARJETA DINÁMICA ---
   Widget _buildPostCard(Map<String, dynamic> postData) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 24.0),
@@ -589,17 +581,17 @@ class _FeedScreenState extends State<FeedScreen> {
                   const SizedBox(width: 12),
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    children: const [
+                    children: [
                       Text(
-                        "UsuarioEjemplo",
-                        style: TextStyle(
+                        postData["user"],
+                        style: const TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 13,
                         ),
                       ),
                       Text(
-                        "Hace 20 minutos",
-                        style: TextStyle(fontSize: 10, color: Colors.grey),
+                        postData["time"],
+                        style: const TextStyle(fontSize: 10, color: Colors.grey),
                       ),
                     ],
                   ),
@@ -609,9 +601,9 @@ class _FeedScreenState extends State<FeedScreen> {
             ],
           ),
           const SizedBox(height: 12),
-          const Text(
-            "No les parece raro como es que el sonido cambió después del 2011? Es un tema de discusión muy interesante en la producción musical actual.",
-            style: TextStyle(fontSize: 13, color: Colors.black87, height: 1.4),
+          Text(
+            postData["content"],
+            style: const TextStyle(fontSize: 13, color: Colors.black87, height: 1.4),
           ),
           const SizedBox(height: 12),
 
@@ -637,18 +629,18 @@ class _FeedScreenState extends State<FeedScreen> {
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    children: const [
+                    children: [
                       Text(
-                        "Bangarang (feat. Sirah)",
-                        style: TextStyle(
+                        postData["song"],
+                        style: const TextStyle(
                           color: Colors.white,
                           fontWeight: FontWeight.bold,
                           fontSize: 12,
                         ),
                       ),
                       Text(
-                        "Skrillex, Sirah",
-                        style: TextStyle(color: Colors.white70, fontSize: 10),
+                        postData["artist"],
+                        style: const TextStyle(color: Colors.white70, fontSize: 10),
                       ),
                     ],
                   ),
@@ -685,29 +677,41 @@ class _FeedScreenState extends State<FeedScreen> {
           Row(
             children: [
               Row(
-                children: const [
-                  Icon(Icons.favorite, color: Colors.red, size: 16),
-                  SizedBox(width: 4),
+                children: [
+                  const Icon(Icons.favorite, color: Colors.red, size: 16),
+                  const SizedBox(width: 4),
                   Text(
-                    "21 Likes",
-                    style: TextStyle(color: Colors.grey, fontSize: 11),
+                    "${postData["likes"]} Likes",
+                    style: const TextStyle(color: Colors.grey, fontSize: 11),
                   ),
                 ],
               ),
               const SizedBox(width: 16),
-              Row(
-                children: const [
-                  Icon(
-                    Icons.mode_comment_outlined,
-                    color: Colors.grey,
-                    size: 16,
-                  ),
-                  SizedBox(width: 4),
-                  Text(
-                    "3 Comentarios",
-                    style: TextStyle(color: Colors.grey, fontSize: 11),
-                  ),
-                ],
+              
+              // BOTÓN DE COMENTARIOS RESTAURADO
+              InkWell(
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => CommentsScreen(postData: postData),
+                    ),
+                  );
+                },
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.mode_comment_outlined,
+                      color: Colors.grey,
+                      size: 16,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      "${postData["comments"]} Comentarios",
+                      style: const TextStyle(color: Colors.grey, fontSize: 11),
+                    ),
+                  ],
+                ),
               ),
             ],
           ),

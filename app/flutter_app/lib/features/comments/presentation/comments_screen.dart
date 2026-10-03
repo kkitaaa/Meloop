@@ -20,7 +20,7 @@ class _CommentsScreenState extends State<CommentsScreen> {
   bool _isSubmitting = false;
 
   // Lista de comentarios simulada
-  List<Map<String, dynamic>> _comments = [
+  final List<Map<String, dynamic>> _comments = [
     {
       "id": 1,
       "user": "Martín",
@@ -206,7 +206,7 @@ class _CommentsScreenState extends State<CommentsScreen> {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, -5))],
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha:0.05), blurRadius: 10, offset: const Offset(0, -5))],
       ),
       child: SafeArea(
         child: Column(
