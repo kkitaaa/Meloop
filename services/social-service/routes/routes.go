@@ -34,7 +34,7 @@ func SetupRoutes(router *gin.Engine, controller *controllers.FriendshipControlle
 		protected.GET("/recommendations", controller.GetFriendSuggestions)
 	}
 
-	// RF-14: Acceso directo a sugerencias de amistad
+	// Acceso directo a sugerencias de amistad
 	suggestions := router.Group("/suggestions")
 	suggestions.Use(controllers.AuthRequired())
 	{

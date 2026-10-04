@@ -31,14 +31,17 @@ func main() {
 	userRepo := repositories.NewUserRepository(dbPool)
 	privacyRepo := repositories.NewPrivacyRepository(dbPool)
 	notifRepo := repositories.NewNotificationConfigRepository(dbPool)
+	inventoryRepo := repositories.NewInventoryRepository(dbPool)
 
 	userSrv := services.NewUserService(userRepo)
 	privacySrv := services.NewPrivacyService(privacyRepo, userRepo)
 	notifSrv := services.NewNotificationConfigService(notifRepo, userRepo)
+	inventorySrv := services.NewInventoryService(inventoryRepo, userRepo)
 
 	accountCtrl := controllers.NewAccountController(userSrv)
 	privacyCtrl := controllers.NewPrivacyController(privacySrv)
 	notifCtrl := controllers.NewNotificationController(notifSrv)
+	inventoryCtrl := controllers.NewInventoryController(inventorySrv)
 
 	router := gin.New()
 	router.Use(logging.GinMiddleware(logger))
@@ -48,10 +51,24 @@ func main() {
 	router.GET("/users", controllers.GetUsers)
 	router.POST("/users", controllers.CreateUser)
 
-	// Rutas protegidas de gestión de cuenta (RF-05)
+	// Rutas protegidas bajo /v1/users (RF-08 / RF-09 / RN-12)
+	v1Protected := router.Group("/v1/users")
+	v1Protected.Use(controllers.AuthRequired())
+	{
+		v1Protected.GET("/me/inventory", inventoryCtrl.GetInventory)
+		v1Protected.PUT("/me/inventory/:id/equip", inventoryCtrl.EquipReward)
+		v1Protected.PUT("/me/inventory/:id/unequip", inventoryCtrl.UnequipReward)
+	}
+
+	// Rutas protegidas de gestión de cuenta (RF-05, RF-08, RF-09)
 	protected := router.Group("/users")
 	protected.Use(controllers.AuthRequired())
 	{
+		// Gestión de inventario y equipamiento (RF-08 / RF-09 / RN-12)
+		protected.GET("/me/inventory", inventoryCtrl.GetInventory)
+		protected.PUT("/me/inventory/:id/equip", inventoryCtrl.EquipReward)
+		protected.PUT("/me/inventory/:id/unequip", inventoryCtrl.UnequipReward)
+
 		// Datos básicos de cuenta
 		protected.GET("/me", accountCtrl.GetAccount)
 		protected.PATCH("/me/username", accountCtrl.UpdateUsername)
