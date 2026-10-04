@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -428,8 +429,36 @@ func TestGetFriendSuggestions_HTTP_Exitoso(t *testing.T) {
 	if sugg["id_usuario"] != "user-sugg-1" {
 		t.Errorf("id_usuario inesperado: %v", sugg["id_usuario"])
 	}
+	if sugg["username"] != "suggested_user" {
+		t.Errorf("username inesperado: %v", sugg["username"])
+	}
+	if sugg["porcentaje_compatibilidad"] != float64(75) {
+		t.Errorf("porcentaje_compatibilidad inesperado: %v", sugg["porcentaje_compatibilidad"])
+	}
 	if sugg["motivo"] != "Ambos escuchan a The Strokes" {
 		t.Errorf("motivo inesperado: %v", sugg["motivo"])
+	}
+}
+
+func TestGetFriendSuggestions_HTTP_RutasAlternativas_Exitoso(t *testing.T) {
+	router := setupTestRouter(&mockFriendshipService{})
+
+	// Probar /friends/recommendations
+	w1 := httptest.NewRecorder()
+	req1, _ := http.NewRequest(http.MethodGet, "/friends/recommendations", nil)
+	req1.Header.Set("X-User-ID", "usr-123")
+	router.ServeHTTP(w1, req1)
+	if w1.Code != http.StatusOK {
+		t.Fatalf("se esperaba 200 OK en /friends/recommendations, se obtuvo %d", w1.Code)
+	}
+
+	// Probar /suggestions
+	w2 := httptest.NewRecorder()
+	req2, _ := http.NewRequest(http.MethodGet, "/suggestions", nil)
+	req2.Header.Set("X-User-ID", "usr-123")
+	router.ServeHTTP(w2, req2)
+	if w2.Code != http.StatusOK {
+		t.Fatalf("se esperaba 200 OK en /suggestions, se obtuvo %d", w2.Code)
 	}
 }
 
@@ -444,9 +473,19 @@ func TestGetFriendSuggestions_HTTP_NoAutenticado(t *testing.T) {
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("se esperaba 401 Unauthorized, se obtuvo %d", w.Code)
 	}
+
+	var resp map[string]interface{}
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["success"] != false {
+		t.Errorf("se esperaba success = false")
+	}
+	errBody := resp["error"].(map[string]interface{})
+	if errBody["code"] != "UNAUTHORIZED" {
+		t.Errorf("se esperaba código UNAUTHORIZED, se obtuvo %v", errBody["code"])
+	}
 }
 
-func TestGetFriendSuggestions_HTTP_ErrorServicio(t *testing.T) {
+func TestGetFriendSuggestions_HTTP_UsuarioInvalido(t *testing.T) {
 	mockSvc := &mockFriendshipService{
 		getFriendSuggestionsFunc: func(ctx context.Context, userID string) ([]models.FriendSuggestion, error) {
 			return nil, services.ErrInvalidUser
@@ -462,5 +501,140 @@ func TestGetFriendSuggestions_HTTP_ErrorServicio(t *testing.T) {
 
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("se esperaba 401 Unauthorized para ErrInvalidUser, se obtuvo %d", w.Code)
+	}
+}
+
+func TestGetFriendSuggestions_HTTP_SinPreferenciasMusicales(t *testing.T) {
+	mockSvc := &mockFriendshipService{
+		getFriendSuggestionsFunc: func(ctx context.Context, userID string) ([]models.FriendSuggestion, error) {
+			return nil, services.ErrNoMusicalPreferences
+		},
+	}
+	router := setupTestRouter(mockSvc)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodGet, "/friends/suggestions", nil)
+	req.Header.Set("X-User-ID", "usr-123")
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("se esperaba 400 Bad Request para ErrNoMusicalPreferences, se obtuvo %d", w.Code)
+	}
+
+	var resp map[string]interface{}
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["success"] != false {
+		t.Errorf("se esperaba success = false")
+	}
+	errBody := resp["error"].(map[string]interface{})
+	if errBody["code"] != "VALIDATION_ERROR" {
+		t.Errorf("se esperaba código VALIDATION_ERROR, se obtuvo %v", errBody["code"])
+	}
+}
+
+func TestGetFriendSuggestions_HTTP_SinCandidatosDisponibles(t *testing.T) {
+	mockSvc := &mockFriendshipService{
+		getFriendSuggestionsFunc: func(ctx context.Context, userID string) ([]models.FriendSuggestion, error) {
+			return nil, services.ErrInsufficientCandidates
+		},
+	}
+	router := setupTestRouter(mockSvc)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodGet, "/friends/suggestions", nil)
+	req.Header.Set("X-User-ID", "usr-123")
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("se esperaba 404 Not Found para ErrInsufficientCandidates, se obtuvo %d", w.Code)
+	}
+}
+
+func TestGetFriendSuggestions_HTTP_ListaVaciaRetorna200(t *testing.T) {
+	mockSvc := &mockFriendshipService{
+		getFriendSuggestionsFunc: func(ctx context.Context, userID string) ([]models.FriendSuggestion, error) {
+			return []models.FriendSuggestion{}, nil
+		},
+	}
+	router := setupTestRouter(mockSvc)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodGet, "/friends/suggestions", nil)
+	req.Header.Set("X-User-ID", "usr-123")
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("se esperaba 200 OK con lista vacía, se obtuvo %d", w.Code)
+	}
+
+	var resp map[string]interface{}
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["success"] != true {
+		t.Errorf("se esperaba success = true")
+	}
+	data, ok := resp["data"].([]interface{})
+	if !ok || len(data) != 0 {
+		t.Fatalf("se esperaba lista vacía, se obtuvo %v", resp["data"])
+	}
+}
+
+func TestGetFriendSuggestions_HTTP_ErrorInterno_NoFugaDetalles(t *testing.T) {
+	mockSvc := &mockFriendshipService{
+		getFriendSuggestionsFunc: func(ctx context.Context, userID string) ([]models.FriendSuggestion, error) {
+			return nil, errors.New("FATAL: postgres connection pool dropped: secret credentials leaked")
+		},
+	}
+	router := setupTestRouter(mockSvc)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodGet, "/friends/suggestions", nil)
+	req.Header.Set("X-User-ID", "usr-123")
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("se esperaba 500 Internal Server Error, se obtuvo %d", w.Code)
+	}
+
+	var resp map[string]interface{}
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["success"] != false {
+		t.Errorf("se esperaba success = false")
+	}
+	errBody := resp["error"].(map[string]interface{})
+	if errBody["code"] != "INTERNAL_ERROR" {
+		t.Errorf("se esperaba código INTERNAL_ERROR, se obtuvo %v", errBody["code"])
+	}
+	if errBody["message"] != "Ha ocurrido un error interno" {
+		t.Errorf("se esperaba mensaje genérico, se obtuvo %v", errBody["message"])
+	}
+}
+
+func TestSuggestionController_Directo(t *testing.T) {
+	svc := &mockFriendshipService{}
+	ctrl := controllers.NewSuggestionController(svc)
+	router := gin.New()
+	routes.SetupSuggestionRoutes(router, ctrl)
+
+	// Prueba exitosa
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodGet, "/friends/suggestions", nil)
+	req.Header.Set("X-User-ID", "usr-123")
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("se esperaba 200 OK en SuggestionController directo, se obtuvo %d", w.Code)
+	}
+
+	// Prueba no autenticado
+	wNoAuth := httptest.NewRecorder()
+	reqNoAuth, _ := http.NewRequest(http.MethodGet, "/friends/suggestions", nil)
+	router.ServeHTTP(wNoAuth, reqNoAuth)
+
+	if wNoAuth.Code != http.StatusUnauthorized {
+		t.Fatalf("se esperaba 401 Unauthorized en SuggestionController directo, se obtuvo %d", wNoAuth.Code)
 	}
 }
