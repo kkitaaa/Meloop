@@ -29,16 +29,19 @@ func main() {
 	}
 
 	userRepo := repositories.NewUserRepository(dbPool)
+	adminRepo := repositories.NewAdminRepository(dbPool)
 	privacyRepo := repositories.NewPrivacyRepository(dbPool)
 	notifRepo := repositories.NewNotificationConfigRepository(dbPool)
 
 	userSrv := services.NewUserService(userRepo)
 	privacySrv := services.NewPrivacyService(privacyRepo, userRepo)
 	notifSrv := services.NewNotificationConfigService(notifRepo, userRepo)
+	adminSrv := services.NewAdminService(adminRepo)
 
 	accountCtrl := controllers.NewAccountController(userSrv)
 	privacyCtrl := controllers.NewPrivacyController(privacySrv)
 	notifCtrl := controllers.NewNotificationController(notifSrv)
+	adminCtrl := controllers.NewAdminController(adminSrv)
 
 	router := gin.New()
 	router.Use(logging.GinMiddleware(logger))
@@ -73,6 +76,14 @@ func main() {
 		protected.PATCH("/me/notifications", notifCtrl.UpdateNotificationSettings)
 		protected.GET("/me/notificaciones", notifCtrl.GetNotificationSettings)
 		protected.PATCH("/me/notificaciones", notifCtrl.UpdateNotificationSettings)
+	}
+
+	admin := router.Group("/admin")
+	admin.Use(controllers.AdminRequired(cfg.AuthServiceURL, adminRepo))
+	{
+		admin.GET("/users", adminCtrl.ListUsers)
+		admin.PATCH("/users/:id/suspension", adminCtrl.SetSuspension)
+		admin.PATCH("/users/:id/moderator", adminCtrl.SetModerator)
 	}
 
 	logger.Info("service_listening", "port", cfg.Port)

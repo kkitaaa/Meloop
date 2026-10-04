@@ -27,4 +27,14 @@ func SetupRoutes(router *gin.Engine) {
 	// Enrutar peticiones de recomendaciones (conservando el prefijo /recommendations en el destino)
 	router.Any("/recommendations", controllers.ProxyToService("RECOMMENDATION_SERVICE_URL", "http://localhost:8087", ""))
 	router.Any("/recommendations/*any", controllers.ProxyToService("RECOMMENDATION_SERVICE_URL", "http://localhost:8087", ""))
+	router.Any("/notifications", controllers.ProxyToService("NOTIFICATION_SERVICE_URL", "http://localhost:8089", ""))
+	router.Any("/notifications/*any", controllers.ProxyToService("NOTIFICATION_SERVICE_URL", "http://localhost:8089", ""))
+
+	// Rutas administrativas; cada servicio verifica el token y el rol en PostgreSQL.
+	adminUsersProxy := controllers.ProxyToService("USER_SERVICE_URL", "http://localhost:8082", "")
+	router.Any("/admin/users", adminUsersProxy)
+	router.Any("/admin/users/*any", adminUsersProxy)
+	adminRewardsProxy := controllers.ProxyToService("GAMIFICATION_SERVICE_URL", "http://localhost:8088", "")
+	router.Any("/admin/rewards", adminRewardsProxy)
+	router.Any("/admin/rewards/*any", adminRewardsProxy)
 }

@@ -23,7 +23,7 @@ type Config struct {
 func Load() *Config {
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
-		dbURL = "postgres://postgres:postgres@localhost:5432/meloop?sslmode=disable"
+		dbURL = "postgresql://postgres:postgres@localhost:15422/postgres?sslmode=disable"
 	}
 
 	minLen := 8

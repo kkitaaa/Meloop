@@ -22,6 +22,7 @@ var (
 	ErrUsernameExists     = errors.New("USERNAME_EXISTS")
 	ErrEmailExists        = errors.New("EMAIL_EXISTS")
 	ErrInvalidCredentials = errors.New("INVALID_CREDENTIALS")
+	ErrAccountSuspended   = errors.New("ACCOUNT_SUSPENDED")
 	ErrTokenNotFound      = errors.New("TOKEN_NOT_FOUND")
 	ErrTokenExpired       = errors.New("TOKEN_EXPIRED")
 	ErrTokenAlreadyUsed   = errors.New("TOKEN_ALREADY_USED")
@@ -187,6 +188,9 @@ func (s *authService) Login(ctx context.Context, req *models.LoginRequest) (*mod
 	if err != nil {
 		return nil, ErrInvalidCredentials
 	}
+	if usuario.Suspendido {
+		return nil, ErrAccountSuspended
+	}
 
 	token, err := generateSessionToken()
 	if err != nil {
@@ -230,6 +234,14 @@ func (s *authService) ValidateSession(ctx context.Context, token string) (*model
 	}
 	if user == nil {
 		return nil, errors.New("session invalid or expired")
+	}
+	account, err := s.repo.GetByID(ctx, user.ID)
+	if err != nil {
+		return nil, fmt.Errorf("validate session account status: %w", err)
+	}
+	if account == nil || account.Suspendido {
+		_ = s.sessionRepo.Delete(ctx, token)
+		return nil, ErrInvalidCredentials
 	}
 	return user, nil
 }

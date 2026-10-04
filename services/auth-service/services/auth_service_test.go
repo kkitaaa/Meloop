@@ -631,7 +631,9 @@ func TestLogout_Success(t *testing.T) {
 // RF-03 / Middleware: 7. Rechazo de una sesión expirada/inexistente
 func TestValidateSession(t *testing.T) {
 	cfg := &config.Config{PasswordMinLength: 8, SessionTTL: 24 * time.Hour}
-	repo := &mockUserRepository{users: make(map[string]*models.Usuario)}
+	repo := &mockUserRepository{users: map[string]*models.Usuario{
+		"alan": {IDUsuario: "user-uuid-1", Username: "alan", Correo: "alan@meloop.com"},
+	}}
 	sessionRepo := &mockSessionRepository{
 		sessions: map[string]*models.SessionUser{
 			"valid-token-123": {
@@ -667,6 +669,45 @@ func TestValidateSession(t *testing.T) {
 	_, err = srv.ValidateSession(context.Background(), "never-existed-token")
 	if err == nil {
 		t.Error("expected error for non-existent session token, got nil")
+	}
+}
+
+func TestValidateSessionRejectsAndDeletesSuspendedAccount(t *testing.T) {
+	cfg := &config.Config{PasswordMinLength: 8, SessionTTL: 24 * time.Hour}
+	repo := &mockUserRepository{users: map[string]*models.Usuario{
+		"suspended": {IDUsuario: "user-uuid-suspended", Suspendido: true},
+	}}
+	sessionRepo := &mockSessionRepository{sessions: map[string]*models.SessionUser{
+		"suspended-token": {ID: "user-uuid-suspended"},
+	}}
+	srv := createTestAuthService(cfg, repo, sessionRepo, nil, nil)
+
+	if _, err := srv.ValidateSession(context.Background(), "suspended-token"); !errors.Is(err, services.ErrInvalidCredentials) {
+		t.Fatalf("ValidateSession() error = %v, want ErrInvalidCredentials", err)
+	}
+	if _, exists := sessionRepo.sessions["suspended-token"]; exists {
+		t.Fatal("expected suspended session to be deleted")
+	}
+}
+
+func TestLoginRejectsSuspendedAccount(t *testing.T) {
+	cfg := &config.Config{PasswordMinLength: 8, SessionTTL: 24 * time.Hour}
+	hashedPassword, _ := bcrypt.GenerateFromPassword([]byte("meloop123"), bcrypt.DefaultCost)
+	repo := &mockUserRepository{users: map[string]*models.Usuario{
+		"suspended": {
+			IDUsuario:      "user-uuid-suspended",
+			Username:       "suspended",
+			Correo:         "suspended@example.com",
+			ContrasenaHash: string(hashedPassword),
+			Suspendido:     true,
+		},
+	}}
+	sessionRepo := &mockSessionRepository{sessions: make(map[string]*models.SessionUser)}
+	srv := createTestAuthService(cfg, repo, sessionRepo, nil, nil)
+
+	_, err := srv.Login(context.Background(), &models.LoginRequest{Email: "suspended@example.com", Password: "meloop123"})
+	if !errors.Is(err, services.ErrAccountSuspended) {
+		t.Fatalf("Login() error = %v, want ErrAccountSuspended", err)
 	}
 }
 

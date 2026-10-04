@@ -97,6 +97,10 @@ func (ctrl *AuthController) Login(c *gin.Context) {
 			httpresponse.UnauthorizedGin(c, "Credenciales incorrectas")
 			return
 		}
+		if errors.Is(err, services.ErrAccountSuspended) {
+			httpresponse.ErrorGin(c, http.StatusForbidden, "ACCOUNT_SUSPENDED", "La cuenta está suspendida")
+			return
+		}
 
 		httpcall := httpresponse.InternalErrorGin
 		httpcall(c)

@@ -9,6 +9,7 @@ type Usuario struct {
 	ContrasenaHash string `json:"-"`
 	IDNivel        *int   `json:"id_nivel,omitempty"`
 	Experiencia    int    `json:"experiencia"`
+	Suspendido     bool   `json:"-"`
 }
 
 type RegisterRequest struct {

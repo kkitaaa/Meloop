@@ -31,7 +31,7 @@ func (r *postgresUserRepository) GetByID(ctx context.Context, id string) (*model
 	}
 	var user models.Usuario
 	query := `
-		SELECT id_usuario::text, username, correo, contrasena_hash, id_nivel, experiencia 
+		SELECT id_usuario::text, username, correo, contrasena_hash, id_nivel, experiencia, suspendido
 		FROM USUARIO 
 		WHERE id_usuario = $1
 	`
@@ -42,6 +42,7 @@ func (r *postgresUserRepository) GetByID(ctx context.Context, id string) (*model
 		&user.ContrasenaHash,
 		&user.IDNivel,
 		&user.Experiencia,
+		&user.Suspendido,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -58,7 +59,7 @@ func (r *postgresUserRepository) GetByUsername(ctx context.Context, username str
 	}
 	var user models.Usuario
 	query := `
-		SELECT id_usuario::text, username, correo, contrasena_hash, id_nivel, experiencia 
+		SELECT id_usuario::text, username, correo, contrasena_hash, id_nivel, experiencia, suspendido
 		FROM USUARIO 
 		WHERE username = $1
 	`
@@ -69,6 +70,7 @@ func (r *postgresUserRepository) GetByUsername(ctx context.Context, username str
 		&user.ContrasenaHash,
 		&user.IDNivel,
 		&user.Experiencia,
+		&user.Suspendido,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -85,7 +87,7 @@ func (r *postgresUserRepository) GetByEmail(ctx context.Context, email string) (
 	}
 	var user models.Usuario
 	query := `
-		SELECT id_usuario::text, username, correo, contrasena_hash, id_nivel, experiencia 
+		SELECT id_usuario::text, username, correo, contrasena_hash, id_nivel, experiencia, suspendido
 		FROM USUARIO 
 		WHERE correo = $1
 	`
@@ -96,6 +98,7 @@ func (r *postgresUserRepository) GetByEmail(ctx context.Context, email string) (
 		&user.ContrasenaHash,
 		&user.IDNivel,
 		&user.Experiencia,
+		&user.Suspendido,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

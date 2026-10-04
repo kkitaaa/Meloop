@@ -12,6 +12,8 @@ solicitudes al microservicio correspondiente.
 | Pública | `ANY /test` y `ANY /test/*any` | `test-service`, quitando `/test` | `TEST_SERVICE_URL` |
 | Privada | `ANY /users` y `ANY /users/*any` | `user-service`, conservando `/users` | `USER_SERVICE_URL` |
 | Pública | `ANY /auth` y `ANY /auth/*any` | `auth-service`, conservando `/auth` | `AUTH_SERVICE_URL` |
+| Privada | `ANY /admin/users` y `ANY /admin/users/*any` | Administración de usuarios | `USER_SERVICE_URL` |
+| Privada | `ANY /admin/rewards` y `ANY /admin/rewards/*any` | `gamification-service`, conservando la ruta | `GAMIFICATION_SERVICE_URL` |
 
 Las rutas privadas reciben y reenvían el encabezado `Authorization`; la
 validación del token debe realizarse mediante la política de autenticación del

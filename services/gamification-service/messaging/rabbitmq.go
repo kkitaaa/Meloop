@@ -15,7 +15,7 @@ const (
 	routingKey   = "post.liked"
 )
 
-func StartConsumer() error {
+func StartConsumer(rabbitURL string) error {
 	logger := logging.New("gamification-service")
 	conn, err := amqp.Dial(rabbitURL)
 	if err != nil {

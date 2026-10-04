@@ -12,6 +12,7 @@ services:
       TEST_SERVICE_URL: http://test-service:8081
       USER_SERVICE_URL: http://user-service:8082
       AUTH_SERVICE_URL: http://auth-service:8083
+      GAMIFICATION_SERVICE_URL: http://gamification-service:8088
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/
       MINIO_ENDPOINT: http://minio:9000
@@ -21,6 +22,7 @@ services:
       - test-service
       - user-service
       - auth-service
+      - gamification-service
       - redis
       - rabbitmq
       - minio
@@ -44,6 +46,13 @@ services:
     container_name: meloop-user-service
     ports:
       - "8082:8082"
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@host.docker.internal:15422/postgres?sslmode=disable
+      AUTH_SERVICE_URL: http://auth-service:8083
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - auth-service
     networks:
       - meloop-network
 
@@ -54,6 +63,33 @@ services:
     container_name: meloop-auth-service
     ports:
       - "8083:8083"
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@host.docker.internal:15422/postgres?sslmode=disable
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - redis
+    networks:
+      - meloop-network
+
+  gamification-service:
+    build:
+      context: .
+      dockerfile: services/gamification-service/Dockerfile
+    container_name: meloop-gamification-service
+    ports:
+      - "8088:8088"
+    environment:
+      GAMIFICATION_SERVICE_PORT: 8088
+      DATABASE_URL: postgresql://postgres:postgres@host.docker.internal:15422/postgres?sslmode=disable
+      AUTH_SERVICE_URL: http://auth-service:8083
+      RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - auth-service
+      - rabbitmq
     networks:
       - meloop-network
 
