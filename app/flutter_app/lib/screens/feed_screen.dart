@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
-
 import 'dart:async';
-
 import 'friends_screen.dart';
 import '../../features/comments/presentation/comments_screen.dart';
+import '../../features/profile/presentation/profile_screen.dart'; 
+import '../widgets/post_card.dart'; 
+
 
 class FeedScreen extends StatefulWidget {
   const FeedScreen({super.key});
@@ -13,12 +14,11 @@ class FeedScreen extends StatefulWidget {
 }
 
 class _FeedScreenState extends State<FeedScreen> {
-  final Color bgColor = const Color(0xFF0D5C5E);
-  final Color tealAccent = const Color(0xFF1ABC9C);
+  final Color _bgColor = const Color(0xFF0D5C5E);
+  final Color _tealAccent = const Color(0xFF1ABC9C);
 
-  // --- Lógica de Paginación y Estado Dinámico ---
   final ScrollController _scrollController = ScrollController();
-  List<Map<String, dynamic>> _posts = [];
+  final List<Map<String, dynamic>> _posts = [];
   bool _isInitialLoading = true;
   bool _isLoadingMore = false;
   int _currentPage = 1;
@@ -28,7 +28,6 @@ class _FeedScreenState extends State<FeedScreen> {
     super.initState();
     _fetchInitialPosts();
 
-    // Listener para el scroll infinito
     _scrollController.addListener(() {
       if (_scrollController.position.pixels >=
           _scrollController.position.maxScrollExtent - 200) {
@@ -45,23 +44,23 @@ class _FeedScreenState extends State<FeedScreen> {
     super.dispose();
   }
 
-  // Simulación de petición HTTP inicial al API Gateway
   Future<void> _fetchInitialPosts() async {
     setState(() => _isInitialLoading = true);
+    await Future.delayed(const Duration(seconds: 2));
 
-    await Future.delayed(const Duration(seconds: 2)); // Simula latencia de red
+    if (!mounted) return;
 
     setState(() {
-      _posts = _generateMockPosts(1, 5);
+      _posts.addAll(_generateMockPosts(1, 5));
       _isInitialLoading = false;
     });
   }
 
-  // Simulación de petición HTTP para paginación (Scroll Infinito)
   Future<void> _fetchMorePosts() async {
     setState(() => _isLoadingMore = true);
+    await Future.delayed(const Duration(seconds: 2));
 
-    await Future.delayed(const Duration(seconds: 2)); // Simula latencia de red
+    if (!mounted) return;
 
     setState(() {
       _currentPage++;
@@ -70,7 +69,6 @@ class _FeedScreenState extends State<FeedScreen> {
     });
   }
 
-  // Generador de datos simulados para la lista dinámica
   List<Map<String, dynamic>> _generateMockPosts(int page, int count) {
     return List.generate(count, (index) {
       int id = (page - 1) * count + index + 1;
@@ -94,7 +92,7 @@ class _FeedScreenState extends State<FeedScreen> {
     final bool isDesktop = screenWidth > 900;
 
     return Scaffold(
-      backgroundColor: bgColor,
+      backgroundColor: _bgColor,
       body: Column(
         children: [
           _buildTopBar(isDesktop),
@@ -109,7 +107,7 @@ class _FeedScreenState extends State<FeedScreen> {
   Widget _buildTopBar(bool isDesktop) {
     return Container(
       height: 55,
-      color: tealAccent,
+      color: _tealAccent,
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -120,7 +118,6 @@ class _FeedScreenState extends State<FeedScreen> {
             color: Colors.white,
             fit: BoxFit.contain,
           ),
-
           if (isDesktop) ...[
             Row(
               children: [
@@ -136,7 +133,17 @@ class _FeedScreenState extends State<FeedScreen> {
                     );
                   },
                 ),
-                _navLink('Artistas y canciones'),
+                _navLink(
+                  'Perfil',
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const ProfileScreen(),
+                      ),
+                    );
+                  },
+                ),
               ],
             ),
             Container(
@@ -159,15 +166,24 @@ class _FeedScreenState extends State<FeedScreen> {
               ),
             ),
           ],
-
           Row(
-            children: const [
-              Icon(Icons.notifications, color: Colors.white, size: 20),
-              SizedBox(width: 16),
-              CircleAvatar(
-                radius: 14,
-                backgroundColor: Colors.white,
-                child: Icon(Icons.person, color: Color(0xFF1ABC9C), size: 18),
+            children: [
+              const Icon(Icons.notifications, color: Colors.white, size: 20),
+              const SizedBox(width: 16),
+              InkWell(
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const ProfileScreen(),
+                    ),
+                  );
+                },
+                child: const CircleAvatar(
+                  radius: 14,
+                  backgroundColor: Colors.white,
+                  child: Icon(Icons.person, color: Color(0xFF1ABC9C), size: 18),
+                ),
               ),
             ],
           ),
@@ -190,7 +206,7 @@ class _FeedScreenState extends State<FeedScreen> {
         child: Text(
           text,
           style: TextStyle(
-            color: isActive ? tealAccent : Colors.white,
+            color: isActive ? _tealAccent : Colors.white,
             fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
             fontSize: 12,
           ),
@@ -367,7 +383,7 @@ class _FeedScreenState extends State<FeedScreen> {
         children: [
           Row(
             children: [
-              Icon(Icons.star, color: tealAccent, size: 14),
+              Icon(Icons.star, color: _tealAccent, size: 14),
               const SizedBox(width: 4),
               const Text(
                 "Nivel 3 -> Buen progreso",
@@ -383,7 +399,7 @@ class _FeedScreenState extends State<FeedScreen> {
           LinearProgressIndicator(
             value: 0.6,
             backgroundColor: Colors.grey[200],
-            valueColor: AlwaysStoppedAnimation<Color>(tealAccent),
+            valueColor: AlwaysStoppedAnimation<Color>(_tealAccent),
             minHeight: 6,
             borderRadius: BorderRadius.circular(3),
           ),
@@ -474,7 +490,7 @@ class _FeedScreenState extends State<FeedScreen> {
                 ),
                 OutlinedButton.icon(
                   style: OutlinedButton.styleFrom(
-                    side: BorderSide(color: tealAccent),
+                    side: BorderSide(color: _tealAccent),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(20),
                     ),
@@ -484,11 +500,11 @@ class _FeedScreenState extends State<FeedScreen> {
                     ),
                   ),
                   onPressed: () {},
-                  icon: Icon(Icons.edit, color: tealAccent, size: 14),
+                  icon: Icon(Icons.edit, color: _tealAccent, size: 14),
                   label: Text(
                     "escribir blog",
                     style: TextStyle(
-                      color: tealAccent,
+                      color: _tealAccent,
                       fontSize: 12,
                       fontWeight: FontWeight.bold,
                     ),
@@ -497,10 +513,9 @@ class _FeedScreenState extends State<FeedScreen> {
               ],
             ),
             const Divider(height: 32, thickness: 1, color: Colors.black12),
-
             Expanded(
               child: _isInitialLoading
-                  ? Center(child: CircularProgressIndicator(color: tealAccent))
+                  ? Center(child: CircularProgressIndicator(color: _tealAccent))
                   : ListView.builder(
                       controller: _scrollController,
                       itemCount: _posts.length + (_isLoadingMore ? 1 : 0),
@@ -510,19 +525,21 @@ class _FeedScreenState extends State<FeedScreen> {
                             padding: const EdgeInsets.symmetric(vertical: 24.0),
                             child: Center(
                               child: CircularProgressIndicator(
-                                color: tealAccent,
+                                color: _tealAccent,
                               ),
                             ),
                           );
                         }
-                        return _buildPostCard(_posts[index]);
+                        return PostCard(
+                          postData: _posts[index],
+                          tealAccent: _tealAccent,
+                        );
                       },
                     ),
             ),
-
             ElevatedButton(
               style: ElevatedButton.styleFrom(
-                backgroundColor: tealAccent,
+                backgroundColor: _tealAccent,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(20),
                 ),
@@ -547,14 +564,14 @@ class _FeedScreenState extends State<FeedScreen> {
       decoration: BoxDecoration(
         color: isActive ? Colors.white : Colors.grey[200],
         border: isActive
-            ? Border.all(color: tealAccent, width: 1)
+            ? Border.all(color: _tealAccent, width: 1)
             : Border.all(color: Colors.transparent),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Text(
         label,
         style: TextStyle(
-          color: isActive ? tealAccent : Colors.grey[600],
+          color: isActive ? _tealAccent : Colors.grey[600],
           fontSize: 10,
           fontWeight: FontWeight.bold,
         ),
@@ -573,20 +590,44 @@ class _FeedScreenState extends State<FeedScreen> {
             children: [
               Row(
                 children: [
-                  const CircleAvatar(
-                    radius: 16,
-                    backgroundColor: Colors.black87,
-                    child: Icon(Icons.person, color: Colors.white, size: 18),
+                  InkWell(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => ProfileScreen(
+                            username: postData["user"],
+                          ),
+                        ),
+                      );
+                    },
+                    child: const CircleAvatar(
+                      radius: 16,
+                      backgroundColor: Colors.black87,
+                      child: Icon(Icons.person, color: Colors.white, size: 18),
+                    ),
                   ),
                   const SizedBox(width: 12),
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        postData["user"],
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
+                      InkWell(
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => ProfileScreen(
+                                username: postData["user"],
+                              ),
+                            ),
+                          );
+                        },
+                        child: Text(
+                          postData["user"],
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
                         ),
                       ),
                       Text(
@@ -613,11 +654,10 @@ class _FeedScreenState extends State<FeedScreen> {
             ),
           ),
           const SizedBox(height: 12),
-
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: tealAccent,
+              color: _tealAccent,
               borderRadius: BorderRadius.circular(6),
             ),
             child: Row(
@@ -666,12 +706,12 @@ class _FeedScreenState extends State<FeedScreen> {
                   ),
                   child: Row(
                     children: [
-                      Icon(Icons.graphic_eq, color: tealAccent, size: 12),
+                      Icon(Icons.graphic_eq, color: _tealAccent, size: 12),
                       const SizedBox(width: 4),
                       Text(
                         "Escuchar",
                         style: TextStyle(
-                          color: tealAccent,
+                          color: _tealAccent,
                           fontSize: 10,
                           fontWeight: FontWeight.bold,
                         ),
@@ -683,7 +723,6 @@ class _FeedScreenState extends State<FeedScreen> {
             ),
           ),
           const SizedBox(height: 12),
-
           Row(
             children: [
               Row(
@@ -697,8 +736,6 @@ class _FeedScreenState extends State<FeedScreen> {
                 ],
               ),
               const SizedBox(width: 16),
-
-              // BOTÓN DE COMENTARIOS RESTAURADO
               InkWell(
                 onTap: () {
                   Navigator.push(
