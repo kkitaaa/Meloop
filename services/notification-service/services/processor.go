@@ -15,6 +15,7 @@ import (
 type Repository interface {
 	ResolvePostOwner(context.Context, string) (string, error)
 	ResolveInteractionOwner(context.Context, string) (string, error)
+	IsEnabled(context.Context, string, string) (bool, error)
 	Create(context.Context, models.Notification) error
 }
 
@@ -23,17 +24,17 @@ type Processor struct {
 }
 
 const (
-	eventPostLiked        = "post.liked"
-	eventCommentCreated   = "comment.created"
-	eventCommentCommented = "comment.commented"
-	eventCommentReplied   = "comment.replied"
-	eventFriendRequested  = "friend.requested"
-	eventFriendAccepted   = "friend.accepted"
-	eventMessageSent      = "message.sent"
-	eventReportCreated    = "report.created"
-	eventModerationAction = "moderation.action"
-	eventUserLevelUp      = "user.level_up"
-	eventRewardUnlocked   = "reward.unlocked"
+	eventPostLiked        = models.NotificationTypePostLiked
+	eventCommentCreated   = models.NotificationTypeCommentCreated
+	eventCommentCommented = models.NotificationTypeCommentCommented
+	eventCommentReplied   = models.NotificationTypeCommentReplied
+	eventFriendRequested  = models.NotificationTypeFriendRequested
+	eventFriendAccepted   = models.NotificationTypeFriendAccepted
+	eventMessageSent      = models.NotificationTypeMessageSent
+	eventReportCreated    = models.NotificationTypeReportCreated
+	eventModerationAction = models.NotificationTypeModerationAction
+	eventUserLevelUp      = models.NotificationTypeUserLevelUp
+	eventRewardUnlocked   = models.NotificationTypeRewardUnlocked
 )
 
 type notificationFields struct {
@@ -75,6 +76,13 @@ func (p *Processor) Process(ctx context.Context, routingKey, messageID string, b
 		return err
 	}
 	if fields.actor == fields.recipient {
+		return nil
+	}
+	enabled, err := p.repository.IsEnabled(ctx, fields.recipient, typeName)
+	if err != nil {
+		return fmt.Errorf("check notification preference: %w", err)
+	}
+	if !enabled {
 		return nil
 	}
 	eventID := firstNonEmpty(messageID, event.ID)
@@ -161,19 +169,13 @@ func (p *Processor) resolveOwner(
 	return fields, nil
 }
 
-var supportedEvents = map[string]bool{
-	eventPostLiked:        true,
-	eventCommentCreated:   true,
-	eventCommentCommented: true,
-	eventCommentReplied:   true,
-	eventFriendRequested:  true,
-	eventFriendAccepted:   true,
-	eventMessageSent:      true,
-	eventReportCreated:    true,
-	eventModerationAction: true,
-	eventUserLevelUp:      true,
-	eventRewardUnlocked:   true,
-}
+var supportedEvents = func() map[string]bool {
+	events := make(map[string]bool, len(models.SupportedNotificationTypes()))
+	for _, event := range models.SupportedNotificationTypes() {
+		events[event] = true
+	}
+	return events
+}()
 
 func normalizeEventName(value string) string {
 	value = strings.ToLower(strings.TrimSpace(value))

@@ -27,4 +27,8 @@ func SetupRoutes(router *gin.Engine) {
 	// Enrutar peticiones de recomendaciones (conservando el prefijo /recommendations en el destino)
 	router.Any("/recommendations", controllers.ProxyToService("RECOMMENDATION_SERVICE_URL", "http://localhost:8087", ""))
 	router.Any("/recommendations/*any", controllers.ProxyToService("RECOMMENDATION_SERVICE_URL", "http://localhost:8087", ""))
+
+	// Enrutar peticiones de notificaciones al microservicio correspondiente.
+	router.Any("/notifications", controllers.ProxyToService("NOTIFICATION_SERVICE_URL", "http://localhost:8089", ""))
+	router.Any("/notifications/*any", controllers.ProxyToService("NOTIFICATION_SERVICE_URL", "http://localhost:8089", ""))
 }

@@ -12,6 +12,7 @@ solicitudes al microservicio correspondiente.
 | Pública | `ANY /test` y `ANY /test/*any` | `test-service`, quitando `/test` | `TEST_SERVICE_URL` |
 | Privada | `ANY /users` y `ANY /users/*any` | `user-service`, conservando `/users` | `USER_SERVICE_URL` |
 | Pública | `ANY /auth` y `ANY /auth/*any` | `auth-service`, conservando `/auth` | `AUTH_SERVICE_URL` |
+| Privada | `ANY /notifications` y `ANY /notifications/*any` | `notification-service`, conservando `/notifications` | `NOTIFICATION_SERVICE_URL` |
 
 Las rutas privadas reciben y reenvían el encabezado `Authorization`; la
 validación del token debe realizarse mediante la política de autenticación del

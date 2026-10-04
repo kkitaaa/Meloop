@@ -11,6 +11,8 @@ import (
 type fakeRepository struct {
 	postOwner        string
 	interactionOwner string
+	disabledTypes    map[string]bool
+	preferenceErr    error
 	notifications    []models.Notification
 }
 
@@ -20,6 +22,13 @@ func (r *fakeRepository) ResolvePostOwner(context.Context, string) (string, erro
 
 func (r *fakeRepository) ResolveInteractionOwner(context.Context, string) (string, error) {
 	return r.interactionOwner, nil
+}
+
+func (r *fakeRepository) IsEnabled(_ context.Context, _, notificationType string) (bool, error) {
+	if r.preferenceErr != nil {
+		return false, r.preferenceErr
+	}
+	return !r.disabledTypes[notificationType], nil
 }
 
 func (r *fakeRepository) Create(_ context.Context, notification models.Notification) error {
@@ -116,6 +125,34 @@ func TestProcessPropagatesRepositoryFailureAsRetryable(t *testing.T) {
 	err := processor.Process(context.Background(), "post.liked", "event-1", []byte(`{"userId":"liker","postId":"post-1"}`))
 	if !errors.Is(err, wantErr) || IsPermanent(err) {
 		t.Fatalf("Process() error = %v, want retryable repository error", err)
+	}
+}
+
+func TestProcessSkipsDisabledNotificationType(t *testing.T) {
+	repository := &fakeRepository{
+		postOwner:     "post-owner",
+		disabledTypes: map[string]bool{eventPostLiked: true},
+	}
+	processor := NewProcessor(repository)
+	err := processor.Process(context.Background(), eventPostLiked, "event-muted", []byte(`{"userId":"liker","postId":"post-1"}`))
+	if err != nil {
+		t.Fatalf("Process() error = %v", err)
+	}
+	if len(repository.notifications) != 0 {
+		t.Fatalf("notification count = %d, want 0", len(repository.notifications))
+	}
+}
+
+func TestProcessReturnsPreferenceStoreFailure(t *testing.T) {
+	wantErr := errors.New("preference database unavailable")
+	repository := &fakeRepository{postOwner: "post-owner", preferenceErr: wantErr}
+	processor := NewProcessor(repository)
+	err := processor.Process(context.Background(), eventPostLiked, "event-preference-error", []byte(`{"userId":"liker","postId":"post-1"}`))
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("Process() error = %v, want preference lookup error", err)
+	}
+	if len(repository.notifications) != 0 {
+		t.Fatalf("notification count = %d, want 0", len(repository.notifications))
 	}
 }
 
