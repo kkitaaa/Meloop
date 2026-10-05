@@ -31,17 +31,22 @@ func main() {
 	userRepo := repositories.NewUserRepository(dbPool)
 	privacyRepo := repositories.NewPrivacyRepository(dbPool)
 	notifRepo := repositories.NewNotificationConfigRepository(dbPool)
+	profileRepo := repositories.NewProfileRepository(dbPool)
 	inventoryRepo := repositories.NewInventoryRepository(dbPool)
+
+	mediaVerifier := services.NewHTTPMediaVerifier(cfg.MediaServiceURL)
 
 	userSrv := services.NewUserService(userRepo)
 	privacySrv := services.NewPrivacyService(privacyRepo, userRepo)
 	notifSrv := services.NewNotificationConfigService(notifRepo, userRepo)
 	inventorySrv := services.NewInventoryService(inventoryRepo, userRepo)
+	profileSrv := services.NewProfileService(profileRepo, userRepo, mediaVerifier)
 
 	accountCtrl := controllers.NewAccountController(userSrv)
 	privacyCtrl := controllers.NewPrivacyController(privacySrv)
 	notifCtrl := controllers.NewNotificationController(notifSrv)
 	inventoryCtrl := controllers.NewInventoryController(inventorySrv)
+	profileCtrl := controllers.NewProfileController(profileSrv)
 
 	router := gin.New()
 	router.Use(logging.GinMiddleware(logger))
@@ -74,6 +79,10 @@ func main() {
 		protected.PATCH("/me/username", accountCtrl.UpdateUsername)
 		protected.POST("/me/email", accountCtrl.RequestEmailChange)
 
+		// Edición de perfil (RF-07)
+		protected.PUT("/me/profile", profileCtrl.UpdateProfile)
+		protected.PUT("/me/perfil", profileCtrl.UpdateProfile)
+
 		// Configuración de Privacidad (RF-05 / RF-55)
 		protected.GET("/me/privacy", privacyCtrl.GetPrivacy)
 		protected.PATCH("/me/privacy", privacyCtrl.UpdatePrivacy)
@@ -90,6 +99,14 @@ func main() {
 		protected.PATCH("/me/notifications", notifCtrl.UpdateNotificationSettings)
 		protected.GET("/me/notificaciones", notifCtrl.GetNotificationSettings)
 		protected.PATCH("/me/notificaciones", notifCtrl.UpdateNotificationSettings)
+	}
+
+	// Rutas protegidas versionadas v1 bajo /v1/users (RF-07)
+	v1Protected := router.Group("/v1/users")
+	v1Protected.Use(controllers.AuthRequired())
+	{
+		v1Protected.PUT("/me/profile", profileCtrl.UpdateProfile)
+		v1Protected.PUT("/me/perfil", profileCtrl.UpdateProfile)
 	}
 
 	logger.Info("service_listening", "port", cfg.Port)
