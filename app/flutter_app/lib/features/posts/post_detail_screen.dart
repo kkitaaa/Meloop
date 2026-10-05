@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+
 import 'dart:async';
+
 import '../../../widgets/post_card.dart';
 
 class PostDetailScreen extends StatefulWidget {
@@ -52,7 +54,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         "id": widget.postId,
         "user": "Autor_0${widget.postId}",
         "time": "Hace 2 horas",
-        "content": "Visualizando el detalle completo de la publicación #${widget.postId}. Aquí el texto completo, multimedia y toda la información asociada a esta entrada (RF-19).",
+        "content":
+            "Visualizando el detalle completo de la publicación #${widget.postId}. Aquí el texto completo, multimedia y toda la información asociada a esta entrada (RF-19).",
         "song": "Track Detail #${widget.postId}",
         "artist": "Artista Principal",
         "likes": 42,
@@ -97,9 +100,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   Widget _buildBodyContent() {
     if (_isLoading) {
-      return Center(
-        child: CircularProgressIndicator(color: _tealAccent),
-      );
+      return Center(child: CircularProgressIndicator(color: _tealAccent));
     }
 
     if (_isError || _postData == null) {
@@ -112,18 +113,15 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Renderiza el componente reutilizable de la tarjeta
-          PostCard(
-            postData: _postData!,
-            tealAccent: _tealAccent,
-          ),
-          
+          PostCard(postData: _postData!, tealAccent: _tealAccent),
+
           const SizedBox(height: 16),
           const Text(
             "Sección de comentarios",
             style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
           ),
           const Divider(height: 32, thickness: 1, color: Colors.black12),
-          
+
           // Punto de entrada visual para los comentarios
           Center(
             child: OutlinedButton.icon(
@@ -132,7 +130,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(20),
                 ),
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 12,
+                ),
               ),
               onPressed: () {
                 // Aquí podrías abrir la hoja de comentarios o navegar a la CommentsScreen
@@ -153,7 +154,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 ),
               ),
             ),
-          )
+          ),
         ],
       ),
     );

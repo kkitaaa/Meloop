@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 
 class PostEditorDialog extends StatefulWidget {
-  final Map<String, dynamic>? postData; // Si es null, es Creación. Si trae datos, es Edición.
+  final Map<String, dynamic>?
+  postData; // Si es null, es Creación. Si trae datos, es Edición.
   final Color tealAccent;
 
   const PostEditorDialog({super.key, this.postData, required this.tealAccent});
@@ -48,7 +49,9 @@ class _PostEditorDialogState extends State<PostEditorDialog> {
       setState(() => _isSubmitting = false);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text("Error (RN-11): El plazo de 24 horas para editar ha expirado."),
+          content: Text(
+            "Error (RN-11): El plazo de 24 horas para editar ha expirado.",
+          ),
           backgroundColor: Colors.redAccent,
         ),
       );
@@ -56,10 +59,17 @@ class _PostEditorDialogState extends State<PostEditorDialog> {
     }
 
     // Éxito
-    Navigator.pop(context, text); // Retornamos el nuevo texto para actualizar la UI localmente
+    Navigator.pop(
+      context,
+      text,
+    ); // Retornamos el nuevo texto para actualizar la UI localmente
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(isEdit ? "Publicación editada con éxito." : "Publicación creada con éxito."),
+        content: Text(
+          isEdit
+              ? "Publicación editada con éxito."
+              : "Publicación creada con éxito.",
+        ),
         backgroundColor: widget.tealAccent,
       ),
     );
@@ -124,7 +134,10 @@ class _PostEditorDialogState extends State<PostEditorDialog> {
               ? const SizedBox(
                   width: 16,
                   height: 16,
-                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                  child: CircularProgressIndicator(
+                    color: Colors.white,
+                    strokeWidth: 2,
+                  ),
                 )
               : Text(
                   isEdit ? "Guardar cambios" : "Publicar",

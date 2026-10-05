@@ -61,7 +61,7 @@ class _CommentsScreenState extends State<CommentsScreen> {
   // Optimistic UI para dar Like a un comentario
   Future<void> _toggleCommentLike(int index) async {
     final comment = _comments[index];
-    
+
     // Evitar spam de toques mientras se procesa la petición HTTP
     if (comment["isLiking"] == true) return;
 
@@ -81,7 +81,7 @@ class _CommentsScreenState extends State<CommentsScreen> {
 
     // 3. Resultado del servidor (simulamos éxito aleatorio para quitar el Dead Code)
     // Ahora Dart no sabe qué pasará, así que quita la alerta amarilla.
-    bool httpSuccess = DateTime.now().second % 2 == 0; 
+    bool httpSuccess = DateTime.now().second % 2 == 0;
 
     if (httpSuccess) {
       setState(() {
@@ -96,7 +96,9 @@ class _CommentsScreenState extends State<CommentsScreen> {
       });
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text("Error al conectar con el servidor. Se revirtió tu like."),
+          content: Text(
+            "Error al conectar con el servidor. Se revirtió tu like.",
+          ),
           backgroundColor: Colors.redAccent,
         ),
       );
@@ -138,7 +140,9 @@ class _CommentsScreenState extends State<CommentsScreen> {
       setState(() => _isSubmitting = false);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text("Error: El comentario incumple las normas de la comunidad (RN-03)."),
+          content: Text(
+            "Error: El comentario incumple las normas de la comunidad (RN-03).",
+          ),
           backgroundColor: Colors.redAccent,
         ),
       );
@@ -158,7 +162,7 @@ class _CommentsScreenState extends State<CommentsScreen> {
 
       // Actualizamos el contador de comentarios en la PostCard Original
       widget.postData["comments"] = (widget.postData["comments"] ?? 0) + 1;
-      
+
       _commentController.clear();
       _replyingToUser = null;
       _isSubmitting = false;
@@ -196,7 +200,8 @@ class _CommentsScreenState extends State<CommentsScreen> {
                   child: ListView.separated(
                     padding: const EdgeInsets.all(24.0),
                     itemCount: _comments.length,
-                    separatorBuilder: (context, index) => const Divider(height: 32),
+                    separatorBuilder: (context, index) =>
+                        const Divider(height: 32),
                     itemBuilder: (context, index) => _buildCommentTile(index),
                   ),
                 ),
@@ -263,7 +268,9 @@ class _CommentsScreenState extends State<CommentsScreen> {
                       style: TextStyle(
                         color: isPostLiked ? Colors.red : Colors.grey,
                         fontSize: 11,
-                        fontWeight: isPostLiked ? FontWeight.bold : FontWeight.normal,
+                        fontWeight: isPostLiked
+                            ? FontWeight.bold
+                            : FontWeight.normal,
                       ),
                     ),
                   ],
@@ -272,7 +279,11 @@ class _CommentsScreenState extends State<CommentsScreen> {
               const SizedBox(width: 16),
               Row(
                 children: [
-                  const Icon(Icons.mode_comment_outlined, color: Colors.grey, size: 16),
+                  const Icon(
+                    Icons.mode_comment_outlined,
+                    color: Colors.grey,
+                    size: 16,
+                  ),
                   const SizedBox(width: 4),
                   Text(
                     "${widget.postData["comments"] ?? 0} Comentarios",
@@ -332,7 +343,11 @@ class _CommentsScreenState extends State<CommentsScreen> {
                     onTap: () => _toggleCommentLike(index),
                     borderRadius: BorderRadius.circular(4),
                     child: Padding(
-                      padding: const EdgeInsets.only(right: 8.0, top: 4.0, bottom: 4.0),
+                      padding: const EdgeInsets.only(
+                        right: 8.0,
+                        top: 4.0,
+                        bottom: 4.0,
+                      ),
                       child: Row(
                         children: [
                           Icon(
@@ -346,7 +361,9 @@ class _CommentsScreenState extends State<CommentsScreen> {
                             style: TextStyle(
                               fontSize: 11,
                               color: isLiked ? Colors.red : Colors.grey,
-                              fontWeight: isLiked ? FontWeight.bold : FontWeight.normal,
+                              fontWeight: isLiked
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
                             ),
                           ),
                         ],
