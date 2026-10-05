@@ -26,6 +26,10 @@ class RecommendationService:
         self.model_name = self.model.name
         self.preferences_pipeline = UserPreferencesPipeline()
 
+    @property
+    def is_ready(self) -> bool:
+        return self.model is not None and self.preferences_pipeline is not None
+
     def generate_music_recommendations(
         self, request: MusicRecommendationRequest
     ) -> RecommendationResponse:
@@ -76,6 +80,7 @@ class RecommendationService:
                 for item in ranked
             ],
             model="music_content_similarity",
+            model_version=self.model.version,
             interaction_count=len(request.interactions),
         )
 
@@ -112,6 +117,7 @@ class RecommendationService:
             user_id=request.user_id,
             recommendations=recommendations,
             model=self.model_name,
+            model_version=self.model.version,
             interaction_count=interaction_count,
         )
 
@@ -157,6 +163,7 @@ class RecommendationService:
             user_id=request.user_id,
             recommendations=ranked[: request.limit],
             model=self.model_name,
+            model_version=self.model.version,
             interaction_count=len(request.interactions),
         )
 
@@ -199,11 +206,11 @@ class RecommendationService:
             *{f"song:{value.casefold().strip()}" for value in songs if value.strip()},
         }
 
-    @staticmethod
-    def _empty_response(request: RecommendationRequest, reason: str) -> RecommendationResponse:
+    def _empty_response(self, request: RecommendationRequest, reason: str) -> RecommendationResponse:
         return RecommendationResponse(
             user_id=request.user_id,
             recommendations=[],
             model="profile_compatibility",
+            model_version=self.model.version,
             interaction_count=len(request.interactions),
         )

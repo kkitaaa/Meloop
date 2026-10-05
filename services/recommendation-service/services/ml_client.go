@@ -24,6 +24,23 @@ func NewMLClient(baseURL string) *MLClient {
 	}
 }
 
+func (client *MLClient) Ready(ctx context.Context) error {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, client.baseURL+"/ready", nil)
+	if err != nil {
+		return fmt.Errorf("create ML readiness request: %w", err)
+	}
+
+	response, err := client.client.Do(request)
+	if err != nil {
+		return fmt.Errorf("check ML service readiness: %w", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return fmt.Errorf("ML service readiness returned status %d", response.StatusCode)
+	}
+	return nil
+}
+
 func (client *MLClient) Predict(ctx context.Context, request models.RecommendationRequest) (models.RecommendationResponse, error) {
 	body, err := json.Marshal(request)
 	if err != nil {
