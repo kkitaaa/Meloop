@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../features/comments/presentation/comments_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
+import '../features/profile/presentation/post_editor_dialog.dart';
 
 class PostCard extends StatelessWidget {
   final Map<String, dynamic> postData;
@@ -25,12 +26,17 @@ class PostCard extends StatelessWidget {
     final int likes = postData["likes"] ?? 0;
     final int comments = postData["comments"] ?? 0;
 
+    // --- Variables de lógica de negocio (RN-11, RF-17) ---
+    // En producción esto viene del backend (JSON)
+    final bool isAuthor = postData["isAuthor"] ?? true; // Simulado a true para probar
+    final bool isEdited = postData["isEdited"] ?? false;
+    final bool within24Hours = postData["within24Hours"] ?? true;
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 24.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Cabecera: Avatar, Autor, Tiempo y Opciones
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -74,7 +80,7 @@ class PostCard extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        time,
+                        isEdited ? "$time (editado)" : time,
                         style: const TextStyle(
                           fontSize: 10,
                           color: Colors.grey,
@@ -84,12 +90,49 @@ class PostCard extends StatelessWidget {
                   ),
                 ],
               ),
-              const Icon(Icons.more_horiz, color: Colors.grey, size: 20),
+              
+              // Menú de opciones (Visible solo para el autor)
+              if (isAuthor)
+                PopupMenuButton<String>(
+                  icon: const Icon(Icons.more_horiz, color: Colors.grey, size: 20),
+                  color: Colors.white,
+                  onSelected: (value) async {
+                    if (value == 'edit') {
+                      // Abre el modal reutilizable en modo "Edición"
+                      await showDialog(
+                        context: context,
+                        builder: (context) => PostEditorDialog(
+                          postData: postData,
+                          tealAccent: tealAccent,
+                        ),
+                      );
+                    }
+                  },
+                  itemBuilder: (context) {
+                    return [
+                      if (within24Hours)
+                        const PopupMenuItem(
+                          value: 'edit',
+                          child: Text("Editar publicación", style: TextStyle(fontSize: 13)),
+                        )
+                      else
+                        const PopupMenuItem(
+                          value: 'expired',
+                          enabled: false,
+                          child: Text("Tiempo de edición agotado", style: TextStyle(fontSize: 13, color: Colors.grey)),
+                        ),
+                      const PopupMenuItem(
+                        value: 'delete',
+                        child: Text("Eliminar", style: TextStyle(fontSize: 13, color: Colors.redAccent)),
+                      ),
+                    ];
+                  },
+                )
+              else
+                const Icon(Icons.more_horiz, color: Colors.grey, size: 20),
             ],
           ),
           const SizedBox(height: 12),
-
-          // Texto de la publicación
           Text(
             content,
             style: TextStyle(
@@ -100,7 +143,6 @@ class PostCard extends StatelessWidget {
           ),
           const SizedBox(height: 12),
 
-          // Contenido Multimedia Opcional (Imagen adjunta)
           if (imageUrl != null && imageUrl.isNotEmpty) ...[
             ClipRRect(
               borderRadius: BorderRadius.circular(8),
@@ -121,7 +163,6 @@ class PostCard extends StatelessWidget {
             const SizedBox(height: 12),
           ],
 
-          // Reproductor o Información Musical Asociada
           if (audioTitle != null && audioTitle.isNotEmpty) ...[
             Container(
               padding: const EdgeInsets.all(8),
@@ -135,11 +176,7 @@ class PostCard extends StatelessWidget {
                     width: 36,
                     height: 36,
                     color: Colors.black87,
-                    child: const Icon(
-                      Icons.play_arrow,
-                      color: Colors.white,
-                      size: 20,
-                    ),
+                    child: const Icon(Icons.play_arrow, color: Colors.white, size: 20),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -148,45 +185,25 @@ class PostCard extends StatelessWidget {
                       children: [
                         Text(
                           audioTitle,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12,
-                          ),
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
                           overflow: TextOverflow.ellipsis,
                         ),
                         Text(
                           artistName ?? "Artista desconocido",
-                          style: const TextStyle(
-                            color: Colors.white70,
-                            fontSize: 10,
-                          ),
+                          style: const TextStyle(color: Colors.white70, fontSize: 10),
                           overflow: TextOverflow.ellipsis,
                         ),
                       ],
                     ),
                   ),
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
                     child: Row(
                       children: [
                         Icon(Icons.graphic_eq, color: tealAccent, size: 12),
                         const SizedBox(width: 4),
-                        Text(
-                          "Escuchar",
-                          style: TextStyle(
-                            color: tealAccent,
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
+                        Text("Escuchar", style: TextStyle(color: tealAccent, fontSize: 10, fontWeight: FontWeight.bold)),
                       ],
                     ),
                   ),
@@ -196,17 +213,13 @@ class PostCard extends StatelessWidget {
             const SizedBox(height: 12),
           ],
 
-          // Barra de Interacciones (Likes y Comentarios)
           Row(
             children: [
               Row(
                 children: [
                   const Icon(Icons.favorite, color: Colors.red, size: 16),
                   const SizedBox(width: 4),
-                  Text(
-                    "$likes Likes",
-                    style: const TextStyle(color: Colors.grey, fontSize: 11),
-                  ),
+                  Text("$likes Likes", style: const TextStyle(color: Colors.grey, fontSize: 11)),
                 ],
               ),
               const SizedBox(width: 16),
@@ -221,16 +234,9 @@ class PostCard extends StatelessWidget {
                 },
                 child: Row(
                   children: [
-                    const Icon(
-                      Icons.mode_comment_outlined,
-                      color: Colors.grey,
-                      size: 16,
-                    ),
+                    const Icon(Icons.mode_comment_outlined, color: Colors.grey, size: 16),
                     const SizedBox(width: 4),
-                    Text(
-                      "$comments Comentarios",
-                      style: const TextStyle(color: Colors.grey, fontSize: 11),
-                    ),
+                    Text("$comments Comentarios", style: const TextStyle(color: Colors.grey, fontSize: 11)),
                   ],
                 ),
               ),
