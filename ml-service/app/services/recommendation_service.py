@@ -206,7 +206,9 @@ class RecommendationService:
             *{f"song:{value.casefold().strip()}" for value in songs if value.strip()},
         }
 
-    def _empty_response(self, request: RecommendationRequest, reason: str) -> RecommendationResponse:
+    def _empty_response(
+        self, request: RecommendationRequest, reason: str
+    ) -> RecommendationResponse:
         return RecommendationResponse(
             user_id=request.user_id,
             recommendations=[],
