@@ -7,9 +7,9 @@ from app.logging_config import configure_logging
 from app.schemas.recommendation_schema import (
     HealthResponse,
     MusicRecommendationRequest,
+    ReadinessResponse,
     RecommendationRequest,
     RecommendationResponse,
-    ReadinessResponse,
 )
 from app.services.recommendation_service import RecommendationService
 
