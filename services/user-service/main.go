@@ -31,8 +31,8 @@ func main() {
 	userRepo := repositories.NewUserRepository(dbPool)
 	privacyRepo := repositories.NewPrivacyRepository(dbPool)
 	notifRepo := repositories.NewNotificationConfigRepository(dbPool)
-	profileRepo := repositories.NewProfileRepository(dbPool)
 	inventoryRepo := repositories.NewInventoryRepository(dbPool)
+	profileRepo := repositories.NewProfileRepository(dbPool)
 
 	mediaVerifier := services.NewHTTPMediaVerifier(cfg.MediaServiceURL)
 
