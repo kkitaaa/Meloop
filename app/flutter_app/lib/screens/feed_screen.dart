@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
-
 import 'dart:async';
-
 import 'friends_screen.dart';
-import '../../features/comments/presentation/comments_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
+import '../../widgets/post_card.dart'; // Importación del nuevo componente reutilizable
 
 class FeedScreen extends StatefulWidget {
   const FeedScreen({super.key});
@@ -17,6 +15,7 @@ class _FeedScreenState extends State<FeedScreen> {
   final Color _bgColor = const Color(0xFF0D5C5E);
   final Color _tealAccent = const Color(0xFF1ABC9C);
 
+  // --- Lógica de Paginación y Estado Dinámico ---
   final ScrollController _scrollController = ScrollController();
   final List<Map<String, dynamic>> _posts = [];
   bool _isInitialLoading = true;
@@ -28,6 +27,7 @@ class _FeedScreenState extends State<FeedScreen> {
     super.initState();
     _fetchInitialPosts();
 
+    // Listener para el scroll infinito
     _scrollController.addListener(() {
       if (_scrollController.position.pixels >=
           _scrollController.position.maxScrollExtent - 200) {
@@ -44,9 +44,11 @@ class _FeedScreenState extends State<FeedScreen> {
     super.dispose();
   }
 
+  // Simulación de petición HTTP inicial al API Gateway
   Future<void> _fetchInitialPosts() async {
     setState(() => _isInitialLoading = true);
-    await Future.delayed(const Duration(seconds: 2));
+
+    await Future.delayed(const Duration(seconds: 2)); // Simula latencia de red
 
     if (!mounted) return;
 
@@ -56,9 +58,11 @@ class _FeedScreenState extends State<FeedScreen> {
     });
   }
 
+  // Simulación de petición HTTP para paginación (Scroll Infinito)
   Future<void> _fetchMorePosts() async {
     setState(() => _isLoadingMore = true);
-    await Future.delayed(const Duration(seconds: 2));
+
+    await Future.delayed(const Duration(seconds: 2)); // Simula latencia de red
 
     if (!mounted) return;
 
@@ -69,6 +73,7 @@ class _FeedScreenState extends State<FeedScreen> {
     });
   }
 
+  // Generador de datos simulados para la lista dinámica
   List<Map<String, dynamic>> _generateMockPosts(int page, int count) {
     return List.generate(count, (index) {
       int id = (page - 1) * count + index + 1;
@@ -82,6 +87,9 @@ class _FeedScreenState extends State<FeedScreen> {
         "artist": "Artista Generado",
         "likes": 10 * id,
         "comments": id,
+        "isAuthor": id % 2 == 0, // Simulación: Si es par, eres el autor
+        "isEdited": false,
+        "within24Hours": true,
       };
     });
   }
@@ -530,7 +538,16 @@ class _FeedScreenState extends State<FeedScreen> {
                             ),
                           );
                         }
-                        return _buildPostCard(_posts[index]);
+                        // Uso de la tarjeta reutilizable
+                        return PostCard(
+                          postData: _posts[index],
+                          tealAccent: _tealAccent,
+                          onDelete: () {
+                            setState(() {
+                              _posts.removeAt(index);
+                            });
+                          },
+                        );
                       },
                     ),
             ),
@@ -572,194 +589,6 @@ class _FeedScreenState extends State<FeedScreen> {
           fontSize: 10,
           fontWeight: FontWeight.bold,
         ),
-      ),
-    );
-  }
-
-  Widget _buildPostCard(Map<String, dynamic> postData) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 24.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
-                children: [
-                  InkWell(
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) =>
-                              ProfileScreen(username: postData["user"]),
-                        ),
-                      );
-                    },
-                    child: const CircleAvatar(
-                      radius: 16,
-                      backgroundColor: Colors.black87,
-                      child: Icon(Icons.person, color: Colors.white, size: 18),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      InkWell(
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) =>
-                                  ProfileScreen(username: postData["user"]),
-                            ),
-                          );
-                        },
-                        child: Text(
-                          postData["user"],
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ),
-                      Text(
-                        postData["time"],
-                        style: const TextStyle(
-                          fontSize: 10,
-                          color: Colors.grey,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-              const Icon(Icons.more_horiz, color: Colors.grey, size: 20),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Text(
-            postData["content"],
-            style: const TextStyle(
-              fontSize: 13,
-              color: Colors.black87,
-              height: 1.4,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: _tealAccent,
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 36,
-                  height: 36,
-                  color: Colors.black87,
-                  child: const Icon(
-                    Icons.play_arrow,
-                    color: Colors.white,
-                    size: 20,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        postData["song"],
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                        ),
-                      ),
-                      Text(
-                        postData["artist"],
-                        style: const TextStyle(
-                          color: Colors.white70,
-                          fontSize: 10,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.graphic_eq, color: _tealAccent, size: 12),
-                      const SizedBox(width: 4),
-                      Text(
-                        "Escuchar",
-                        style: TextStyle(
-                          color: _tealAccent,
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Row(
-                children: [
-                  const Icon(Icons.favorite, color: Colors.red, size: 16),
-                  const SizedBox(width: 4),
-                  Text(
-                    "${postData["likes"]} Likes",
-                    style: const TextStyle(color: Colors.grey, fontSize: 11),
-                  ),
-                ],
-              ),
-              const SizedBox(width: 16),
-              InkWell(
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => CommentsScreen(postData: postData),
-                    ),
-                  );
-                },
-                child: Row(
-                  children: [
-                    const Icon(
-                      Icons.mode_comment_outlined,
-                      color: Colors.grey,
-                      size: 16,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      "${postData["comments"]} Comentarios",
-                      style: const TextStyle(color: Colors.grey, fontSize: 11),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          const Divider(color: Colors.black12),
-        ],
       ),
     );
   }

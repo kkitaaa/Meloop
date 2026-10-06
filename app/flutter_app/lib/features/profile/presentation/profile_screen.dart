@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
 import '../../../screens/friends_screen.dart';
-import '../../comments/presentation/comments_screen.dart';
+import '../../../widgets/post_card.dart';
 
 class ProfileScreen extends StatefulWidget {
   final String? username;
@@ -100,7 +100,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   void _determineProfileStatus() {
-    // Simulación del backend resolviendo la privacidad/bloqueos
     if (widget.username == "UsuarioPrivado") {
       _profileStatus = 'private';
     } else if (widget.username == "UsuarioBloqueado") {
@@ -158,6 +157,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
         "artist": "Artista Afín",
         "likes": 15 * id,
         "comments": id * 2,
+        "isAuthor": _profileStatus == 'own', // Si es tu perfil, eres autor
+        "isEdited": false,
+        "within24Hours": true,
       };
     });
   }
@@ -393,7 +395,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          // Columna Izquierda
           SizedBox(
             width: 220,
             child: SingleChildScrollView(
@@ -407,7 +408,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
           ),
           const SizedBox(width: 24),
-          // Columna Central / Derecha
           ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 800),
             child: _profileStatus == 'blocked'
@@ -1053,7 +1053,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               ),
                             );
                           }
-                          return _buildPostCard(_posts[index]);
+                          // Renderiza usando la Tarjeta Reutilizable PostCard
+                          return PostCard(
+                            postData: _posts[index],
+                            tealAccent: _tealAccent,
+                            textColor: _paperTextColor,
+                            onDelete: () {
+                              setState(() {
+                                _posts.removeAt(index);
+                              });
+                            },
+                          );
                         },
                       ),
           ),
@@ -1162,103 +1172,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
           fontSize: 10,
           fontWeight: FontWeight.bold,
         ),
-      ),
-    );
-  }
-
-  Widget _buildPostCard(Map<String, dynamic> postData) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 24.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
-                children: [
-                  const CircleAvatar(
-                    radius: 16,
-                    backgroundColor: Colors.black87,
-                    child: Icon(Icons.person, color: Colors.white, size: 18),
-                  ),
-                  const SizedBox(width: 12),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        postData["user"],
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
-                          color: _paperTextColor,
-                        ),
-                      ),
-                      Text(
-                        postData["time"],
-                        style: const TextStyle(
-                          fontSize: 10,
-                          color: Colors.grey,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Text(
-            postData["content"],
-            style: TextStyle(
-              fontSize: 13,
-              color: _paperTextColor,
-              height: 1.4,
-            ),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Row(
-                children: [
-                  const Icon(Icons.favorite, color: Colors.red, size: 16),
-                  const SizedBox(width: 4),
-                  Text(
-                    "${postData["likes"]} Likes",
-                    style: const TextStyle(color: Colors.grey, fontSize: 11),
-                  ),
-                ],
-              ),
-              const SizedBox(width: 16),
-              InkWell(
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => CommentsScreen(postData: postData),
-                    ),
-                  );
-                },
-                child: Row(
-                  children: [
-                    const Icon(
-                      Icons.mode_comment_outlined,
-                      color: Colors.grey,
-                      size: 16,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      "${postData["comments"]} Comentarios",
-                      style: const TextStyle(color: Colors.grey, fontSize: 11),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          const Divider(color: Colors.black12),
-        ],
       ),
     );
   }
