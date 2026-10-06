@@ -19,6 +19,7 @@ class _CommentsScreenState extends State<CommentsScreen> {
   String? _replyingToUser;
   bool _isSubmitting = false;
 
+  // Lista local simulando la base de datos (con soporte para Likes)
   final List<Map<String, dynamic>> _comments = [
     {
       "id": 1,
@@ -26,6 +27,8 @@ class _CommentsScreenState extends State<CommentsScreen> {
       "text": "Totalmente de acuerdo, la producción de esa época era distinta.",
       "time": "Hace 15 min",
       "likes": 5,
+      "isLiked": false,
+      "isLiking": false,
     },
     {
       "id": 2,
@@ -33,6 +36,8 @@ class _CommentsScreenState extends State<CommentsScreen> {
       "text": "Yo prefiero el sonido de ahora, más limpio.",
       "time": "Hace 5 min",
       "likes": 2,
+      "isLiked": true,
+      "isLiking": false,
     },
   ];
 
@@ -53,6 +58,74 @@ class _CommentsScreenState extends State<CommentsScreen> {
     _focusNode.unfocus();
   }
 
+  // Optimistic UI para dar Like a un comentario
+  Future<void> _toggleCommentLike(int index) async {
+    final comment = _comments[index];
+
+    // Evitar spam de toques mientras se procesa la petición HTTP
+    if (comment["isLiking"] == true) return;
+
+    final bool wasLiked = comment["isLiked"] ?? false;
+    final int currentLikes = comment["likes"] as int;
+
+    // 1. Actualización Optimista inmediata
+    setState(() {
+      comment["isLiking"] = true;
+      comment["isLiked"] = !wasLiked;
+      comment["likes"] = wasLiked ? currentLikes - 1 : currentLikes + 1;
+    });
+
+    // 2. Simulamos latencia del API Gateway
+    await Future.delayed(const Duration(milliseconds: 800));
+    if (!mounted) return;
+
+    // 3. Resultado del servidor (simulamos éxito aleatorio para quitar el Dead Code)
+    // Ahora Dart no sabe qué pasará, así que quita la alerta amarilla.
+    bool httpSuccess = DateTime.now().second % 2 == 0;
+
+    if (httpSuccess) {
+      setState(() {
+        comment["isLiking"] = false;
+      });
+    } else {
+      // 4. Rollback visual si falla el servidor
+      setState(() {
+        comment["isLiking"] = false;
+        comment["isLiked"] = wasLiked;
+        comment["likes"] = currentLikes;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            "Error al conectar con el servidor. Se revirtió tu like.",
+          ),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    }
+  }
+
+  // Optimistic UI para dar Like a la Publicación Original desde esta vista
+  Future<void> _togglePostLike() async {
+    if (widget.postData["isLiking"] == true) return;
+
+    final bool wasLiked = widget.postData["isLiked"] ?? false;
+    final int currentLikes = widget.postData["likes"] ?? 0;
+
+    setState(() {
+      widget.postData["isLiking"] = true;
+      widget.postData["isLiked"] = !wasLiked;
+      widget.postData["likes"] = wasLiked ? currentLikes - 1 : currentLikes + 1;
+    });
+
+    await Future.delayed(const Duration(milliseconds: 800));
+    if (!mounted) return;
+
+    setState(() {
+      widget.postData["isLiking"] = false;
+    });
+  }
+
   Future<void> _submitComment() async {
     final text = _commentController.text.trim();
     if (text.isEmpty) return;
@@ -61,7 +134,6 @@ class _CommentsScreenState extends State<CommentsScreen> {
     FocusScope.of(context).unfocus();
 
     await Future.delayed(const Duration(seconds: 1));
-
     if (!mounted) return;
 
     if (text.toLowerCase().contains("insulto")) {
@@ -84,7 +156,13 @@ class _CommentsScreenState extends State<CommentsScreen> {
         "text": _replyingToUser != null ? "@$_replyingToUser $text" : text,
         "time": "Ahora",
         "likes": 0,
+        "isLiked": false,
+        "isLiking": false,
       });
+
+      // Actualizamos el contador de comentarios en la PostCard Original
+      widget.postData["comments"] = (widget.postData["comments"] ?? 0) + 1;
+
       _commentController.clear();
       _replyingToUser = null;
       _isSubmitting = false;
@@ -124,8 +202,7 @@ class _CommentsScreenState extends State<CommentsScreen> {
                     itemCount: _comments.length,
                     separatorBuilder: (context, index) =>
                         const Divider(height: 32),
-                    itemBuilder: (context, index) =>
-                        _buildCommentTile(_comments[index]),
+                    itemBuilder: (context, index) => _buildCommentTile(index),
                   ),
                 ),
                 _buildCommentInputBar(),
@@ -138,6 +215,8 @@ class _CommentsScreenState extends State<CommentsScreen> {
   }
 
   Widget _buildOriginalPost() {
+    final bool isPostLiked = widget.postData["isLiked"] ?? false;
+
     return Padding(
       padding: const EdgeInsets.all(24.0),
       child: Column(
@@ -169,12 +248,60 @@ class _CommentsScreenState extends State<CommentsScreen> {
               height: 1.4,
             ),
           ),
+          const SizedBox(height: 16),
+          // Contadores sincronizados con la PostCard
+          Row(
+            children: [
+              InkWell(
+                onTap: _togglePostLike,
+                borderRadius: BorderRadius.circular(4),
+                child: Row(
+                  children: [
+                    Icon(
+                      isPostLiked ? Icons.favorite : Icons.favorite_border,
+                      color: isPostLiked ? Colors.red : Colors.grey,
+                      size: 16,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      "${widget.postData["likes"] ?? 0} Likes",
+                      style: TextStyle(
+                        color: isPostLiked ? Colors.red : Colors.grey,
+                        fontSize: 11,
+                        fontWeight: isPostLiked
+                            ? FontWeight.bold
+                            : FontWeight.normal,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 16),
+              Row(
+                children: [
+                  const Icon(
+                    Icons.mode_comment_outlined,
+                    color: Colors.grey,
+                    size: 16,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    "${widget.postData["comments"] ?? 0} Comentarios",
+                    style: const TextStyle(color: Colors.grey, fontSize: 11),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildCommentTile(Map<String, dynamic> comment) {
+  Widget _buildCommentTile(int index) {
+    final comment = _comments[index];
+    final bool isLiked = comment["isLiked"] ?? false;
+
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -212,9 +339,36 @@ class _CommentsScreenState extends State<CommentsScreen> {
               const SizedBox(height: 8),
               Row(
                 children: [
-                  Text(
-                    "${comment["likes"]} Likes",
-                    style: const TextStyle(fontSize: 11, color: Colors.grey),
+                  InkWell(
+                    onTap: () => _toggleCommentLike(index),
+                    borderRadius: BorderRadius.circular(4),
+                    child: Padding(
+                      padding: const EdgeInsets.only(
+                        right: 8.0,
+                        top: 4.0,
+                        bottom: 4.0,
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            isLiked ? Icons.favorite : Icons.favorite_border,
+                            color: isLiked ? Colors.red : Colors.grey,
+                            size: 14,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            "${comment["likes"]} Likes",
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: isLiked ? Colors.red : Colors.grey,
+                              fontWeight: isLiked
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                   const SizedBox(width: 16),
                   InkWell(

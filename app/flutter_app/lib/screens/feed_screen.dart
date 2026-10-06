@@ -531,10 +531,7 @@ class _FeedScreenState extends State<FeedScreen> {
                             ),
                           );
                         }
-                        return PostCard(
-                          postData: _posts[index],
-                          tealAccent: _tealAccent,
-                        );
+                        return _buildPostCard(_posts[index]);
                       },
                     ),
             ),
