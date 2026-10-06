@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+
 import 'dart:async';
+
 import 'friends_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
 import '../../widgets/post_card.dart'; // Importación del nuevo componente reutilizable

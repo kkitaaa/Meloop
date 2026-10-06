@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+
 import 'dart:async';
+
 import '../../../screens/friends_screen.dart';
 import '../../../widgets/post_card.dart';
 
@@ -243,8 +245,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child:
-                  const Text("Cancelar", style: TextStyle(color: Colors.grey)),
+              child: const Text(
+                "Cancelar",
+                style: TextStyle(color: Colors.grey),
+              ),
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: _tealAccent),
@@ -261,8 +265,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                 );
               },
-              child:
-                  const Text("Guardar", style: TextStyle(color: Colors.white)),
+              child: const Text(
+                "Guardar",
+                style: TextStyle(color: Colors.white),
+              ),
             ),
           ],
         );
@@ -475,7 +481,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               _buildFavoriteArtists(),
               const SizedBox(height: 24),
               _buildProfilePaperTabs(isMobile: true),
-            ]
+            ],
           ],
         ],
       ),
@@ -596,11 +602,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildStatsAndActionsRow({bool isMobile = false}) {
-    final int equippedCount =
-        _inventory.where((i) => i['isEquipped'] as bool).length;
+    final int equippedCount = _inventory
+        .where((i) => i['isEquipped'] as bool)
+        .length;
     final statsRow = Row(
-      mainAxisAlignment:
-          isMobile ? MainAxisAlignment.spaceEvenly : MainAxisAlignment.start,
+      mainAxisAlignment: isMobile
+          ? MainAxisAlignment.spaceEvenly
+          : MainAxisAlignment.start,
       children: [
         _pillStat("Amigos 5"),
         if (!isMobile) const SizedBox(width: 12),
@@ -608,17 +616,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
         if (_profileStatus == 'own') ...[
           if (!isMobile) const SizedBox(width: 12),
           _pillStat("Decoraciones $equippedCount"),
-        ]
+        ],
       ],
     );
 
     if (isMobile) {
       return Column(
-        children: [
-          statsRow,
-          const SizedBox(height: 12),
-          _buildActionButtons(),
-        ],
+        children: [statsRow, const SizedBox(height: 12), _buildActionButtons()],
       );
     }
 
@@ -638,10 +642,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 4,
-          ),
+          BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 4),
         ],
       ),
       child: Text(
@@ -660,8 +661,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
       return OutlinedButton(
         style: OutlinedButton.styleFrom(
           side: BorderSide(color: _tealAccent),
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
           backgroundColor: Colors.white,
         ),
         onPressed: _showEditProfileDialog,
@@ -682,7 +684,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
             style: OutlinedButton.styleFrom(
               side: BorderSide(color: _tealAccent),
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20)),
+                borderRadius: BorderRadius.circular(20),
+              ),
               backgroundColor: Colors.white,
             ),
             onPressed: () {
@@ -716,10 +719,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         color: const Color(0xFFFDFDFD),
         borderRadius: BorderRadius.circular(8),
         boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.1),
-            blurRadius: 10,
-          ),
+          BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 10),
         ],
       ),
       child: Column(
@@ -1020,52 +1020,50 @@ class _ProfileScreenState extends State<ProfileScreen> {
             child: _isInitialLoading
                 ? Center(child: CircularProgressIndicator(color: _tealAccent))
                 : _posts.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.post_add,
-                                size: 48, color: Colors.grey[400]),
-                            const SizedBox(height: 12),
-                            Text(
-                              "Aún no tiene publicaciones",
-                              style: TextStyle(
-                                color: _paperTextColor.withValues(alpha: 0.6),
-                                fontSize: 14,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.post_add, size: 48, color: Colors.grey[400]),
+                        const SizedBox(height: 12),
+                        Text(
+                          "Aún no tiene publicaciones",
+                          style: TextStyle(
+                            color: _paperTextColor.withValues(alpha: 0.6),
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
-                      )
-                    : ListView.builder(
-                        controller: isMobile ? null : ScrollController(),
-                        itemCount: _posts.length + (_isLoadingMore ? 1 : 0),
-                        itemBuilder: (context, index) {
-                          if (index == _posts.length) {
-                            return Padding(
-                              padding:
-                                  const EdgeInsets.symmetric(vertical: 16.0),
-                              child: Center(
-                                child: CircularProgressIndicator(
-                                  color: _tealAccent,
-                                ),
-                              ),
-                            );
-                          }
-                          // Renderiza usando la Tarjeta Reutilizable PostCard
-                          return PostCard(
-                            postData: _posts[index],
-                            tealAccent: _tealAccent,
-                            textColor: _paperTextColor,
-                            onDelete: () {
-                              setState(() {
-                                _posts.removeAt(index);
-                              });
-                            },
-                          );
+                      ],
+                    ),
+                  )
+                : ListView.builder(
+                    controller: isMobile ? null : ScrollController(),
+                    itemCount: _posts.length + (_isLoadingMore ? 1 : 0),
+                    itemBuilder: (context, index) {
+                      if (index == _posts.length) {
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 16.0),
+                          child: Center(
+                            child: CircularProgressIndicator(
+                              color: _tealAccent,
+                            ),
+                          ),
+                        );
+                      }
+                      // Renderiza usando la Tarjeta Reutilizable PostCard
+                      return PostCard(
+                        postData: _posts[index],
+                        tealAccent: _tealAccent,
+                        textColor: _paperTextColor,
+                        onDelete: () {
+                          setState(() {
+                            _posts.removeAt(index);
+                          });
                         },
-                      ),
+                      );
+                    },
+                  ),
           ),
         ],
       ),
@@ -1126,16 +1124,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 item['type'] == 'frame'
                     ? "Marco"
                     : item['type'] == 'pin'
-                        ? "Pin"
-                        : "Fondo",
+                    ? "Pin"
+                    : "Fondo",
                 style: const TextStyle(fontSize: 10, color: Colors.grey),
               ),
               const SizedBox(height: 16),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: isEquipped ? Colors.white : _tealAccent,
-                  foregroundColor:
-                      isEquipped ? Colors.redAccent : Colors.white,
+                  foregroundColor: isEquipped ? Colors.redAccent : Colors.white,
                   side: isEquipped
                       ? const BorderSide(color: Colors.redAccent)
                       : null,
