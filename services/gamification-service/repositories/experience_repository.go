@@ -17,7 +17,7 @@ func NewExperienceRepository(db *sql.DB) *ExperienceRepository {
 
 func (r *ExperienceRepository) AddExperience(ctx context.Context, userID string, xpToAdd int) error {
 	// Asumimos que la tabla se llama 'users' y la columna 'xp'
-	query := `UPDATE users SET xp = xp + $1 WHERE id = $2`
+	query := `UPDATE usuario SET experiencia = experiencia + $1 WHERE id_usuario = $2`
 	
 	result, err := r.db.ExecContext(ctx, query, xpToAdd, userID)
 	if err != nil {

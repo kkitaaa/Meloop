@@ -103,7 +103,7 @@ func (c *RabbitMQConsumer) StartWorker() error {
 			err := c.service.HandleInteractionEvent(context.Background(), event)
 			if err != nil {
 				log.Printf("Error procesando evento: %v", err)
-				d.Nack(false, true) // Reencolar si hubo un error temporal
+				d.Nack(false, false) // Reencolar si hubo un error temporal
 			} else {
 				d.Ack(false) // Confirmar procesamiento exitoso (garantiza cero pérdida de datos)[cite: 8]
 			}
