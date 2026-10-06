@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"sync"
 	"time"
@@ -20,19 +21,25 @@ type RecommendationService struct {
 	mlClient *MLClient
 	cache    *RecommendationCache
 	profiles repositories.UserProfileRepository
+	store    RecommendationStore
 	mu       sync.RWMutex
 	users    map[int]userState
 }
 
 func NewRecommendationService(mlClient *MLClient, cacheTTL time.Duration) *RecommendationService {
-	return NewRecommendationServiceWithRepository(mlClient, cacheTTL, nil)
+	return NewRecommendationServiceWithRepositoryAndStore(mlClient, cacheTTL, nil, nil)
 }
 
 func NewRecommendationServiceWithRepository(mlClient *MLClient, cacheTTL time.Duration, profiles repositories.UserProfileRepository) *RecommendationService {
+	return NewRecommendationServiceWithRepositoryAndStore(mlClient, cacheTTL, profiles, nil)
+}
+
+func NewRecommendationServiceWithRepositoryAndStore(mlClient *MLClient, cacheTTL time.Duration, profiles repositories.UserProfileRepository, store RecommendationStore) *RecommendationService {
 	return &RecommendationService{
 		mlClient: mlClient,
 		cache:    NewRecommendationCache(cacheTTL),
 		profiles: profiles,
+		store:    store,
 		users:    make(map[int]userState),
 	}
 }
@@ -66,10 +73,37 @@ func (service *RecommendationService) GetByType(ctx context.Context, userID int,
 		Interactions: filterInteractions(interactions, recommendationType),
 	})
 	if err != nil {
+		if service.store != nil {
+			storedResponse, found, storeErr := service.store.Get(ctx, recommendationStoreKey(userID, recommendationType))
+			if storeErr != nil {
+				slog.Warn("recommendation_backup_read_failed", "user_id", userID, "type", recommendationType, "error", storeErr)
+			} else if found {
+				storedResponse.FromBackup = true
+				return limitRecommendations(storedResponse, limit), true, nil
+			}
+		}
 		return fallbackResponse(userID, recommendationType, limit), false, nil
+	}
+	response.CalculatedAt = time.Now().UTC()
+	response.FromBackup = false
+	if service.store != nil {
+		if err := service.store.Set(ctx, recommendationStoreKey(userID, recommendationType), response); err != nil {
+			slog.Warn("recommendation_backup_write_failed", "user_id", userID, "type", recommendationType, "error", err)
+		}
 	}
 	service.cache.Set(cacheKey, response)
 	return response, false, nil
+}
+
+func recommendationStoreKey(userID int, recommendationType string) string {
+	return fmt.Sprintf("recommendations:last:%d:%s", userID, recommendationType)
+}
+
+func limitRecommendations(response models.RecommendationResponse, limit int) models.RecommendationResponse {
+	if limit >= 0 && len(response.Recommendations) > limit {
+		response.Recommendations = response.Recommendations[:limit]
+	}
+	return response
 }
 
 func profilePreferences(profile models.UserProfile, local []string) []string {

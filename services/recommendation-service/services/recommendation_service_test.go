@@ -18,6 +18,20 @@ func (profileRepositoryFake) Get(context.Context, string, string) (models.UserPr
 	return models.UserProfile{Genres: []string{"jazz"}, Artists: []string{"Miles Davis"}, Songs: []string{"So What"}}, []models.Interaction{{Type: "comment", TargetID: 9}}, nil
 }
 
+type recommendationStoreFake struct {
+	responses map[string]models.RecommendationResponse
+}
+
+func (store *recommendationStoreFake) Get(_ context.Context, key string) (models.RecommendationResponse, bool, error) {
+	response, found := store.responses[key]
+	return response, found, nil
+}
+
+func (store *recommendationStoreFake) Set(_ context.Context, key string, response models.RecommendationResponse) error {
+	store.responses[key] = response
+	return nil
+}
+
 func TestRecommendationServiceLoadsPersistedProfile(t *testing.T) {
 	mlServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		var payload models.RecommendationRequest
@@ -34,6 +48,67 @@ func TestRecommendationServiceLoadsPersistedProfile(t *testing.T) {
 	service := NewRecommendationServiceWithRepository(NewMLClient(mlServer.URL), time.Minute, profileRepositoryFake{})
 	if _, _, err := service.Get(context.Background(), 42, 10); err != nil {
 		t.Fatalf("get recommendations: %v", err)
+	}
+}
+
+func TestRecommendationServicePersistsRecommendationsAndUsesBackupOnMLFailure(t *testing.T) {
+	var mlUnavailable atomic.Bool
+	mlServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if mlUnavailable.Load() {
+			http.Error(writer, "unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		var payload models.RecommendationRequest
+		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode ML request: %v", err)
+		}
+		_ = json.NewEncoder(writer).Encode(models.RecommendationResponse{
+			UserID:          payload.UserID,
+			Recommendations: []models.RecommendationItem{{ItemID: 17}, {ItemID: 18}},
+			Model:           "test-model",
+		})
+	}))
+	defer mlServer.Close()
+
+	store := &recommendationStoreFake{responses: make(map[string]models.RecommendationResponse)}
+	service := NewRecommendationServiceWithRepositoryAndStore(NewMLClient(mlServer.URL), time.Minute, nil, store)
+	ctx := context.Background()
+
+	initial, _, err := service.GetByType(ctx, 42, "music", 10)
+	if err != nil {
+		t.Fatalf("get initial recommendations: %v", err)
+	}
+	if initial.CalculatedAt.IsZero() || initial.FromBackup {
+		t.Fatalf("expected a timestamped ML response, got %+v", initial)
+	}
+	key := "recommendations:last:42:music"
+	if _, found := store.responses[key]; !found {
+		t.Fatalf("expected ML response stored under %q", key)
+	}
+
+	mlUnavailable.Store(true)
+	service.cache.InvalidateUser(42)
+	backup, cached, err := service.GetByType(ctx, 42, "music", 1)
+	if err != nil || !cached {
+		t.Fatalf("expected stored backup response: response=%+v cached=%v error=%v", backup, cached, err)
+	}
+	if !backup.FromBackup || backup.Model != "test-model" || len(backup.Recommendations) != 1 || backup.Recommendations[0].ItemID != 17 {
+		t.Fatalf("expected limited prior recommendation marked as backup, got %+v", backup)
+	}
+	if !backup.CalculatedAt.Equal(initial.CalculatedAt) {
+		t.Fatalf("expected original calculation time %s, got %s", initial.CalculatedAt, backup.CalculatedAt)
+	}
+
+	serialized, err := json.Marshal(backup)
+	if err != nil {
+		t.Fatalf("marshal backup response: %v", err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(serialized, &payload); err != nil {
+		t.Fatalf("decode backup response JSON: %v", err)
+	}
+	if payload["from_backup"] != true || payload["calculated_at"] == nil {
+		t.Fatalf("expected JSON backup flag and calculation date, got %s", serialized)
 	}
 }
 
