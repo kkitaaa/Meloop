@@ -29,6 +29,22 @@ type coldStartRepositoryFake struct {
 	popularCalls int
 }
 
+type friendEligibilityRepositoryFake struct {
+	eligibleIDs  map[int]struct{}
+	candidateIDs []int
+	filterCalls  int
+}
+
+func (repository *friendEligibilityRepositoryFake) Get(context.Context, string, string) (models.UserProfile, []models.Interaction, error) {
+	return models.UserProfile{}, nil, nil
+}
+
+func (repository *friendEligibilityRepositoryFake) FilterEligibleFriendCandidates(_ context.Context, _ string, candidateIDs []int) (map[int]struct{}, error) {
+	repository.filterCalls++
+	repository.candidateIDs = append([]int(nil), candidateIDs...)
+	return repository.eligibleIDs, nil
+}
+
 func (repository *coldStartRepositoryFake) Get(context.Context, string, string) (models.UserProfile, []models.Interaction, error) {
 	return repository.profile, repository.interactions, nil
 }
@@ -116,6 +132,68 @@ func TestRecommendationServiceLoadsPersistedProfile(t *testing.T) {
 	service := NewRecommendationServiceWithRepository(NewMLClient(mlServer.URL), time.Minute, profileRepositoryFake{})
 	if _, _, err := service.Get(context.Background(), 42, 10); err != nil {
 		t.Fatalf("get recommendations: %v", err)
+	}
+}
+
+func TestRecommendationServiceFiltersFriendCandidatesInOneBatchAndRefillsLimit(t *testing.T) {
+	mlServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		_ = json.NewEncoder(writer).Encode(models.RecommendationResponse{
+			UserID: 42,
+			Recommendations: []models.RecommendationItem{
+				{ItemID: 42},
+				{ItemID: 11},
+				{ItemID: 12},
+				{ItemID: 13},
+				{ItemID: 14},
+				{ItemID: 15},
+				{ItemID: 15},
+				{ItemID: 16},
+			},
+			Model: "test-model",
+		})
+	}))
+	defer mlServer.Close()
+
+	repository := &friendEligibilityRepositoryFake{eligibleIDs: map[int]struct{}{
+		14: {},
+		15: {},
+		16: {},
+	}}
+	service := NewRecommendationServiceWithRepository(NewMLClient(mlServer.URL), time.Minute, repository)
+
+	response, _, err := service.GetByType(context.Background(), 42, "friends", 3)
+	if err != nil {
+		t.Fatalf("get friend recommendations: %v", err)
+	}
+	if len(response.Recommendations) != 3 {
+		t.Fatalf("expected requested count after removing ineligible candidates, got %+v", response.Recommendations)
+	}
+	for index, expectedID := range []int{14, 15, 16} {
+		if response.Recommendations[index].ItemID != expectedID {
+			t.Fatalf("expected ranked eligible candidate %d at position %d, got %+v", expectedID, index, response.Recommendations)
+		}
+	}
+	if repository.filterCalls != 1 {
+		t.Fatalf("expected one batch eligibility lookup, got %d", repository.filterCalls)
+	}
+	if len(repository.candidateIDs) != 6 {
+		t.Fatalf("expected one lookup containing each distinct non-self candidate, got %v", repository.candidateIDs)
+	}
+}
+
+func TestRecommendationServiceFailsClosedWhenFriendEligibilityCannotBeChecked(t *testing.T) {
+	mlServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		_ = json.NewEncoder(writer).Encode(models.RecommendationResponse{
+			UserID:          42,
+			Recommendations: []models.RecommendationItem{{ItemID: 99}},
+			Model:           "test-model",
+		})
+	}))
+	defer mlServer.Close()
+
+	service := NewRecommendationService(NewMLClient(mlServer.URL), time.Minute)
+	if _, _, err := service.GetByType(context.Background(), 42, "friends", 1); err == nil {
+		t.Fatal("expected an error when candidate eligibility cannot be verified")
 	}
 }
 

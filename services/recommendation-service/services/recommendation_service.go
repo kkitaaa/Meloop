@@ -82,7 +82,8 @@ func (service *RecommendationService) GetByType(ctx context.Context, userID int,
 			slog.Warn("recommendation_cache_read_failed", "user_id", userID, "type", recommendationType, "error", cacheErr)
 		} else if found && cached.Fingerprint == fingerprint {
 			service.cache.Set(localCacheKey, cached.Response)
-			return limitRecommendations(cached.Response, limit), true, nil
+			response, err := service.filterFriendRecommendations(ctx, userID, recommendationType, cached.Response, limit)
+			return response, true, err
 		} else if found {
 			if err := cacheStore.InvalidateCached(ctx, userID); err != nil {
 				slog.Warn("recommendation_cache_invalidate_failed", "user_id", userID, "error", err)
@@ -91,7 +92,8 @@ func (service *RecommendationService) GetByType(ctx context.Context, userID int,
 		}
 	}
 	if response, ok := service.cache.Get(localCacheKey); ok {
-		return limitRecommendations(response, limit), true, nil
+		filtered, err := service.filterFriendRecommendations(ctx, userID, recommendationType, response, limit)
+		return filtered, true, err
 	}
 
 	if recommendationType != "friends" &&
@@ -125,10 +127,13 @@ func (service *RecommendationService) GetByType(ctx context.Context, userID int,
 				slog.Warn("recommendation_backup_read_failed", "user_id", userID, "type", recommendationType, "error", storeErr)
 			} else if found {
 				storedResponse.FromBackup = true
-				return limitRecommendations(storedResponse, limit), true, nil
+				filtered, err := service.filterFriendRecommendations(ctx, userID, recommendationType, storedResponse, limit)
+				return filtered, true, err
 			}
 		}
-		return fallbackResponse(userID, recommendationType, limit), false, nil
+		fallback := fallbackResponse(userID, recommendationType, limit)
+		filtered, filterErr := service.filterFriendRecommendations(ctx, userID, recommendationType, fallback, limit)
+		return filtered, false, filterErr
 	}
 	response.CalculatedAt = time.Now().UTC()
 	response.FromBackup = false
@@ -138,7 +143,8 @@ func (service *RecommendationService) GetByType(ctx context.Context, userID int,
 			slog.Warn("recommendation_backup_write_failed", "user_id", userID, "type", recommendationType, "error", err)
 		}
 	}
-	return limitRecommendations(response, limit), false, nil
+	filtered, err := service.filterFriendRecommendations(ctx, userID, recommendationType, response, limit)
+	return filtered, false, err
 }
 
 const minimumPersonalSignals = 3
@@ -242,6 +248,64 @@ func limitRecommendations(response models.RecommendationResponse, limit int) mod
 	return response
 }
 
+func (service *RecommendationService) filterFriendRecommendations(ctx context.Context, userID int, recommendationType string, response models.RecommendationResponse, limit int) (models.RecommendationResponse, error) {
+	if recommendationType != "friends" {
+		return limitRecommendations(response, limit), nil
+	}
+	if limit == 0 {
+		response.Recommendations = []models.RecommendationItem{}
+		return response, nil
+	}
+
+	candidateIDs := make([]int, 0, len(response.Recommendations))
+	seen := make(map[int]struct{}, len(response.Recommendations))
+	for _, candidate := range response.Recommendations {
+		if candidate.ItemID < 1 || candidate.ItemID == userID {
+			continue
+		}
+		if _, exists := seen[candidate.ItemID]; exists {
+			continue
+		}
+		seen[candidate.ItemID] = struct{}{}
+		candidateIDs = append(candidateIDs, candidate.ItemID)
+	}
+
+	eligibleIDs := make(map[int]struct{}, len(candidateIDs))
+	if len(candidateIDs) > 0 {
+		repository, ok := service.profiles.(repositories.FriendRecommendationEligibilityRepository)
+		if !ok {
+			return models.RecommendationResponse{}, fmt.Errorf("friend recommendation eligibility repository is not configured")
+		}
+		var err error
+		eligibleIDs, err = repository.FilterEligibleFriendCandidates(ctx, strconv.Itoa(userID), candidateIDs)
+		if err != nil {
+			return models.RecommendationResponse{}, fmt.Errorf("validate friend recommendation candidates: %w", err)
+		}
+	}
+
+	capacity := len(candidateIDs)
+	if limit >= 0 && capacity > limit {
+		capacity = limit
+	}
+	filtered := make([]models.RecommendationItem, 0, capacity)
+	added := make(map[int]struct{}, capacity)
+	for _, candidate := range response.Recommendations {
+		if _, isEligible := eligibleIDs[candidate.ItemID]; !isEligible {
+			continue
+		}
+		if _, exists := added[candidate.ItemID]; exists {
+			continue
+		}
+		filtered = append(filtered, candidate)
+		added[candidate.ItemID] = struct{}{}
+		if limit >= 0 && len(filtered) == limit {
+			break
+		}
+	}
+	response.Recommendations = filtered
+	return response, nil
+}
+
 func profilePreferences(profile models.UserProfile, local []string) []string {
 	preferences := make([]string, 0, len(profile.Genres)+len(profile.Artists)+len(profile.Songs)+len(local))
 	for _, genre := range profile.Genres {
@@ -291,6 +355,13 @@ func filterInteractions(interactions []models.Interaction, recommendationType st
 }
 
 func fallbackResponse(userID int, recommendationType string, limit int) models.RecommendationResponse {
+	if recommendationType == "friends" {
+		return models.RecommendationResponse{
+			UserID:          userID,
+			Recommendations: []models.RecommendationItem{},
+			Model:           "fallback",
+		}
+	}
 	if limit > 5 {
 		limit = 5
 	}

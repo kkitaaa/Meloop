@@ -21,6 +21,10 @@ type PopularityRepository interface {
 	GetPopular(ctx context.Context, userID string, limit int) ([]models.PopularContent, error)
 }
 
+type FriendRecommendationEligibilityRepository interface {
+	FilterEligibleFriendCandidates(ctx context.Context, userID string, candidateIDs []int) (map[int]struct{}, error)
+}
+
 type postgresUserProfileRepository struct{ pool *pgxpool.Pool }
 
 func NewUserProfileRepository(pool *pgxpool.Pool) UserProfileRepository {
@@ -210,4 +214,70 @@ func (repository *postgresUserProfileRepository) GetPopular(ctx context.Context,
 		return nil, fmt.Errorf("read popular recommendation content: %w", err)
 	}
 	return popular, nil
+}
+
+func (repository *postgresUserProfileRepository) FilterEligibleFriendCandidates(ctx context.Context, userID string, candidateIDs []int) (map[int]struct{}, error) {
+	if repository.pool == nil {
+		return nil, errors.New("database connection pool is not initialized")
+	}
+
+	eligible := make(map[int]struct{}, len(candidateIDs))
+	if len(candidateIDs) == 0 {
+		return eligible, nil
+	}
+
+	candidateUserIDs := make([]string, 0, len(candidateIDs))
+	for _, candidateID := range candidateIDs {
+		if candidateID > 0 {
+			candidateUserIDs = append(candidateUserIDs, strconv.Itoa(candidateID))
+		}
+	}
+	if len(candidateUserIDs) == 0 {
+		return eligible, nil
+	}
+
+	rows, err := repository.pool.Query(ctx, `
+		SELECT DISTINCT u.id_usuario::text
+		FROM UNNEST($2::text[]) AS candidates(candidate_id)
+		JOIN USUARIO u ON u.id_usuario::text = candidates.candidate_id
+		WHERE u.id_usuario::text <> $1
+		  AND NOT EXISTS (
+			SELECT 1
+			FROM BLOQUEO b
+			WHERE (b.id_usuario_bloqueador::text = $1 AND b.id_usuario_bloqueado::text = u.id_usuario::text)
+			   OR (b.id_usuario_bloqueador::text = u.id_usuario::text AND b.id_usuario_bloqueado::text = $1)
+		  )
+		  AND NOT EXISTS (
+			SELECT 1
+			FROM ACCION_MODERACION am
+			WHERE am.id_usuario_afectado::text = u.id_usuario::text
+			  AND UPPER(TRIM(COALESCE(am.tipo_accion, ''))) IN ('BAN', 'SUSPENSION', 'INACTIVO', 'DESACTIVADO')
+		  )
+		  AND NOT EXISTS (
+			SELECT 1
+			FROM AMISTAD a
+			WHERE ((a.id_usuario_1::text = $1 AND a.id_usuario_2::text = u.id_usuario::text)
+			    OR (a.id_usuario_1::text = u.id_usuario::text AND a.id_usuario_2::text = $1))
+			  AND UPPER(TRIM(COALESCE(a.estado, ''))) = 'ACEPTADA'
+		  )`, userID, candidateUserIDs)
+	if err != nil {
+		return nil, fmt.Errorf("filter ineligible friend recommendation candidates: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var candidateID string
+		if err := rows.Scan(&candidateID); err != nil {
+			return nil, fmt.Errorf("scan eligible friend recommendation candidate: %w", err)
+		}
+		id, err := strconv.Atoi(candidateID)
+		if err != nil {
+			return nil, fmt.Errorf("parse eligible friend recommendation candidate id %q: %w", candidateID, err)
+		}
+		eligible[id] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read eligible friend recommendation candidates: %w", err)
+	}
+	return eligible, nil
 }

@@ -152,7 +152,7 @@ func TestRecommendationHandlerFallsBackWhenMLIsUnavailable(t *testing.T) {
 	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if response.Model != "fallback" || len(response.Recommendations) == 0 {
-		t.Fatalf("expected safe fallback response, got %+v", response)
+	if response.Model != "fallback" || len(response.Recommendations) != 0 {
+		t.Fatalf("expected no fabricated friend candidates when ML is unavailable, got %+v", response)
 	}
 }

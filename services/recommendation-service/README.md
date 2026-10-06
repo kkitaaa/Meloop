@@ -20,3 +20,10 @@ Activity is not persisted when `CONFIGURACION_PRIVACIDAD.visibilidad_interaccion
 is `PRIVADO`. Missing privacy settings use the schema's public default. The
 profile loader also excludes activity while interactions are private and only
 uses recent activity from the last 30 days.
+
+Friend recommendations are checked against `USUARIO`, bidirectional
+`BLOQUEO` records, accepted `AMISTAD` records, and inactive `ACCION_MODERACION`
+actions in one batched database query. Recommendations from ML, cache, and
+backup are all revalidated before being returned. The service keeps the ML
+ranking order and takes later eligible candidates from the fetched candidate
+batch to satisfy the requested limit.
