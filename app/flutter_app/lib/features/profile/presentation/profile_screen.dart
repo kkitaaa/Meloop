@@ -4,6 +4,7 @@ import 'dart:async';
 
 import '../../../screens/friends_screen.dart';
 import '../../comments/presentation/comments_screen.dart';
+import '../../../widgets/post_card.dart';
 
 class ProfileScreen extends StatefulWidget {
   final String? username;
@@ -917,7 +918,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ),
                         );
                       }
-                      return _buildPostCard(_posts[index]);
+                      return PostCard(
+                        postData: _posts[index],
+                        tealAccent: _tealAccent,
+                        textColor: _paperTextColor,
+                      );
                     },
                   ),
           ),
