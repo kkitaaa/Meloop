@@ -39,10 +39,11 @@ func (repository *coldStartRepositoryFake) GetPopular(_ context.Context, _ strin
 }
 
 type recommendationStoreFake struct {
-	responses        map[string]models.RecommendationResponse
-	cached           map[string]CachedRecommendation
-	cacheTTL         time.Duration
-	invalidatedUsers []int
+	responses          map[string]models.RecommendationResponse
+	cached             map[string]CachedRecommendation
+	cacheTTL           time.Duration
+	invalidatedUsers   []int
+	invalidatedUserIDs []string
 }
 
 func (store *recommendationStoreFake) Get(_ context.Context, key string) (models.RecommendationResponse, bool, error) {
@@ -75,6 +76,28 @@ func (store *recommendationStoreFake) InvalidateCached(_ context.Context, userID
 		delete(store.cached, recommendationCacheKey(userID, recommendationType))
 	}
 	return nil
+}
+
+func (store *recommendationStoreFake) InvalidateCachedForUser(_ context.Context, userID string) error {
+	store.invalidatedUserIDs = append(store.invalidatedUserIDs, userID)
+	return nil
+}
+
+func TestRecommendationServiceInvalidatesRedisCacheForStringUserID(t *testing.T) {
+	store := &recommendationStoreFake{}
+	service := NewRecommendationServiceWithRepositoryAndStore(
+		NewMLClient("http://127.0.0.1:1"),
+		time.Minute,
+		nil,
+		store,
+	)
+
+	if err := service.MarkRecommendationsStale(context.Background(), "user-123"); err != nil {
+		t.Fatalf("mark recommendations stale: %v", err)
+	}
+	if len(store.invalidatedUserIDs) != 1 || store.invalidatedUserIDs[0] != "user-123" {
+		t.Fatalf("expected Redis invalidation for string user ID, got %v", store.invalidatedUserIDs)
+	}
 }
 
 func TestRecommendationServiceLoadsPersistedProfile(t *testing.T) {

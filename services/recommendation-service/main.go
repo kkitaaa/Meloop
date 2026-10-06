@@ -3,15 +3,17 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"log"
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/meloop/recommendation-service/messaging"
 	"github.com/meloop/recommendation-service/models"
 	"github.com/meloop/recommendation-service/repositories"
 	"github.com/meloop/recommendation-service/services"
@@ -27,7 +29,37 @@ func main() {
 		os.Exit(1)
 	}
 	defer recommendationStore.Close()
-	recommendationService := services.NewRecommendationServiceWithRepositoryAndStore(mlClient, 30*time.Second, openProfileRepository(), recommendationStore)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	profileRepository, activityRepository, databasePool, err := openRepositories(ctx)
+	if err != nil {
+		logger.Error("recommendation_database_configuration_failed", "error", err)
+		os.Exit(1)
+	}
+	if databasePool != nil {
+		defer databasePool.Close()
+	}
+	recommendationService := services.NewRecommendationServiceWithRepositoryAndStore(mlClient, 30*time.Second, profileRepository, recommendationStore)
+	if activityRepository != nil {
+		processor := services.NewActivityProcessor(activityRepository, recommendationService)
+		go func() {
+			rabbitURL := getenv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/")
+			for ctx.Err() == nil {
+				err := messaging.Run(ctx, rabbitURL, processor)
+				if ctx.Err() != nil {
+					return
+				}
+				logger.Error("recommendation_event_consumer_stopped", "error", err)
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(5 * time.Second):
+				}
+			}
+		}()
+	} else {
+		logger.Warn("recommendation_event_consumer_disabled", "reason", "DATABASE_URL is not configured")
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", healthHandler)
@@ -42,17 +74,16 @@ func main() {
 	}
 }
 
-func openProfileRepository() repositories.UserProfileRepository {
+func openRepositories(ctx context.Context) (repositories.UserProfileRepository, repositories.RecentActivityRepository, *pgxpool.Pool, error) {
 	databaseURL := os.Getenv("DATABASE_URL")
 	if databaseURL == "" {
-		return nil
+		return nil, nil, nil, nil
 	}
-	pool, err := pgxpool.New(context.Background(), databaseURL)
+	pool, err := pgxpool.New(ctx, databaseURL)
 	if err != nil {
-		log.Printf("recommendation database disabled: %v", err)
-		return nil
+		return nil, nil, nil, err
 	}
-	return repositories.NewUserProfileRepository(pool)
+	return repositories.NewUserProfileRepository(pool), repositories.NewRecentActivityRepository(pool), pool, nil
 }
 
 func healthHandler(writer http.ResponseWriter, request *http.Request) {

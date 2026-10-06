@@ -165,7 +165,11 @@ func recommendationFingerprint(preferences []string, interactions []models.Inter
 }
 
 func recommendationCacheKey(userID int, recommendationType string) string {
-	return fmt.Sprintf("recommendations:calculated:%d:%s", userID, recommendationType)
+	return recommendationCacheKeyForUser(strconv.Itoa(userID), recommendationType)
+}
+
+func recommendationCacheKeyForUser(userID, recommendationType string) string {
+	return fmt.Sprintf("recommendations:calculated:%s:%s", userID, recommendationType)
 }
 
 func localRecommendationCacheKey(userID int, recommendationType, fingerprint string) string {
@@ -224,7 +228,11 @@ func popularRecommendationResponse(userID int, popular []models.PopularContent) 
 }
 
 func recommendationStoreKey(userID int, recommendationType string) string {
-	return fmt.Sprintf("recommendations:last:%d:%s", userID, recommendationType)
+	return recommendationStoreKeyForUser(strconv.Itoa(userID), recommendationType)
+}
+
+func recommendationStoreKeyForUser(userID, recommendationType string) string {
+	return fmt.Sprintf("recommendations:last:%s:%s", userID, recommendationType)
 }
 
 func limitRecommendations(response models.RecommendationResponse, limit int) models.RecommendationResponse {
