@@ -18,6 +18,26 @@ func (profileRepositoryFake) Get(context.Context, string, string) (models.UserPr
 	return models.UserProfile{Genres: []string{"jazz"}, Artists: []string{"Miles Davis"}, Songs: []string{"So What"}}, []models.Interaction{{Type: "comment", TargetID: 9}}, nil
 }
 
+func (profileRepositoryFake) GetPopular(context.Context, string, int) ([]models.PopularContent, error) {
+	return nil, nil
+}
+
+type coldStartRepositoryFake struct {
+	profile      models.UserProfile
+	interactions []models.Interaction
+	popular      []models.PopularContent
+	popularCalls int
+}
+
+func (repository *coldStartRepositoryFake) Get(context.Context, string, string) (models.UserProfile, []models.Interaction, error) {
+	return repository.profile, repository.interactions, nil
+}
+
+func (repository *coldStartRepositoryFake) GetPopular(_ context.Context, _ string, _ int) ([]models.PopularContent, error) {
+	repository.popularCalls++
+	return repository.popular, nil
+}
+
 type recommendationStoreFake struct {
 	responses map[string]models.RecommendationResponse
 }
@@ -48,6 +68,88 @@ func TestRecommendationServiceLoadsPersistedProfile(t *testing.T) {
 	service := NewRecommendationServiceWithRepository(NewMLClient(mlServer.URL), time.Minute, profileRepositoryFake{})
 	if _, _, err := service.Get(context.Background(), 42, 10); err != nil {
 		t.Fatalf("get recommendations: %v", err)
+	}
+}
+
+func TestRecommendationServiceUsesPopularContentForColdStartWithoutPreviousSet(t *testing.T) {
+	var mlCalls atomic.Int32
+	mlServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		mlCalls.Add(1)
+		_ = json.NewEncoder(writer).Encode(models.RecommendationResponse{UserID: 42, Model: "test-model"})
+	}))
+	defer mlServer.Close()
+
+	repository := &coldStartRepositoryFake{
+		profile:      models.UserProfile{Genres: []string{"jazz"}},
+		interactions: []models.Interaction{{Type: "like", TargetID: 9}},
+		popular: []models.PopularContent{
+			{Type: "song", ID: "spotify-track-1", Name: "So What", UsageCount: 8},
+			{Type: "artist", ID: "spotify-artist-1", Name: "Miles Davis", UsageCount: 4},
+		},
+	}
+	service := NewRecommendationServiceWithRepository(NewMLClient(mlServer.URL), time.Minute, repository)
+
+	response, cached, err := service.GetByType(context.Background(), 42, "music", 10)
+	if err != nil || cached {
+		t.Fatalf("expected a fresh popularity response, response=%+v cached=%v error=%v", response, cached, err)
+	}
+	if repository.popularCalls != 1 || mlCalls.Load() != 0 {
+		t.Fatalf("expected popularity query and no ML call, popularity_calls=%d ml_calls=%d", repository.popularCalls, mlCalls.Load())
+	}
+	if response.Model != "popularity" || len(response.Recommendations) != 2 {
+		t.Fatalf("expected popular song and artist recommendations, got %+v", response)
+	}
+	first := response.Recommendations[0]
+	if first.ItemKey != "spotify-track-1" || first.Type != "song" || first.Name != "So What" || first.Score != 1 {
+		t.Fatalf("unexpected popular recommendation item: %+v", first)
+	}
+}
+
+func TestRecommendationServiceUsesPreviousSetBeforePopularityForColdStart(t *testing.T) {
+	repository := &coldStartRepositoryFake{
+		popular: []models.PopularContent{{Type: "song", ID: "track-1", UsageCount: 5}},
+	}
+	store := &recommendationStoreFake{responses: map[string]models.RecommendationResponse{
+		"recommendations:last:42:music": {
+			UserID:          42,
+			Recommendations: []models.RecommendationItem{{ItemID: 17}},
+			Model:           "previous-model",
+		},
+	}}
+	service := NewRecommendationServiceWithRepositoryAndStore(
+		NewMLClient("http://127.0.0.1:1"),
+		time.Minute,
+		repository,
+		store,
+	)
+
+	response, cached, err := service.GetByType(context.Background(), 42, "music", 10)
+	if err != nil || !cached {
+		t.Fatalf("expected the previous recommendation set, response=%+v cached=%v error=%v", response, cached, err)
+	}
+	if !response.FromBackup || response.Model != "previous-model" || repository.popularCalls != 0 {
+		t.Fatalf("expected previous set before popularity query, response=%+v popularity_calls=%d", response, repository.popularCalls)
+	}
+}
+
+func TestRecommendationServiceKeepsMLForUsersWithEnoughRecentInteractions(t *testing.T) {
+	mlServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		_ = json.NewEncoder(writer).Encode(models.RecommendationResponse{UserID: 42, Model: "test-model"})
+	}))
+	defer mlServer.Close()
+
+	repository := &coldStartRepositoryFake{
+		profile: models.UserProfile{InteractionCount: minimumPersonalSignals},
+		popular: []models.PopularContent{{Type: "song", ID: "track-1", UsageCount: 5}},
+	}
+	service := NewRecommendationServiceWithRepository(NewMLClient(mlServer.URL), time.Minute, repository)
+
+	response, _, err := service.GetByType(context.Background(), 42, "music", 10)
+	if err != nil || response.Model != "test-model" {
+		t.Fatalf("expected ML recommendations for a user with sufficient activity, response=%+v error=%v", response, err)
+	}
+	if repository.popularCalls != 0 {
+		t.Fatalf("popularity query should not run for a user with sufficient activity, got %d calls", repository.popularCalls)
 	}
 }
 
