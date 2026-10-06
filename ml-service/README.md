@@ -31,11 +31,22 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8001
 ## Endpoints base
 
 - GET `/` - información general
-- GET `/health` - estado del servicio
+- GET `/health` - comprueba que el proceso está vivo
+- GET `/ready` - comprueba que el modelo y el pipeline de datos están inicializados
 - POST `/predict` - endpoint de prueba para recibir payloads del backend
 - POST `/recommendations/music` - ordena un catálogo de canciones o artistas por similitud
 	con el perfil musical del usuario
 - POST `/recommendations/friends` - devuelve candidatos ordenados por compatibilidad musical
+
+`/health` responde `200` mientras el proceso esté activo. `/ready` responde `200`
+cuando el modelo y el pipeline de procesamiento están inicializados, y `503` si falta
+cualquiera de ellos. Las respuestas de recomendaciones incluyen `model_version` para
+identificar la versión usada; el catálogo y las preferencias se envían en cada petición,
+por lo que no hay un dataset global que cargar al arrancar.
+
+En Docker Compose, el servicio publica `http://ml-service:8001/ready` en la red interna
+y `http://localhost:8001/ready` desde el host. El healthcheck del contenedor consulta
+este endpoint.
 
 ### Recomendaciones musicales
 
@@ -63,7 +74,7 @@ Ejemplo de petición:
 ```
 
 La respuesta usa el contrato común de recomendaciones (`user_id`, `recommendations`,
-`model` e `interaction_count`). Cada recomendación incluye `item_id`, `score` y una
+`model`, `model_version` e `interaction_count`). Cada recomendación incluye `item_id`, `score` y una
 razón basada en las preferencias compartidas. `catalog` debe contener al menos un
 elemento y `limit` está restringido al intervalo 1-50.
 

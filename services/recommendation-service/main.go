@@ -20,10 +20,12 @@ import (
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	mlURL := getenv("ML_SERVICE_URL", "http://127.0.0.1:8001")
-	recommendationService := services.NewRecommendationServiceWithRepository(services.NewMLClient(mlURL), 30*time.Second, openProfileRepository())
+	mlClient := services.NewMLClient(mlURL)
+	recommendationService := services.NewRecommendationServiceWithRepository(mlClient, 30*time.Second, openProfileRepository())
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", healthHandler)
+	mux.HandleFunc("/ready", readinessHandler(mlClient))
 	mux.HandleFunc("/recommendations/", recommendationHandler(recommendationService))
 	mux.HandleFunc("/interactions", interactionHandler(recommendationService))
 
@@ -53,6 +55,27 @@ func healthHandler(writer http.ResponseWriter, request *http.Request) {
 		return
 	}
 	writeJSON(writer, http.StatusOK, map[string]string{"status": "ok", "service": "recommendation-service"})
+}
+
+func readinessHandler(mlClient *services.MLClient) http.HandlerFunc {
+	return func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodGet {
+			http.Error(writer, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if err := mlClient.Ready(request.Context()); err != nil {
+			writeJSON(writer, http.StatusServiceUnavailable, map[string]string{
+				"status":     "not_ready",
+				"service":    "recommendation-service",
+				"dependency": "ml-service",
+			})
+			return
+		}
+		writeJSON(writer, http.StatusOK, map[string]string{
+			"status":  "ready",
+			"service": "recommendation-service",
+		})
+	}
 }
 
 func recommendationHandler(service *services.RecommendationService) http.HandlerFunc {

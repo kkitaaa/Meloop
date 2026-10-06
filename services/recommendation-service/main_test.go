@@ -24,6 +24,7 @@ func TestRecommendationHandlerReturnsMusicRecommendations(t *testing.T) {
 			UserID:          payload.UserID,
 			Recommendations: []models.RecommendationItem{{ItemID: 11}},
 			Model:           "test-model",
+			ModelVersion:    "2.3.4",
 		})
 	}))
 	defer mlServer.Close()
@@ -39,6 +40,50 @@ func TestRecommendationHandlerReturnsMusicRecommendations(t *testing.T) {
 	}
 	if recorder.Header().Get("X-Recommendations-Source") != "ml" {
 		t.Fatalf("expected ML source header, got %q", recorder.Header().Get("X-Recommendations-Source"))
+	}
+	var response models.RecommendationResponse
+	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.ModelVersion != "2.3.4" {
+		t.Fatalf("expected model version to be preserved, got %q", response.ModelVersion)
+	}
+}
+
+func TestReadinessHandlerChecksMLService(t *testing.T) {
+	mlServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/ready" {
+			t.Fatalf("expected ML readiness path, got %q", request.URL.Path)
+		}
+		writer.WriteHeader(http.StatusOK)
+	}))
+	defer mlServer.Close()
+
+	handler := readinessHandler(services.NewMLClient(mlServer.URL))
+	request := httptest.NewRequest(http.MethodGet, "/ready", nil)
+	recorder := httptest.NewRecorder()
+
+	handler.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", recorder.Code)
+	}
+}
+
+func TestReadinessHandlerReturnsUnavailableWhenMLIsNotReady(t *testing.T) {
+	mlServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer mlServer.Close()
+
+	handler := readinessHandler(services.NewMLClient(mlServer.URL))
+	request := httptest.NewRequest(http.MethodGet, "/ready", nil)
+	recorder := httptest.NewRecorder()
+
+	handler.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected status 503, got %d", recorder.Code)
 	}
 }
 

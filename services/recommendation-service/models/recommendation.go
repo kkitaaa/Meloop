@@ -30,5 +30,6 @@ type RecommendationResponse struct {
 	UserID           int                  `json:"user_id"`
 	Recommendations  []RecommendationItem `json:"recommendations"`
 	Model            string               `json:"model"`
+	ModelVersion     string               `json:"model_version"`
 	InteractionCount int                  `json:"interaction_count"`
 }
