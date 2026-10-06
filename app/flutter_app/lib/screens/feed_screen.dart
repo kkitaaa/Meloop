@@ -6,6 +6,7 @@ import 'friends_screen.dart';
 import '../../features/comments/presentation/comments_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
 import '../widgets/post_card.dart';
+import '../widgets/desktop_chat.dart';
 
 class FeedScreen extends StatefulWidget {
   const FeedScreen({super.key});
@@ -94,12 +95,17 @@ class _FeedScreenState extends State<FeedScreen> {
 
     return Scaffold(
       backgroundColor: _bgColor,
-      body: Column(
+      body: Stack(
         children: [
-          _buildTopBar(isDesktop),
-          Expanded(
-            child: isDesktop ? _buildDesktopLayout() : _buildMobileLayout(),
+          Column(
+            children: [
+              _buildTopBar(isDesktop),
+              Expanded(
+                child: isDesktop ? _buildDesktopLayout() : _buildMobileLayout(),
+              ),
+            ],
           ),
+          if (isDesktop) const Positioned(right: 24, bottom: 0, child: DesktopChat()),
         ],
       ),
     );
