@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-
 import 'dart:async';
-
 import '../../../screens/friends_screen.dart';
 import '../../comments/presentation/comments_screen.dart';
 
@@ -25,12 +23,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _isLoadingMore = false;
   int _currentPage = 1;
 
-  // Datos del perfil (Editables)
+  // Estados del perfil: own, public, private, blocked
+  late String _profileStatus;
+
   late String _displayUsername;
   String _biography =
       "Hola, gente soy Vicente. Me gusta mucho la música ambiental y la música rapidísima con mucho bajo, también el jazz fusion y otras cosas más.\nAl igual que a todos, me gustan los gatos (tengo 2).";
 
-  // Controladores para el formulario de edición
   final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _bioController = TextEditingController();
 
@@ -82,7 +81,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _usernameController.text = _displayUsername;
     _bioController.text = _biography;
 
-    _fetchInitialPosts();
+    _determineProfileStatus();
+
+    if (_profileStatus == 'own' || _profileStatus == 'public') {
+      _fetchInitialPosts();
+    } else {
+      _isInitialLoading = false;
+    }
 
     _scrollController.addListener(() {
       if (_scrollController.position.pixels >=
@@ -94,6 +99,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
     });
   }
 
+  void _determineProfileStatus() {
+    // Simulación del backend resolviendo la privacidad/bloqueos
+    if (widget.username == "UsuarioPrivado") {
+      _profileStatus = 'private';
+    } else if (widget.username == "UsuarioBloqueado") {
+      _profileStatus = 'blocked';
+    } else if (widget.username == null || widget.username == "MiUsuario") {
+      _profileStatus = 'own';
+    } else {
+      _profileStatus = 'public';
+    }
+  }
+
   @override
   void dispose() {
     _scrollController.dispose();
@@ -102,7 +120,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     super.dispose();
   }
 
-  // Simulación de consumo paginado del post-service (RF-06, RF-19)
   Future<void> _fetchInitialPosts() async {
     setState(() => _isInitialLoading = true);
     await Future.delayed(const Duration(seconds: 1));
@@ -110,13 +127,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (!mounted) return;
 
     setState(() {
-      // Simulamos que el usuario "Usuario_01" u otros tienen contenido,
-      // y si es un usuario sin posts simulamos lista vacía para probar el estado requerido.
-      if (_displayUsername == "UsuarioVacioTest") {
-        _posts.clear();
-      } else {
-        _posts.addAll(_generateMockPosts(1, 3));
-      }
+      _posts.addAll(_generateMockPosts(1, 3));
       _isInitialLoading = false;
     });
   }
@@ -142,7 +153,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         "user": _displayUsername,
         "time": "Hace ${id * 2} horas",
         "content":
-            "Publicación número $id del perfil de $_displayUsername. Consumiendo ruta paginada del post-service (RF-06, RF-19).",
+            "Publicación número $id del perfil de $_displayUsername. Consumiendo ruta paginada del post-service.",
         "song": "Track del Perfil $id",
         "artist": "Artista Afín",
         "likes": 15 * id,
@@ -230,10 +241,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text(
-                "Cancelar",
-                style: TextStyle(color: Colors.grey),
-              ),
+              child:
+                  const Text("Cancelar", style: TextStyle(color: Colors.grey)),
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: _tealAccent),
@@ -250,10 +259,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                 );
               },
-              child: const Text(
-                "Guardar",
-                style: TextStyle(color: Colors.white),
-              ),
+              child:
+                  const Text("Guardar", style: TextStyle(color: Colors.white)),
             ),
           ],
         );
@@ -386,6 +393,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
+          // Columna Izquierda
           SizedBox(
             width: 220,
             child: SingleChildScrollView(
@@ -393,43 +401,49 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 children: [
                   _buildPolaroidProfile(),
                   const SizedBox(height: 16),
-                  _buildLevelCard(),
+                  if (_profileStatus != 'blocked') _buildLevelCard(),
                 ],
               ),
             ),
           ),
           const SizedBox(width: 24),
+          // Columna Central / Derecha
           ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 800),
-            child: SingleChildScrollView(
-              controller: _scrollController,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildStatsAndEditRow(),
-                  const SizedBox(height: 16),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(flex: 3, child: _buildAboutMe()),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        flex: 2,
-                        child: Column(
+            child: _profileStatus == 'blocked'
+                ? _buildBlockedState()
+                : SingleChildScrollView(
+                    controller: _scrollController,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildStatsAndActionsRow(),
+                        const SizedBox(height: 16),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            _buildFavoriteArtists(),
-                            const SizedBox(height: 16),
-                            _buildFavoriteSong(),
+                            Expanded(flex: 3, child: _buildAboutMe()),
+                            const SizedBox(width: 16),
+                            if (_profileStatus != 'private')
+                              Expanded(
+                                flex: 2,
+                                child: Column(
+                                  children: [
+                                    _buildFavoriteArtists(),
+                                    const SizedBox(height: 16),
+                                    _buildFavoriteSong(),
+                                  ],
+                                ),
+                              ),
                           ],
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: 24),
+                        _profileStatus == 'private'
+                            ? _buildPrivateState()
+                            : _buildProfilePaperTabs(isMobile: false),
+                      ],
+                    ),
                   ),
-                  const SizedBox(height: 24),
-                  _buildProfilePaperTabs(isMobile: false),
-                ],
-              ),
-            ),
           ),
         ],
       ),
@@ -444,17 +458,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
         children: [
           _buildPolaroidProfile(),
           const SizedBox(height: 16),
-          _buildLevelCard(),
-          const SizedBox(height: 16),
-          _buildStatsAndEditRow(isMobile: true),
-          const SizedBox(height: 16),
-          _buildAboutMe(),
-          const SizedBox(height: 16),
-          _buildFavoriteSong(),
-          const SizedBox(height: 16),
-          _buildFavoriteArtists(),
-          const SizedBox(height: 24),
-          _buildProfilePaperTabs(isMobile: true),
+          if (_profileStatus == 'blocked')
+            _buildBlockedState()
+          else ...[
+            _buildLevelCard(),
+            const SizedBox(height: 16),
+            _buildStatsAndActionsRow(isMobile: true),
+            const SizedBox(height: 16),
+            _buildAboutMe(),
+            const SizedBox(height: 16),
+            if (_profileStatus == 'private')
+              _buildPrivateState()
+            else ...[
+              _buildFavoriteSong(),
+              const SizedBox(height: 16),
+              _buildFavoriteArtists(),
+              const SizedBox(height: 24),
+              _buildProfilePaperTabs(isMobile: true),
+            ]
+          ],
         ],
       ),
     );
@@ -503,10 +525,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                 ),
                 const SizedBox(height: 4),
-                const Text(
-                  "Me siento Feliz",
-                  style: TextStyle(fontSize: 11, color: Colors.black54),
-                ),
+                if (_profileStatus != 'blocked')
+                  const Text(
+                    "Me siento Feliz",
+                    style: TextStyle(fontSize: 11, color: Colors.black54),
+                  ),
               ],
             ),
           ),
@@ -572,26 +595,30 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildStatsAndEditRow({bool isMobile = false}) {
-    final int equippedCount = _inventory
-        .where((i) => i['isEquipped'] as bool)
-        .length;
+  Widget _buildStatsAndActionsRow({bool isMobile = false}) {
+    final int equippedCount =
+        _inventory.where((i) => i['isEquipped'] as bool).length;
     final statsRow = Row(
-      mainAxisAlignment: isMobile
-          ? MainAxisAlignment.spaceEvenly
-          : MainAxisAlignment.start,
+      mainAxisAlignment:
+          isMobile ? MainAxisAlignment.spaceEvenly : MainAxisAlignment.start,
       children: [
         _pillStat("Amigos 5"),
         if (!isMobile) const SizedBox(width: 12),
         _pillStat("Artistas 13"),
-        if (!isMobile) const SizedBox(width: 12),
-        _pillStat("Decoraciones $equippedCount"),
+        if (_profileStatus == 'own') ...[
+          if (!isMobile) const SizedBox(width: 12),
+          _pillStat("Decoraciones $equippedCount"),
+        ]
       ],
     );
 
     if (isMobile) {
       return Column(
-        children: [statsRow, const SizedBox(height: 12), _editProfileBtn()],
+        children: [
+          statsRow,
+          const SizedBox(height: 12),
+          _buildActionButtons(),
+        ],
       );
     }
 
@@ -599,7 +626,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Expanded(child: statsRow),
-        _editProfileBtn(),
+        _buildActionButtons(),
       ],
     );
   }
@@ -611,7 +638,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
-          BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 4),
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 4,
+          ),
         ],
       ),
       child: Text(
@@ -625,23 +655,57 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _editProfileBtn() {
-    return OutlinedButton(
-      style: OutlinedButton.styleFrom(
-        side: BorderSide(color: _tealAccent),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        backgroundColor: Colors.white,
-      ),
-      onPressed: _showEditProfileDialog,
-      child: Text(
-        "Editar perfil",
-        style: TextStyle(
-          color: _tealAccent,
-          fontSize: 12,
-          fontWeight: FontWeight.bold,
+  Widget _buildActionButtons() {
+    if (_profileStatus == 'own') {
+      return OutlinedButton(
+        style: OutlinedButton.styleFrom(
+          side: BorderSide(color: _tealAccent),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          backgroundColor: Colors.white,
         ),
-      ),
-    );
+        onPressed: _showEditProfileDialog,
+        child: Text(
+          "Editar perfil",
+          style: TextStyle(
+            color: _tealAccent,
+            fontSize: 12,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      );
+    } else {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          OutlinedButton.icon(
+            style: OutlinedButton.styleFrom(
+              side: BorderSide(color: _tealAccent),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20)),
+              backgroundColor: Colors.white,
+            ),
+            onPressed: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text("Solicitud enviada a $_displayUsername"),
+                  backgroundColor: _tealAccent,
+                ),
+              );
+            },
+            icon: Icon(Icons.person_add, color: _tealAccent, size: 16),
+            label: Text(
+              "Añadir amigo",
+              style: TextStyle(
+                color: _tealAccent,
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      );
+    }
   }
 
   Widget _buildAboutMe() {
@@ -652,7 +716,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
         color: const Color(0xFFFDFDFD),
         borderRadius: BorderRadius.circular(8),
         boxShadow: [
-          BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 10),
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.1),
+            blurRadius: 10,
+          ),
         ],
       ),
       child: Column(
@@ -805,8 +872,73 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // --- SECCIÓN DE TABS (BLOGS CON SCROLL INFINITO E INVENTARIO) ---
+  // --- SECCIÓN DE ESTADOS ESPECIALES (RN-09, RF-55) ---
+  Widget _buildBlockedState() {
+    return Container(
+      padding: const EdgeInsets.all(48.0),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.no_accounts, size: 64, color: Colors.grey[400]),
+          const SizedBox(height: 24),
+          const Text(
+            "Esta cuenta no está disponible",
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Colors.black87,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            "El perfil que intentas buscar no existe o ha restringido tu acceso.",
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 13, color: Colors.grey),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPrivateState() {
+    return Container(
+      padding: const EdgeInsets.all(48.0),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.lock, size: 64, color: Colors.grey[400]),
+          const SizedBox(height: 24),
+          const Text(
+            "Este perfil es privado",
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Colors.black87,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            "Añade a este usuario como amigo para ver sus publicaciones, artistas favoritos y más detalles.",
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 13, color: Colors.grey),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // --- SECCIÓN DE TABS (BLOGS E INVENTARIO) ---
   Widget _buildProfilePaperTabs({required bool isMobile}) {
+    final bool isOwn = _profileStatus == 'own';
+
     return Container(
       height: 700,
       decoration: BoxDecoration(
@@ -819,7 +951,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ],
       ),
       child: DefaultTabController(
-        length: 2,
+        length: isOwn ? 2 : 1,
         child: Column(
           children: [
             TabBar(
@@ -827,9 +959,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
               indicatorWeight: 3,
               labelColor: _tealAccent,
               unselectedLabelColor: Colors.grey,
-              tabs: const [
-                Tab(text: "Tus Blogs"),
-                Tab(text: "Inventario"),
+              tabs: [
+                const Tab(text: "Tus Blogs"),
+                if (isOwn) const Tab(text: "Inventario"),
               ],
             ),
             const Divider(height: 1, thickness: 1, color: Colors.black12),
@@ -837,7 +969,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               child: TabBarView(
                 children: [
                   _buildBlogsTab(isMobile: isMobile),
-                  _buildInventoryTab(),
+                  if (isOwn) _buildInventoryTab(),
                 ],
               ),
             ),
@@ -862,24 +994,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   _filterChip("tendencias", isActive: false),
                 ],
               ),
-              OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(
-                  side: BorderSide(color: _tealAccent),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(20),
+              if (_profileStatus == 'own')
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    side: BorderSide(color: _tealAccent),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                  ),
+                  onPressed: () {},
+                  icon: Icon(Icons.edit, color: _tealAccent, size: 14),
+                  label: Text(
+                    "Tus reacciones",
+                    style: TextStyle(
+                      color: _tealAccent,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
-                onPressed: () {},
-                icon: Icon(Icons.edit, color: _tealAccent, size: 14),
-                label: Text(
-                  "Tus reacciones",
-                  style: TextStyle(
-                    color: _tealAccent,
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
             ],
           ),
           const SizedBox(height: 24),
@@ -887,39 +1020,42 @@ class _ProfileScreenState extends State<ProfileScreen> {
             child: _isInitialLoading
                 ? Center(child: CircularProgressIndicator(color: _tealAccent))
                 : _posts.isEmpty
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.post_add, size: 48, color: Colors.grey[400]),
-                        const SizedBox(height: 12),
-                        Text(
-                          "Aún no tiene publicaciones",
-                          style: TextStyle(
-                            color: _paperTextColor.withValues(alpha: 0.6),
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                  )
-                : ListView.builder(
-                    itemCount: _posts.length + (_isLoadingMore ? 1 : 0),
-                    itemBuilder: (context, index) {
-                      if (index == _posts.length) {
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 16.0),
-                          child: Center(
-                            child: CircularProgressIndicator(
-                              color: _tealAccent,
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.post_add,
+                                size: 48, color: Colors.grey[400]),
+                            const SizedBox(height: 12),
+                            Text(
+                              "Aún no tiene publicaciones",
+                              style: TextStyle(
+                                color: _paperTextColor.withValues(alpha: 0.6),
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
-                          ),
-                        );
-                      }
-                      return _buildPostCard(_posts[index]);
-                    },
-                  ),
+                          ],
+                        ),
+                      )
+                    : ListView.builder(
+                        controller: isMobile ? null : ScrollController(),
+                        itemCount: _posts.length + (_isLoadingMore ? 1 : 0),
+                        itemBuilder: (context, index) {
+                          if (index == _posts.length) {
+                            return Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 16.0),
+                              child: Center(
+                                child: CircularProgressIndicator(
+                                  color: _tealAccent,
+                                ),
+                              ),
+                            );
+                          }
+                          return _buildPostCard(_posts[index]);
+                        },
+                      ),
           ),
         ],
       ),
@@ -980,15 +1116,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 item['type'] == 'frame'
                     ? "Marco"
                     : item['type'] == 'pin'
-                    ? "Pin"
-                    : "Fondo",
+                        ? "Pin"
+                        : "Fondo",
                 style: const TextStyle(fontSize: 10, color: Colors.grey),
               ),
               const SizedBox(height: 16),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: isEquipped ? Colors.white : _tealAccent,
-                  foregroundColor: isEquipped ? Colors.redAccent : Colors.white,
+                  foregroundColor:
+                      isEquipped ? Colors.redAccent : Colors.white,
                   side: isEquipped
                       ? const BorderSide(color: Colors.redAccent)
                       : null,
@@ -1073,7 +1210,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
           const SizedBox(height: 12),
           Text(
             postData["content"],
-            style: TextStyle(fontSize: 13, color: _paperTextColor, height: 1.4),
+            style: TextStyle(
+              fontSize: 13,
+              color: _paperTextColor,
+              height: 1.4,
+            ),
           ),
           const SizedBox(height: 16),
           Row(
