@@ -5,6 +5,7 @@ import 'dart:async';
 import 'friends_screen.dart';
 import '../../features/comments/presentation/comments_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
+import '../widgets/post_card.dart';
 
 class FeedScreen extends StatefulWidget {
   const FeedScreen({super.key});
