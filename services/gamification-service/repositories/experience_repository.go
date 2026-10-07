@@ -20,7 +20,7 @@ func NewPostgresExperienceRepository(db *sql.DB) *PostgresExperienceRepository {
 	return &PostgresExperienceRepository{db: db}
 }
 
-// AddExperienceAtomic actualiza la experiencia directamente en PostgreSQL para evitar Race Conditions
+// AddExperienceAtomic actualiza la experiencia usando los nombres reales del MER (tabla usuario)
 func (r *PostgresExperienceRepository) AddExperienceAtomic(ctx context.Context, userID string, xpToAdd int) (int, error) {
 	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 	if err != nil {
@@ -28,11 +28,11 @@ func (r *PostgresExperienceRepository) AddExperienceAtomic(ctx context.Context, 
 	}
 	defer tx.Rollback()
 
-	// Consulta atómica direct a la base de datos
+	// Consulta adaptada estrictamente al diagrama MER (tabla usuario, id_usuario)
 	query := `
-		UPDATE users 
+		UPDATE usuario 
 		SET experiencia = experiencia + $1 
-		WHERE id = $2 
+		WHERE id_usuario = $2 
 		RETURNING experiencia;
 	`
 
@@ -49,7 +49,7 @@ func (r *PostgresExperienceRepository) AddExperienceAtomic(ctx context.Context, 
 	return newXP, nil
 }
 
-// AddExperienceWithRetry agrega reintentos en caso de fallos de red o problemas temporales de conexión
+// AddExperienceWithRetry agrega reintentos en caso de fallos de red
 func (r *PostgresExperienceRepository) AddExperienceWithRetry(ctx context.Context, userID string, xpToAdd int, maxRetries int) (int, error) {
 	var newXP int
 	var err error
