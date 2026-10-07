@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../features/gamification/presentation/gamification_demo_controller.dart';
 import 'post_interaction_api.dart';
 
 class PostInteractionBar extends StatefulWidget {
@@ -60,6 +61,7 @@ class _PostInteractionBarState extends State<PostInteractionBar> {
       _liked = !previous;
       _likes += _liked ? 1 : -1;
     });
+    if (_liked) GamificationDemoController.instance.grantLikeXp();
     try {
       await _api.setLike(postId: widget.postId.toString(), liked: _liked);
     } catch (_) {
@@ -98,6 +100,7 @@ class _PostInteractionBarState extends State<PostInteractionBar> {
           inactiveColor: _teal,
           inactiveIcon: Icons.favorite_border,
           activeIcon: Icons.favorite,
+          onActivated: () {},
           tooltip: _liked ? 'Quitar like' : 'Dar like',
           onTap: _toggleLike,
         ),
@@ -152,6 +155,7 @@ class _AnimatedInteractionButton extends StatefulWidget {
     required this.activeIcon,
     required this.tooltip,
     required this.onTap,
+    this.onActivated,
   });
 
   final bool active;
@@ -161,6 +165,7 @@ class _AnimatedInteractionButton extends StatefulWidget {
   final IconData activeIcon;
   final String tooltip;
   final VoidCallback onTap;
+  final VoidCallback? onActivated;
 
   @override
   State<_AnimatedInteractionButton> createState() => _AnimatedInteractionButtonState();
@@ -179,7 +184,10 @@ class _AnimatedInteractionButtonState extends State<_AnimatedInteractionButton>
   @override
   void didUpdateWidget(covariant _AnimatedInteractionButton oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!oldWidget.active && widget.active) _controller.forward(from: 0);
+    if (!oldWidget.active && widget.active) {
+      widget.onActivated?.call();
+      _controller.forward(from: 0);
+    }
   }
 
   @override
@@ -203,6 +211,7 @@ class _AnimatedInteractionButtonState extends State<_AnimatedInteractionButton>
             width: 28,
             height: 36,
             child: Stack(
+              clipBehavior: Clip.none,
               alignment: Alignment.center,
               children: [
                 Icon(
@@ -222,6 +231,31 @@ class _AnimatedInteractionButtonState extends State<_AnimatedInteractionButton>
                             widget.activeIcon,
                             color: widget.activeColor,
                             size: 25,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                if (widget.active && widget.onActivated != null)
+                  IgnorePointer(
+                    child: AnimatedBuilder(
+                      animation: _controller,
+                      builder: (context, child) => Opacity(
+                        opacity: (1 - _controller.value).clamp(0, 1).toDouble(),
+                        child: Transform.translate(
+                          offset: Offset(0, -28 * _controller.value),
+                          child: const SizedBox(
+                            width: 70,
+                            child: Text(
+                              '+10 XP',
+                              softWrap: false,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: Color(0xFF00AF92),
+                                fontWeight: FontWeight.bold,
+                                fontSize: 11,
+                              ),
+                            ),
                           ),
                         ),
                       ),

@@ -5,11 +5,13 @@ import 'dart:async';
 import '../../../screens/friends_screen.dart';
 import '../../comments/presentation/comments_screen.dart';
 import '../../../widgets/post_card.dart';
+import '../../gamification/presentation/gamification_demo_controller.dart';
 
 class ProfileScreen extends StatefulWidget {
   final String? username;
+  final bool openInventory;
 
-  const ProfileScreen({super.key, this.username});
+  const ProfileScreen({super.key, this.username, this.openInventory = false});
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
@@ -84,6 +86,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _bioController.text = _biography;
 
     _fetchInitialPosts();
+    _ensureRgbReward();
+    GamificationDemoController.instance.addListener(_ensureRgbReward);
 
     _scrollController.addListener(() {
       if (_scrollController.position.pixels >=
@@ -97,10 +101,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   void dispose() {
+    GamificationDemoController.instance.removeListener(_ensureRgbReward);
     _scrollController.dispose();
     _usernameController.dispose();
     _bioController.dispose();
     super.dispose();
+  }
+
+  void _ensureRgbReward() {
+    if (!GamificationDemoController.instance.rgbFrameUnlocked ||
+        _inventory.any((item) => item['id'] == 'frame-rgb')) return;
+    setState(() {
+      _inventory.add({
+        'id': 'frame-rgb',
+        'type': 'frame',
+        'name': 'Marco RGB',
+        'icon': Icons.gradient,
+        'color': Colors.purpleAccent,
+        'isEquipped': GamificationDemoController.instance.rgbFrameEquipped,
+      });
+    });
   }
 
   // Simulación de consumo paginado del post-service (RF-06, RF-19)
@@ -162,6 +182,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
           if (i['type'] == item['type']) i['isEquipped'] = false;
         }
         item['isEquipped'] = true;
+        if (item['id'] == 'frame-rgb') {
+          GamificationDemoController.instance.equipRgbFrame();
+        }
 
         if (item['type'] == 'frame') _activeFrameColor = item['color'] as Color;
         if (item['type'] == 'pin') _activePinColor = item['color'] as Color;
@@ -538,6 +561,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildLevelCard() {
+    final game = GamificationDemoController.instance;
+    final percentage =
+        (game.xp / GamificationDemoController.xpNeeded * 100).round();
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -550,9 +576,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
             children: [
               Icon(Icons.star, color: _tealAccent, size: 14),
               const SizedBox(width: 4),
-              const Text(
-                "Nivel 5 -> Buen progreso",
-                style: TextStyle(
+              Text(
+                "Nivel ${game.level} · (${game.xp} XP / 100 XP) $percentage%",
+                style: const TextStyle(
                   color: Colors.black87,
                   fontSize: 11,
                   fontWeight: FontWeight.bold,
@@ -562,7 +588,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
           const SizedBox(height: 8),
           LinearProgressIndicator(
-            value: 0.8,
+            value: game.xp / GamificationDemoController.xpNeeded,
             backgroundColor: Colors.grey[200],
             valueColor: AlwaysStoppedAnimation<Color>(_tealAccent),
             minHeight: 6,
@@ -820,6 +846,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ],
       ),
       child: DefaultTabController(
+        initialIndex: widget.openInventory ? 1 : 0,
         length: 2,
         child: Column(
           children: [
