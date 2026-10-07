@@ -74,3 +74,62 @@ func TestRecommendationServiceCachesAndRefreshesAfterInteraction(t *testing.T) {
 		t.Fatalf("expected two ML calls, got %d", calls.Load())
 	}
 }
+
+func TestMLClientRetriesOpensCircuitAndUsesFallback(t *testing.T) {
+	var calls atomic.Int32
+	var healthy atomic.Bool
+	mlServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		calls.Add(1)
+		if !healthy.Load() {
+			http.Error(writer, "unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		_ = json.NewEncoder(writer).Encode(models.RecommendationResponse{
+			UserID: 42,
+			Model:  "recovered-model",
+		})
+	}))
+	defer mlServer.Close()
+
+	client := NewMLClient(mlServer.URL)
+	client.breaker.threshold = 2
+	client.breaker.resetTimeout = time.Hour
+	service := NewRecommendationService(client, time.Minute)
+
+	for attempt := 0; attempt < 2; attempt++ {
+		response, _, err := service.Get(context.Background(), 42, 10)
+		if err != nil || response.Model != "fallback" {
+			t.Fatalf("expected fallback after ML failure: response=%+v error=%v", response, err)
+		}
+	}
+	if got := calls.Load(); got != 6 {
+		t.Fatalf("expected three HTTP attempts per request, got %d total calls", got)
+	}
+
+	response, _, err := service.Get(context.Background(), 42, 10)
+	if err != nil || response.Model != "fallback" {
+		t.Fatalf("expected immediate fallback while circuit is open: response=%+v error=%v", response, err)
+	}
+	if got := calls.Load(); got != 6 {
+		t.Fatalf("open circuit should not call ML service, got %d total calls", got)
+	}
+
+	healthy.Store(true)
+	client.breaker.mu.Lock()
+	client.breaker.openedAt = time.Now().Add(-time.Hour)
+	client.breaker.mu.Unlock()
+	response, err = client.Predict(context.Background(), models.RecommendationRequest{UserID: 42})
+	if err != nil || response.Model != "recovered-model" {
+		t.Fatalf("expected circuit recovery probe to succeed: response=%+v error=%v", response, err)
+	}
+	if got := calls.Load(); got != 7 {
+		t.Fatalf("expected one recovery probe, got %d total calls", got)
+	}
+}
+
+func TestMLClientHasExplicitHTTPTimeout(t *testing.T) {
+	client := NewMLClient("http://ml-service")
+	if client.client.Timeout != mlRequestTimeout || client.client.Timeout <= 0 {
+		t.Fatalf("expected explicit positive HTTP timeout, got %s", client.client.Timeout)
+	}
+}
