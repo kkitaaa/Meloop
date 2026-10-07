@@ -12,6 +12,7 @@ import (
 type compatibilityRepositoryFake struct {
 	dataA *models.UserMusicalData
 	dataB *models.UserMusicalData
+	batch map[string]*models.UserMusicalData
 	err   error
 }
 
@@ -20,6 +21,28 @@ func (f *compatibilityRepositoryFake) GetMusicalProfiles(ctx context.Context, us
 		return nil, nil, f.err
 	}
 	return f.dataA, f.dataB, nil
+}
+
+func (f *compatibilityRepositoryFake) GetBatchMusicalProfiles(ctx context.Context, userIDs []string) (map[string]*models.UserMusicalData, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	if f.batch != nil {
+		return f.batch, nil
+	}
+	res := make(map[string]*models.UserMusicalData, len(userIDs))
+	if f.dataA != nil {
+		res[f.dataA.UserID] = f.dataA
+	}
+	if f.dataB != nil {
+		res[f.dataB.UserID] = f.dataB
+	}
+	for _, id := range userIDs {
+		if _, ok := res[id]; !ok {
+			res[id] = &models.UserMusicalData{UserID: id}
+		}
+	}
+	return res, nil
 }
 
 func TestCalculateCompatibilityScore_Scenarios(t *testing.T) {

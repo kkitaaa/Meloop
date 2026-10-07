@@ -113,6 +113,14 @@ func (f *friendshipRepositoryFake) ValidateInteraction(ctx context.Context, user
 	return nil
 }
 
+func (f *friendshipRepositoryFake) GetEligibleCandidates(ctx context.Context, userID string) ([]models.CandidateUser, error) {
+	return []models.CandidateUser{}, nil
+}
+
+func (f *friendshipRepositoryFake) GetMutualFriendsCount(ctx context.Context, userID string, candidateIDs []string) (map[string]int, error) {
+	return map[string]int{}, nil
+}
+
 type eventPublisherFake struct {
 	called bool
 }
