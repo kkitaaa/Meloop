@@ -30,7 +30,7 @@ func (ctrl *PostController) GetPostByID(c *gin.Context) {
 
 	post, err := ctrl.postService.GetPost(c.Request.Context(), postID, requesterID)
 	if err != nil {
-		// En un entorno real, distinguiríamos entre 404 (No encontrado) y 500 (Error de BD)
+		println("ERROR REAL DE BD (GetPostByID):", err.Error())
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
@@ -46,7 +46,8 @@ func (ctrl *PostController) GetPostsByAuthor(c *gin.Context) {
 
 	posts, err := ctrl.postService.GetAuthorPosts(c.Request.Context(), authorID, requesterID, limit, offset)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "error al obtener publicaciones"})
+		println("ERROR REAL DE BD (GetPostsByAuthor):", err.Error())
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -61,7 +62,8 @@ func (ctrl *PostController) Search(c *gin.Context) {
 
 	posts, err := ctrl.postService.SearchPosts(c.Request.Context(), query, requesterID, limit, offset)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "error al buscar publicaciones"})
+		println("ERROR REAL DE BD (Search):", err.Error())
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 

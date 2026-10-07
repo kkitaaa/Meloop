@@ -17,7 +17,7 @@ func main() {
 	log.Println("Iniciando post-service (Módulo de Lectura)...")
 
 	// 1. Conexión a la base de datos (Supabase)
-	connStr := "postgresql://postgres:tu_password@tu-host-supabase:6543/postgres?sslmode=require"
+	connStr := "postgresql://postgres:postgres@127.0.0.1:15422/postgres?sslmode=disable"
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {
 		log.Fatalf("Error conectando a la BD: %v", err)
