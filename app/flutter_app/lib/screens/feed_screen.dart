@@ -7,6 +7,7 @@ import '../../features/comments/presentation/comments_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
 import '../widgets/post_card.dart';
 import '../widgets/desktop_chat.dart';
+import '../widgets/notifications_menu.dart';
 import '../features/gamification/presentation/gamification_demo_controller.dart';
 
 class FeedScreen extends StatefulWidget {
@@ -382,7 +383,7 @@ class _FeedScreenState extends State<FeedScreen> {
           ],
           Row(
             children: [
-              const Icon(Icons.notifications, color: Colors.white, size: 20),
+              const NotificationsMenu(),
               const SizedBox(width: 16),
               InkWell(
                 onTap: () {
