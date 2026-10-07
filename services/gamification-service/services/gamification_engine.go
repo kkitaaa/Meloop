@@ -26,7 +26,7 @@ var xpRewards = map[string]int{
 type GamificationEngine struct {
 	mu sync.Mutex
 	// Caché en memoria para rate limiting. Llave: "ActorID:ActionType:TargetID"
-	recentActions map[string]time.Time 
+	recentActions map[string]time.Time
 }
 
 func NewGamificationEngine() *GamificationEngine {
@@ -44,18 +44,18 @@ func (engine *GamificationEngine) ProcessEvent(event InteractionEvent) (int, err
 
 	// 2. Validación de límite de tiempo (Rate Limiting)[cite: 8]
 	cacheKey := fmt.Sprintf("%s:%s:%s", event.ActorID, event.ActionType, event.TargetID)
-	
+
 	engine.mu.Lock()
 	lastTime, exists := engine.recentActions[cacheKey]
 	now := time.Now()
-	
+
 	// Si repite la misma acción (ej. dar y quitar like) en menos de 60 segundos, se bloquea la ganancia[cite: 8]
 	cooldown := 60 * time.Second
 	if exists && now.Sub(lastTime) < cooldown {
 		engine.mu.Unlock()
 		return 0, errors.New("rate limit excedido: interacciones repetidas en un corto periodo")
 	}
-	
+
 	// Actualizamos el registro en caché
 	engine.recentActions[cacheKey] = now
 	engine.mu.Unlock()
