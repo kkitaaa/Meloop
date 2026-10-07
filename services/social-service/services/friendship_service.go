@@ -95,9 +95,7 @@ func (s *friendshipService) AcceptRequest(ctx context.Context, requestID int, re
 		return nil, mapRepositoryError(err)
 	}
 	if s.publisher != nil {
-		if err := s.publisher.PublishFriendAccepted(ctx, request); err != nil {
-			return request, err
-		}
+		_ = s.publisher.PublishFriendAccepted(ctx, request)
 	}
 	return request, nil
 }

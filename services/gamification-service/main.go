@@ -2,13 +2,19 @@ package main
 
 import (
 	"database/sql"
+	_ "github.com/lib/pq"
+	"context"
 	"log"
 	"os"
+	"os/signal"
+	"syscall"
 
-	_ "github.com/lib/pq"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/meloop/gamification-service/config"
 	"github.com/meloop/gamification-service/messaging"
 	"github.com/meloop/gamification-service/repositories"
 	"github.com/meloop/gamification-service/services"
+	"github.com/meloop/services/common/logging"
 )
 
 func main() {
@@ -19,6 +25,26 @@ func main() {
 	if connStr == "" {
 		// Fallback directo a la cadena de la guía por si falla la lectura del .env
 		connStr = "postgresql://postgres:postgres@127.0.0.1:15422/postgres?sslmode=disable"
+	cfg := config.Load()
+
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+
+	var repo repositories.GamificationRepository
+	pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
+	if err != nil {
+		logger.Error("database_pool_init_failed", "error", err)
+	} else {
+		defer pool.Close()
+		repo = repositories.NewGamificationRepository(pool)
+	}
+
+	publisher := messaging.NewPublisher(cfg.RabbitMQURL)
+	service := services.NewGamificationService(repo, publisher)
+
+	if err := messaging.StartConsumer(ctx, cfg.RabbitMQURL, service); err != nil && ctx.Err() == nil {
+		logger.Error("event_consumer_failed", "error", err)
+		log.Fatal(err)
 	}
 
 	db, err := sql.Open("postgres", connStr)
