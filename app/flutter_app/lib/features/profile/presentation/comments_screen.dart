@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../widgets/states/loading_state.dart';
 
 class CommentsScreen extends StatefulWidget {
   final Map<String, dynamic> postData;
@@ -16,30 +17,21 @@ class _CommentsScreenState extends State<CommentsScreen> {
   final TextEditingController _commentController = TextEditingController();
   final FocusNode _focusNode = FocusNode();
 
-  String? _replyingToUser;
+  bool _isLoading = true;
   bool _isSubmitting = false;
 
-  // Lista local simulando la base de datos (con soporte para Likes)
-  final List<Map<String, dynamic>> _comments = [
-    {
-      "id": 1,
-      "user": "Martín",
-      "text": "Totalmente de acuerdo, la producción de esa época era distinta.",
-      "time": "Hace 15 min",
-      "likes": 5,
-      "isLiked": false,
-      "isLiking": false,
-    },
-    {
-      "id": 2,
-      "user": "Camila",
-      "text": "Yo prefiero el sonido de ahora, más limpio.",
-      "time": "Hace 5 min",
-      "likes": 2,
-      "isLiked": true,
-      "isLiking": false,
-    },
-  ];
+  // Variables para anidación de respuestas
+  int? _replyingToCommentId;
+  String? _replyingToUser;
+
+  // Estructura de árbol simulando respuesta del GET /v1/posts/{id}/comments
+  List<Map<String, dynamic>> _comments = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchInitialComments();
+  }
 
   @override
   void dispose() {
@@ -48,64 +40,153 @@ class _CommentsScreenState extends State<CommentsScreen> {
     super.dispose();
   }
 
-  void _startReply(String username) {
-    setState(() => _replyingToUser = username);
+  // --- SIMULACIÓN DE PETICIONES HTTP AL API GATEWAY ---
+
+  Future<void> _fetchInitialComments() async {
+    setState(() => _isLoading = true);
+    await Future.delayed(const Duration(seconds: 1)); // Simula latencia red
+
+    if (!mounted) return;
+
+    setState(() {
+      _comments = [
+        {
+          "id": 1,
+          "user": "Martín",
+          "text": "Totalmente de acuerdo, la producción de esa época era distinta.",
+          "time": "Hace 15 min",
+          "likes": 5,
+          "isLiked": false,
+          "isLiking": false,
+          "replies": <Map<String, dynamic>>[],
+          "replyCount": 2, // El backend dice que hay 2 respuestas sin cargar
+          "isLoadingReplies": false,
+        },
+        {
+          "id": 2,
+          "user": "Camila",
+          "text": "Yo prefiero el sonido de ahora, más limpio.",
+          "time": "Hace 5 min",
+          "likes": 2,
+          "isLiked": true,
+          "isLiking": false,
+          "replies": <Map<String, dynamic>>[],
+          "replyCount": 0, // No hay respuestas ocultas
+          "isLoadingReplies": false,
+        },
+      ];
+      _isLoading = false;
+    });
+  }
+
+  // Paginación simulada para hilos de comentarios
+  Future<void> _fetchReplies(int parentId) async {
+    final parent = _findCommentById(_comments, parentId);
+    if (parent == null) return;
+
+    setState(() => parent["isLoadingReplies"] = true);
+    await Future.delayed(const Duration(milliseconds: 800));
+
+    if (!mounted) return;
+
+    setState(() {
+      parent["isLoadingReplies"] = false;
+      int newId = DateTime.now().millisecondsSinceEpoch;
+      
+      parent["replies"].addAll([
+        {
+          "id": newId,
+          "user": "Usuario_Respuesta",
+          "text": "¡Exacto! Tienes mucha razón en eso.",
+          "time": "Hace un momento",
+          "likes": 1,
+          "isLiked": false,
+          "isLiking": false,
+          "replies": <Map<String, dynamic>>[],
+          "replyCount": 0,
+          "isLoadingReplies": false,
+        },
+        {
+          "id": newId + 1,
+          "user": "CriticoMusical",
+          "text": "Aunque depende del álbum la verdad...",
+          "time": "Hace un momento",
+          "likes": 0,
+          "isLiked": false,
+          "isLiking": false,
+          "replies": <Map<String, dynamic>>[],
+          "replyCount": 0,
+          "isLoadingReplies": false,
+        }
+      ]);
+    });
+  }
+
+  // --- LÓGICA DE ÁRBOL Y OPTIMISTIC UI ---
+
+  // Búsqueda recursiva para encontrar cualquier comentario sin importar su anidación
+  Map<String, dynamic>? _findCommentById(List<Map<String, dynamic>> list, int id) {
+    for (var comment in list) {
+      if (comment["id"] == id) return comment;
+      if (comment["replies"] != null) {
+        final found = _findCommentById(comment["replies"], id);
+        if (found != null) return found;
+      }
+    }
+    return null;
+  }
+
+  void _startReply(int commentId, String username) {
+    setState(() {
+      _replyingToCommentId = commentId;
+      _replyingToUser = username;
+    });
     _focusNode.requestFocus();
   }
 
   void _cancelReply() {
-    setState(() => _replyingToUser = null);
+    setState(() {
+      _replyingToCommentId = null;
+      _replyingToUser = null;
+    });
     _focusNode.unfocus();
   }
 
-  // Optimistic UI para dar Like a un comentario
-  Future<void> _toggleCommentLike(int index) async {
-    final comment = _comments[index];
-
-    // Evitar spam de toques mientras se procesa la petición HTTP
-    if (comment["isLiking"] == true) return;
+  Future<void> _toggleCommentLike(int id) async {
+    final comment = _findCommentById(_comments, id);
+    if (comment == null || comment["isLiking"] == true) return;
 
     final bool wasLiked = comment["isLiked"] ?? false;
     final int currentLikes = comment["likes"] as int;
 
-    // 1. Actualización Optimista inmediata
+    // Actualización Optimista
     setState(() {
       comment["isLiking"] = true;
       comment["isLiked"] = !wasLiked;
       comment["likes"] = wasLiked ? currentLikes - 1 : currentLikes + 1;
     });
 
-    // 2. Simulamos latencia del API Gateway
-    await Future.delayed(const Duration(milliseconds: 800));
+    await Future.delayed(const Duration(milliseconds: 600));
     if (!mounted) return;
 
-    // 3. Resultado del servidor (simulamos éxito aleatorio para quitar el Dead Code)
-    // Ahora Dart no sabe qué pasará, así que quita la alerta amarilla.
+    // Simulación de respuesta exitosa del servidor
     bool httpSuccess = DateTime.now().second % 2 == 0;
 
     if (httpSuccess) {
-      setState(() {
-        comment["isLiking"] = false;
-      });
+      setState(() => comment["isLiking"] = false);
     } else {
-      // 4. Rollback visual si falla el servidor
+      // Rollback
       setState(() {
         comment["isLiking"] = false;
         comment["isLiked"] = wasLiked;
         comment["likes"] = currentLikes;
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            "Error al conectar con el servidor. Se revirtió tu like.",
-          ),
-          backgroundColor: Colors.redAccent,
-        ),
+        const SnackBar(content: Text("Error de conexión."), backgroundColor: Colors.redAccent),
       );
     }
   }
 
-  // Optimistic UI para dar Like a la Publicación Original desde esta vista
   Future<void> _togglePostLike() async {
     if (widget.postData["isLiking"] == true) return;
 
@@ -118,12 +199,10 @@ class _CommentsScreenState extends State<CommentsScreen> {
       widget.postData["likes"] = wasLiked ? currentLikes - 1 : currentLikes + 1;
     });
 
-    await Future.delayed(const Duration(milliseconds: 800));
+    await Future.delayed(const Duration(milliseconds: 600));
     if (!mounted) return;
 
-    setState(() {
-      widget.postData["isLiking"] = false;
-    });
+    setState(() => widget.postData["isLiking"] = false);
   }
 
   Future<void> _submitComment() async {
@@ -136,13 +215,12 @@ class _CommentsScreenState extends State<CommentsScreen> {
     await Future.delayed(const Duration(seconds: 1));
     if (!mounted) return;
 
+    // Simulación de error (RN-03)
     if (text.toLowerCase().contains("insulto")) {
       setState(() => _isSubmitting = false);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text(
-            "Error: El comentario incumple las normas de la comunidad (RN-03).",
-          ),
+          content: Text("Error: El comentario incumple las normas de la comunidad."),
           backgroundColor: Colors.redAccent,
         ),
       );
@@ -150,7 +228,7 @@ class _CommentsScreenState extends State<CommentsScreen> {
     }
 
     setState(() {
-      _comments.add({
+      final newComment = {
         "id": DateTime.now().millisecondsSinceEpoch,
         "user": "MiUsuario",
         "text": _replyingToUser != null ? "@$_replyingToUser $text" : text,
@@ -158,16 +236,32 @@ class _CommentsScreenState extends State<CommentsScreen> {
         "likes": 0,
         "isLiked": false,
         "isLiking": false,
-      });
+        "replies": <Map<String, dynamic>>[],
+        "replyCount": 0,
+        "isLoadingReplies": false,
+      };
 
-      // Actualizamos el contador de comentarios en la PostCard Original
+      if (_replyingToCommentId != null) {
+        // Añadir como respuesta anidada
+        final parent = _findCommentById(_comments, _replyingToCommentId!);
+        if (parent != null) {
+          parent["replies"].add(newComment);
+        }
+      } else {
+        // Añadir a la raíz
+        _comments.add(newComment);
+      }
+
+      // Actualizamos el contador global de la tarjeta
       widget.postData["comments"] = (widget.postData["comments"] ?? 0) + 1;
 
       _commentController.clear();
-      _replyingToUser = null;
+      _cancelReply();
       _isSubmitting = false;
     });
   }
+
+  // --- RENDERIZADO DE LA INTERFAZ ---
 
   @override
   Widget build(BuildContext context) {
@@ -178,18 +272,13 @@ class _CommentsScreenState extends State<CommentsScreen> {
       backgroundColor: _bgColor,
       appBar: AppBar(
         backgroundColor: _tealAccent,
-        title: const Text(
-          "Comentarios",
-          style: TextStyle(color: Colors.white, fontSize: 16),
-        ),
+        title: const Text("Comentarios", style: TextStyle(color: Colors.white, fontSize: 16)),
         iconTheme: const IconThemeData(color: Colors.white),
         elevation: 0,
       ),
       body: Center(
         child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxWidth: isDesktop ? 650 : double.infinity,
-          ),
+          constraints: BoxConstraints(maxWidth: isDesktop ? 650 : double.infinity),
           child: Container(
             color: const Color(0xFFFDFDFD),
             child: Column(
@@ -197,13 +286,14 @@ class _CommentsScreenState extends State<CommentsScreen> {
                 _buildOriginalPost(),
                 const Divider(height: 1, thickness: 4, color: Colors.black12),
                 Expanded(
-                  child: ListView.separated(
-                    padding: const EdgeInsets.all(24.0),
-                    itemCount: _comments.length,
-                    separatorBuilder: (context, index) =>
-                        const Divider(height: 32),
-                    itemBuilder: (context, index) => _buildCommentTile(index),
-                  ),
+                  child: _isLoading
+                      ? const LoadingState()
+                      : ListView.separated(
+                          padding: const EdgeInsets.all(24.0),
+                          itemCount: _comments.length,
+                          separatorBuilder: (context, index) => const Divider(height: 32),
+                          itemBuilder: (context, index) => _buildCommentNode(_comments[index], 0),
+                        ),
                 ),
                 _buildCommentInputBar(),
               ],
@@ -232,24 +322,16 @@ class _CommentsScreenState extends State<CommentsScreen> {
               const SizedBox(width: 12),
               Text(
                 widget.postData["user"] ?? "Usuario",
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
-                ),
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
               ),
             ],
           ),
           const SizedBox(height: 12),
           Text(
             widget.postData["content"] ?? "",
-            style: const TextStyle(
-              fontSize: 14,
-              color: Colors.black87,
-              height: 1.4,
-            ),
+            style: const TextStyle(fontSize: 14, color: Colors.black87, height: 1.4),
           ),
           const SizedBox(height: 16),
-          // Contadores sincronizados con la PostCard
           Row(
             children: [
               InkWell(
@@ -268,9 +350,7 @@ class _CommentsScreenState extends State<CommentsScreen> {
                       style: TextStyle(
                         color: isPostLiked ? Colors.red : Colors.grey,
                         fontSize: 11,
-                        fontWeight: isPostLiked
-                            ? FontWeight.bold
-                            : FontWeight.normal,
+                        fontWeight: isPostLiked ? FontWeight.bold : FontWeight.normal,
                       ),
                     ),
                   ],
@@ -279,11 +359,7 @@ class _CommentsScreenState extends State<CommentsScreen> {
               const SizedBox(width: 16),
               Row(
                 children: [
-                  const Icon(
-                    Icons.mode_comment_outlined,
-                    color: Colors.grey,
-                    size: 16,
-                  ),
+                  const Icon(Icons.mode_comment_outlined, color: Colors.grey, size: 16),
                   const SizedBox(width: 4),
                   Text(
                     "${widget.postData["comments"] ?? 0} Comentarios",
@@ -298,8 +374,53 @@ class _CommentsScreenState extends State<CommentsScreen> {
     );
   }
 
-  Widget _buildCommentTile(int index) {
-    final comment = _comments[index];
+  // Widget recursivo para renderizar el árbol de comentarios
+  Widget _buildCommentNode(Map<String, dynamic> comment, int depth) {
+    final List<Map<String, dynamic>> replies = comment["replies"] ?? [];
+    final int replyCount = comment["replyCount"] ?? 0;
+    
+    // Sangría visual por nivel (máximo nivel visual recomendado: 3)
+    final double leftPadding = depth * 32.0;
+
+    return Padding(
+      padding: EdgeInsets.only(top: depth == 0 ? 0 : 16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Comentario Actual
+          Padding(
+            padding: EdgeInsets.only(left: leftPadding),
+            child: _buildSingleComment(comment),
+          ),
+          
+          // Renderiza respuestas ya cargadas de forma recursiva
+          for (var reply in replies) 
+            _buildCommentNode(reply, depth + 1),
+
+          // Botón "Ver más respuestas" (Si hay respuestas en el servidor que no hemos cargado)
+          if (replyCount > replies.length)
+            Padding(
+              padding: EdgeInsets.only(left: leftPadding + 40.0, top: 12.0),
+              child: InkWell(
+                onTap: () => _fetchReplies(comment["id"]),
+                child: comment["isLoadingReplies"] == true
+                    ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                    : Text(
+                        "Ver más respuestas (${replyCount - replies.length})",
+                        style: TextStyle(
+                          color: _tealAccent,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 11,
+                        ),
+                      ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSingleComment(Map<String, dynamic> comment) {
     final bool isLiked = comment["isLiked"] ?? false;
 
     return Row(
@@ -319,10 +440,7 @@ class _CommentsScreenState extends State<CommentsScreen> {
                 children: [
                   Text(
                     comment["user"],
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13,
-                    ),
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                   ),
                   const SizedBox(width: 8),
                   Text(
@@ -340,14 +458,10 @@ class _CommentsScreenState extends State<CommentsScreen> {
               Row(
                 children: [
                   InkWell(
-                    onTap: () => _toggleCommentLike(index),
+                    onTap: () => _toggleCommentLike(comment["id"]),
                     borderRadius: BorderRadius.circular(4),
                     child: Padding(
-                      padding: const EdgeInsets.only(
-                        right: 8.0,
-                        top: 4.0,
-                        bottom: 4.0,
-                      ),
+                      padding: const EdgeInsets.only(right: 8.0, top: 4.0, bottom: 4.0),
                       child: Row(
                         children: [
                           Icon(
@@ -361,9 +475,7 @@ class _CommentsScreenState extends State<CommentsScreen> {
                             style: TextStyle(
                               fontSize: 11,
                               color: isLiked ? Colors.red : Colors.grey,
-                              fontWeight: isLiked
-                                  ? FontWeight.bold
-                                  : FontWeight.normal,
+                              fontWeight: isLiked ? FontWeight.bold : FontWeight.normal,
                             ),
                           ),
                         ],
@@ -372,14 +484,10 @@ class _CommentsScreenState extends State<CommentsScreen> {
                   ),
                   const SizedBox(width: 16),
                   InkWell(
-                    onTap: () => _startReply(comment["user"]),
+                    onTap: () => _startReply(comment["id"], comment["user"]),
                     child: const Text(
                       "Responder",
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.grey,
-                      ),
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey),
                     ),
                   ),
                 ],
@@ -409,38 +517,24 @@ class _CommentsScreenState extends State<CommentsScreen> {
           children: [
             if (_replyingToUser != null)
               Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 24,
-                  vertical: 8,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
                 color: Colors.grey[100],
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
                       "Respondiendo a @$_replyingToUser",
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: _tealAccent,
-                        fontWeight: FontWeight.bold,
-                      ),
+                      style: TextStyle(fontSize: 12, color: _tealAccent, fontWeight: FontWeight.bold),
                     ),
                     InkWell(
                       onTap: _cancelReply,
-                      child: const Icon(
-                        Icons.close,
-                        size: 16,
-                        color: Colors.grey,
-                      ),
+                      child: const Icon(Icons.close, size: 16, color: Colors.grey),
                     ),
                   ],
                 ),
               ),
             Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 16.0,
-                vertical: 12.0,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
               child: Row(
                 children: [
                   Expanded(
@@ -450,10 +544,7 @@ class _CommentsScreenState extends State<CommentsScreen> {
                       decoration: InputDecoration(
                         hintText: "Escribe un comentario...",
                         hintStyle: const TextStyle(fontSize: 13),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 12,
-                        ),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                         filled: true,
                         fillColor: Colors.grey[100],
                         border: OutlineInputBorder(
