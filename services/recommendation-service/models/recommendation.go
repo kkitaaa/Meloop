@@ -1,5 +1,7 @@
 package models
 
+import "time"
+
 type Interaction struct {
 	Type     string `json:"type"`
 	TargetID int    `json:"target_id"`
@@ -32,4 +34,6 @@ type RecommendationResponse struct {
 	Model            string               `json:"model"`
 	ModelVersion     string               `json:"model_version"`
 	InteractionCount int                  `json:"interaction_count"`
+	CalculatedAt     time.Time            `json:"calculated_at,omitempty"`
+	FromBackup       bool                 `json:"from_backup"`
 }

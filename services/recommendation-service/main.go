@@ -21,7 +21,13 @@ func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	mlURL := getenv("ML_SERVICE_URL", "http://127.0.0.1:8001")
 	mlClient := services.NewMLClient(mlURL)
-	recommendationService := services.NewRecommendationServiceWithRepository(mlClient, 30*time.Second, openProfileRepository())
+	recommendationStore, err := services.NewRedisRecommendationStore(getenv("REDIS_URL", "redis://localhost:6379"))
+	if err != nil {
+		logger.Error("recommendation_backup_configuration_failed", "error", err)
+		os.Exit(1)
+	}
+	defer recommendationStore.Close()
+	recommendationService := services.NewRecommendationServiceWithRepositoryAndStore(mlClient, 30*time.Second, openProfileRepository(), recommendationStore)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", healthHandler)
@@ -95,7 +101,9 @@ func recommendationHandler(service *services.RecommendationService) http.Handler
 			return
 		}
 		writer.Header().Set("X-Recommendations-Cache", cacheStatus(cached))
-		if response.Model == "fallback" {
+		if response.FromBackup {
+			writer.Header().Set("X-Recommendations-Source", "backup")
+		} else if response.Model == "fallback" {
 			writer.Header().Set("X-Recommendations-Source", "fallback")
 		} else {
 			writer.Header().Set("X-Recommendations-Source", "ml")

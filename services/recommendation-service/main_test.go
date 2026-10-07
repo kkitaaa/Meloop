@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +11,18 @@ import (
 	"github.com/meloop/recommendation-service/models"
 	"github.com/meloop/recommendation-service/services"
 )
+
+type recommendationBackupFake struct {
+	response models.RecommendationResponse
+}
+
+func (store recommendationBackupFake) Get(_ context.Context, _ string) (models.RecommendationResponse, bool, error) {
+	return store.response, true, nil
+}
+
+func (recommendationBackupFake) Set(context.Context, string, models.RecommendationResponse) error {
+	return nil
+}
 
 func TestRecommendationHandlerReturnsMusicRecommendations(t *testing.T) {
 	mlServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
@@ -47,6 +60,41 @@ func TestRecommendationHandlerReturnsMusicRecommendations(t *testing.T) {
 	}
 	if response.ModelVersion != "2.3.4" {
 		t.Fatalf("expected model version to be preserved, got %q", response.ModelVersion)
+	}
+}
+
+func TestRecommendationHandlerServesRedisBackupAsJSON(t *testing.T) {
+	calculatedAt := time.Date(2026, time.October, 5, 12, 0, 0, 0, time.UTC)
+	store := recommendationBackupFake{response: models.RecommendationResponse{
+		UserID:          42,
+		Recommendations: []models.RecommendationItem{{ItemID: 99}},
+		Model:           "previous-model",
+		CalculatedAt:    calculatedAt,
+	}}
+	service := services.NewRecommendationServiceWithRepositoryAndStore(
+		services.NewMLClient("http://127.0.0.1:1"),
+		time.Minute,
+		nil,
+		store,
+	)
+	handler := recommendationHandler(service)
+	request := httptest.NewRequest(http.MethodGet, "/recommendations/42/music", nil)
+	recorder := httptest.NewRecorder()
+
+	handler.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", recorder.Code)
+	}
+	if recorder.Header().Get("X-Recommendations-Source") != "backup" {
+		t.Fatalf("expected backup response source, got %q", recorder.Header().Get("X-Recommendations-Source"))
+	}
+	var response models.RecommendationResponse
+	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !response.FromBackup || !response.CalculatedAt.Equal(calculatedAt) {
+		t.Fatalf("expected prior timestamp and backup flag, got %+v", response)
 	}
 }
 
