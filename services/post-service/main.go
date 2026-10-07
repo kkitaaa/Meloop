@@ -3,48 +3,67 @@ package main
 import (
 	"database/sql"
 	"log"
+	"os"
 
 	"github.com/gin-gonic/gin"
-	_ "github.com/lib/pq" // Driver de PostgreSQL
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 
+	infraMinio "github.com/meloop/infrastructure/minio"
 	"github.com/meloop/post-service/controllers"
+	"github.com/meloop/post-service/models"
 	"github.com/meloop/post-service/repositories"
 	"github.com/meloop/post-service/routes"
 	"github.com/meloop/post-service/services"
+	"github.com/meloop/services/common/logging"
 )
 
 func main() {
-	log.Println("Iniciando post-service (Módulo de Lectura)...")
+	// 1. Inicializar el logger
+	logger := logging.New("post-service")
+	logger.Info("service_started")
 
-	// 1. Conexión a la base de datos (Supabase)
-	connStr := "postgresql://postgres:postgres@127.0.0.1:15422/postgres?sslmode=disable"
-	db, err := sql.Open("postgres", connStr)
+	// 2. Inicializar el cliente de MinIO (Archivos multimedia)
+	minioClient, err := infraMinio.InitClient()
 	if err != nil {
-		log.Fatalf("Error conectando a la BD: %v", err)
+		log.Fatalf("Error crítico: No se pudo conectar a MinIO: %v", err)
 	}
-	defer db.Close()
 
-	// 2. Inicializar las capas (Repositorio, Servicio, Controlador)
-	postRepo := repositories.NewPostRepository(db)
-	postService := services.NewPostService(postRepo)
-	postController := controllers.NewPostController(postService)
+	// 3. Conectar a Supabase Local (PostgreSQL)
+	dbURL := os.Getenv("DB_URL")
+	if dbURL == "" {
+		dbURL = "postgresql://postgres:postgres@127.0.0.1:15422/postgres"
+	}
 
-	// 3. Inicializar el servidor HTTP con Gin
-	r := gin.Default()
-	api := r.Group("/api/v1")
+	db, err := gorm.Open(postgres.Open(dbURL), &gorm.Config{})
+	if err != nil {
+		log.Fatalf("Error crítico: No se pudo conectar a la base de datos: %v", err)
+	}
 
-	// Middleware simulado de autenticación (inyecta el userID del solicitante)
-	api.Use(func(c *gin.Context) {
-		c.Set("userID", "user-123") // Simulamos que el usuario "user-123" está navegando
-		c.Next()
-	})
+	// Auto-migrar las tablas (se añade models.Post para la nueva funcionalidad)
+	err = db.AutoMigrate(&models.Comment{}, &models.Post{})
+	if err != nil {
+		log.Fatalf("Error migrando la base de datos: %v", err)
+	}
 
-	// 4. Conectar las rutas
-	routes.SetupPostRoutes(api, postController)
+	// 4. Inyectar dependencias de Comentarios
+	commentRepo := repositories.NewPostgresCommentRepository(db)
+	commentService := services.NewCommentService(commentRepo)
+	commentController := controllers.NewCommentController(commentService)
 
-	// 5. Iniciar el servidor
-	log.Println("Servidor escuchando en el puerto 8080")
-	if err := r.Run(":8080"); err != nil {
-		log.Fatalf("Error al iniciar el servidor: %v", err)
+	// 5. Inyectar dependencias de Publicaciones (Post)
+	postRepo := repositories.NewPostgresPostRepository(db)
+	postController := controllers.NewPostController(postRepo, minioClient)
+
+	// 6. Inicializar el servidor web con Gin
+	router := gin.Default()
+
+	// 7. Configurar rutas
+	routes.SetupRoutes(router, commentController, postController, minioClient)
+
+	// 8. Arrancar el servidor
+	logger.Info("http_server_started", "port", "8084")
+	if err := router.Run(":8084"); err != nil {
+		log.Fatalf("Error al iniciar el servidor web: %v", err)
 	}
 }
