@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/meloop/recommendation-service/models"
@@ -97,10 +98,17 @@ func (store *RedisRecommendationStore) SetCached(ctx context.Context, key string
 }
 
 func (store *RedisRecommendationStore) InvalidateCached(ctx context.Context, userID int) error {
+	return store.InvalidateCachedForUser(ctx, strconv.Itoa(userID))
+}
+
+func (store *RedisRecommendationStore) InvalidateCachedForUser(ctx context.Context, userID string) error {
 	keys := []string{
-		recommendationCacheKey(userID, "all"),
-		recommendationCacheKey(userID, "music"),
-		recommendationCacheKey(userID, "friends"),
+		recommendationCacheKeyForUser(userID, "all"),
+		recommendationCacheKeyForUser(userID, "music"),
+		recommendationCacheKeyForUser(userID, "friends"),
+		recommendationStoreKeyForUser(userID, "all"),
+		recommendationStoreKeyForUser(userID, "music"),
+		recommendationStoreKeyForUser(userID, "friends"),
 	}
 	if err := store.client.Del(ctx, keys...).Err(); err != nil {
 		return fmt.Errorf("invalidate calculated recommendation cache in Redis: %w", err)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -67,26 +68,26 @@ func (repository *postgresUserProfileRepository) Get(ctx context.Context, userID
 		FROM INTERACCION i
 		WHERE i.id_usuario = $1
 		  AND i.fecha_creacion >= now() - ($2 * interval '1 second')
-		  AND EXISTS (
+		  AND NOT EXISTS (
 			SELECT 1 FROM CONFIGURACION_PRIVACIDAD privacy
 			WHERE privacy.id_usuario = $1
-			  AND privacy.visibilidad_interacciones <> 'PRIVADO'
+			  AND UPPER(TRIM(COALESCE(privacy.visibilidad_interacciones, 'PUBLICO'))) = 'PRIVADO'
 		  )`, userID, int64(defaultActivityWindow/time.Second)).Scan(&profile.InteractionCount)
 	if err != nil {
 		return models.UserProfile{}, nil, fmt.Errorf("count recent user interactions: %w", err)
 	}
 
 	rows, err = repository.pool.Query(ctx, `
-		SELECT interaction_type, target_id
-		FROM user_interactions
-		WHERE user_id = $1
-		  AND created_at >= now() - ($2 * interval '1 second')
-		  AND EXISTS (
+		SELECT COALESCE(LOWER(TRIM(i.tipo)), ''), i.id_publicacion
+		FROM INTERACCION i
+		WHERE i.id_usuario = $1
+		  AND i.fecha_creacion >= now() - ($2 * interval '1 second')
+		  AND NOT EXISTS (
 			SELECT 1 FROM CONFIGURACION_PRIVACIDAD privacy
 			WHERE privacy.id_usuario = $1
-			  AND privacy.visibilidad_interacciones <> 'PRIVADO'
+			  AND UPPER(TRIM(COALESCE(privacy.visibilidad_interacciones, 'PUBLICO'))) = 'PRIVADO'
 		  )
-		ORDER BY created_at DESC
+		ORDER BY i.fecha_creacion DESC
 		LIMIT 100`, userID, int64(defaultActivityWindow/time.Second))
 	if err != nil {
 		return models.UserProfile{}, nil, fmt.Errorf("query user interactions: %w", err)
@@ -95,8 +96,13 @@ func (repository *postgresUserProfileRepository) Get(ctx context.Context, userID
 	var interactions []models.Interaction
 	for rows.Next() {
 		var interaction models.Interaction
-		if err := rows.Scan(&interaction.Type, &interaction.TargetID); err != nil {
-			return models.UserProfile{}, nil, fmt.Errorf("scan user interaction: %w", err)
+		var targetID string
+		if err := rows.Scan(&interaction.Type, &targetID); err != nil {
+			return models.UserProfile{}, nil, fmt.Errorf("scan recent user interaction: %w", err)
+		}
+		interaction.TargetID, err = strconv.Atoi(targetID)
+		if err != nil || interaction.TargetID < 1 {
+			continue
 		}
 		if recommendationType == "music" && interaction.Type != "like" {
 			continue
