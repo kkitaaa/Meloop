@@ -38,6 +38,8 @@ type FriendshipRepository interface {
 	BlockUser(ctx context.Context, blockerID, blockedID string) error
 	IsBlocked(ctx context.Context, user1ID, user2ID string) (bool, error)
 	ValidateInteraction(ctx context.Context, user1ID, user2ID string) error
+	GetEligibleCandidates(ctx context.Context, userID string) ([]models.CandidateUser, error)
+	GetMutualFriendsCount(ctx context.Context, userID string, candidateIDs []string) (map[string]int, error)
 }
 
 type postgresFriendshipRepository struct {
@@ -346,8 +348,8 @@ func (r *postgresFriendshipRepository) BlockUser(ctx context.Context, blockerID,
 	}
 
 	_, err = tx.Exec(ctx, `
-		INSERT INTO bloqueo (id_usuario_bloqueador, id_usuario_bloqueado)
-		VALUES ($1, $2)`, blockerID, blockedID)
+		INSERT INTO bloqueo (id_bloqueo, id_usuario_bloqueador, id_usuario_bloqueado)
+		VALUES (gen_random_uuid()::text, $1, $2)`, blockerID, blockedID)
 	if err != nil {
 		return err
 	}
@@ -493,4 +495,101 @@ func (r *postgresFriendshipRepository) GetFriendProfile(ctx context.Context, use
 	}
 
 	return &profile, nil
+}
+
+func (r *postgresFriendshipRepository) GetEligibleCandidates(ctx context.Context, userID string) ([]models.CandidateUser, error) {
+	if r.pool == nil {
+		return nil, errors.New("database connection pool is not initialized")
+	}
+
+	query := `
+		SELECT 
+			u.id_usuario::text, 
+			u.username, 
+			COALESCE(u.correo, ''), 
+			u.id_nivel, 
+			COALESCE(u.experiencia, 0)
+		FROM usuario u
+		WHERE u.id_usuario::text <> $1
+		  AND NOT EXISTS (
+			  SELECT 1 FROM amistad a
+			  WHERE ((a.id_usuario_1::text = $1 AND a.id_usuario_2::text = u.id_usuario::text)
+			      OR (a.id_usuario_1::text = u.id_usuario::text AND a.id_usuario_2::text = $1))
+			    AND a.estado = 'ACEPTADA'
+		  )
+		  AND NOT EXISTS (
+			  SELECT 1 FROM bloqueo b
+			  WHERE (b.id_usuario_bloqueador::text = $1 AND b.id_usuario_bloqueado::text = u.id_usuario::text)
+			     OR (b.id_usuario_bloqueador::text = u.id_usuario::text AND b.id_usuario_bloqueado::text = $1)
+		  )
+		  AND NOT EXISTS (
+			  SELECT 1 FROM accion_moderacion am
+			  WHERE am.id_usuario_afectado::text = u.id_usuario::text
+			    AND UPPER(am.tipo_accion) IN ('BAN', 'SUSPENSION', 'INACTIVO', 'DESACTIVADO')
+		  )
+		ORDER BY u.id_usuario ASC`
+
+	rows, err := r.pool.Query(ctx, query, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	candidates := make([]models.CandidateUser, 0)
+	for rows.Next() {
+		var c models.CandidateUser
+		if err := rows.Scan(&c.IDUsuario, &c.Username, &c.Correo, &c.IDNivel, &c.Experiencia); err != nil {
+			return nil, err
+		}
+		c.IsActive = true
+		candidates = append(candidates, c)
+	}
+	return candidates, rows.Err()
+}
+
+func (r *postgresFriendshipRepository) GetMutualFriendsCount(ctx context.Context, userID string, candidateIDs []string) (map[string]int, error) {
+	if r.pool == nil {
+		return nil, errors.New("database connection pool is not initialized")
+	}
+
+	result := make(map[string]int, len(candidateIDs))
+	for _, id := range candidateIDs {
+		result[id] = 0
+	}
+	if len(candidateIDs) == 0 {
+		return result, nil
+	}
+
+	query := `
+		WITH user_friends AS (
+			SELECT CASE WHEN id_usuario_1::text = $1 THEN id_usuario_2::text ELSE id_usuario_1::text END AS friend_id
+			FROM amistad
+			WHERE (id_usuario_1::text = $1 OR id_usuario_2::text = $1)
+			  AND estado = 'ACEPTADA'
+		)
+		SELECT 
+			CASE WHEN a.id_usuario_1::text = uf.friend_id THEN a.id_usuario_2::text ELSE a.id_usuario_1::text END AS candidate_id,
+			COUNT(DISTINCT uf.friend_id) AS mutual_count
+		FROM amistad a
+		JOIN user_friends uf ON (a.id_usuario_1::text = uf.friend_id OR a.id_usuario_2::text = uf.friend_id)
+		WHERE a.estado = 'ACEPTADA'
+		  AND CASE WHEN a.id_usuario_1::text = uf.friend_id THEN a.id_usuario_2::text ELSE a.id_usuario_1::text END <> $1
+		  AND CASE WHEN a.id_usuario_1::text = uf.friend_id THEN a.id_usuario_2::text ELSE a.id_usuario_1::text END = ANY($2)
+		GROUP BY candidate_id`
+
+	rows, err := r.pool.Query(ctx, query, userID, candidateIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var candID string
+		var count int
+		if err := rows.Scan(&candID, &count); err != nil {
+			return nil, err
+		}
+		result[candID] = count
+	}
+	return result, rows.Err()
 }

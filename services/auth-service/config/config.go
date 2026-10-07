@@ -11,6 +11,13 @@ type Config struct {
 	PasswordMinLength int
 	RedisURL          string
 	SessionTTL        time.Duration
+	RecoveryTokenTTL  time.Duration
+	RecoveryURLBase   string
+	SMTPHost          string
+	SMTPPort          int
+	SMTPUser          string
+	SMTPPassword      string
+	SMTPFrom          string
 }
 
 func Load() *Config {
@@ -43,10 +50,43 @@ func Load() *Config {
 		}
 	}
 
+	recoveryTTL := 30 * time.Minute
+	if rTTLStr := os.Getenv("RECOVERY_TOKEN_TTL_MINUTES"); rTTLStr != "" {
+		if val, err := strconv.Atoi(rTTLStr); err == nil && val > 0 {
+			recoveryTTL = time.Duration(val) * time.Minute
+		}
+	}
+
+	recoveryURLBase := os.Getenv("RECOVERY_URL_BASE")
+	if recoveryURLBase == "" {
+		recoveryURLBase = "http://localhost:8080/auth/password-recovery/reset?token="
+	}
+
+	smtpHost := os.Getenv("SMTP_HOST")
+	smtpPort := 587
+	if portStr := os.Getenv("SMTP_PORT"); portStr != "" {
+		if val, err := strconv.Atoi(portStr); err == nil && val > 0 {
+			smtpPort = val
+		}
+	}
+	smtpUser := os.Getenv("SMTP_USER")
+	smtpPass := os.Getenv("SMTP_PASSWORD")
+	smtpFrom := os.Getenv("SMTP_FROM")
+	if smtpFrom == "" {
+		smtpFrom = "noreply@meloop.app"
+	}
+
 	return &Config{
 		DatabaseURL:       dbURL,
 		PasswordMinLength: minLen,
 		RedisURL:          redisURL,
 		SessionTTL:        sessionTTL,
+		RecoveryTokenTTL:  recoveryTTL,
+		RecoveryURLBase:   recoveryURLBase,
+		SMTPHost:          smtpHost,
+		SMTPPort:          smtpPort,
+		SMTPUser:          smtpUser,
+		SMTPPassword:      smtpPass,
+		SMTPFrom:          smtpFrom,
 	}
 }

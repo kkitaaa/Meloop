@@ -11,6 +11,11 @@ func TestCompatibilityRepository_NilPool(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when connection pool is nil")
 	}
+
+	_, err = repo.GetBatchMusicalProfiles(context.Background(), []string{"user-1", "user-2"})
+	if err == nil {
+		t.Fatal("expected error when connection pool is nil")
+	}
 }
 
 func TestClassifyPreference(t *testing.T) {

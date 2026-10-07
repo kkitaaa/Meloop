@@ -3,13 +3,13 @@ package messaging
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/meloop/services/common/logging"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
 const (
-	rabbitURL    = "amqp://guest:guest@localhost:5672/"
 	exchange     = "meloop.events"
 	exchangeType = "topic"
 )
@@ -22,6 +22,13 @@ type PostLikedEvent struct {
 
 func PublishPostLiked(userID string, postID string) error {
 	logger := logging.New("post-service")
+	
+	// Leemos la variable de entorno, o usamos tu credencial local por defecto si falla
+	rabbitURL := os.Getenv("RABBITMQ_URL")
+	if rabbitURL == "" {
+		rabbitURL = "amqp://meloop:Meloop.67@localhost:5672/"
+	}
+
 	conn, err := amqp.Dial(rabbitURL)
 	if err != nil {
 		return fmt.Errorf("error conectando a RabbitMQ: %w", err)

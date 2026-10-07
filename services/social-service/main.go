@@ -27,7 +27,8 @@ func main() {
 	}
 
 	repository := repositories.NewFriendshipRepository(dbPool)
-	service := services.NewFriendshipService(repository, messaging.NewPublisher(cfg.RabbitMQURL))
+	compatRepository := repositories.NewCompatibilityRepository(dbPool)
+	service := services.NewFriendshipService(repository, messaging.NewPublisher(cfg.RabbitMQURL), compatRepository)
 	controller := controllers.NewFriendshipController(service)
 	router := gin.New()
 	router.Use(logging.GinMiddleware(logger))

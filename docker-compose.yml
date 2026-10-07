@@ -1,4 +1,23 @@
 services:
+  ml-service:
+    build:
+      context: ./ml-service
+    container_name: meloop-ml-service
+    ports:
+      - "8001:8001"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8001/ready', timeout=2)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks:
+      - meloop-network
+
   api-gateway:
     build:
       context: .
@@ -21,6 +40,7 @@ services:
       - test-service
       - user-service
       - auth-service
+      - media-service
       - redis
       - rabbitmq
       - minio
@@ -44,6 +64,11 @@ services:
     container_name: meloop-user-service
     ports:
       - "8082:8082"
+    environment:
+      MEDIA_SERVICE_URL: http://media-service:8085
+      DATABASE_URL: ${DATABASE_URL:-postgres://postgres:postgres@host.docker.internal:5432/postgres?sslmode=disable}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - meloop-network
 
@@ -54,6 +79,25 @@ services:
     container_name: meloop-auth-service
     ports:
       - "8083:8083"
+    networks:
+      - meloop-network
+
+  media-service:
+    build:
+      context: .
+      dockerfile: services/media-service/Dockerfile
+    container_name: meloop-media-service
+    ports:
+      - "8085:8085"
+    environment:
+      PORT: 8085
+      MINIO_ENDPOINT: minio:9000
+      MINIO_PUBLIC_ENDPOINT: http://localhost:9000
+      MINIO_MEDIA_USER: ${MINIO_MEDIA_USER}
+      MINIO_MEDIA_PASSWORD: ${MINIO_MEDIA_PASSWORD}
+      MINIO_MEDIA_BUCKET: ${MINIO_MEDIA_BUCKET:-meloop-media}
+    depends_on:
+      - minio
     networks:
       - meloop-network
 
