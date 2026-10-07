@@ -8,11 +8,9 @@ import (
 	_ "github.com/lib/pq" // Driver de PostgreSQL
 
 	"github.com/meloop/post-service/controllers"
-	"github.com/meloop/post-service/messaging"
 	"github.com/meloop/post-service/repositories"
 	"github.com/meloop/post-service/routes"
 	"github.com/meloop/post-service/services"
-	"github.com/meloop/services/common/logging"
 )
 
 func main() {

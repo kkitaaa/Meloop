@@ -5,13 +5,12 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-  "time"
+	"time"
 )
 
 var (
 	ErrPostNotFoundOrUnauthorized = errors.New("publicación no encontrada o no tienes permisos de autor")
 )
-
 
 // Post representa una publicación basada estrictamente en el MER
 type Post struct {
@@ -78,6 +77,8 @@ func (r *PostRepository) DeletePost(ctx context.Context, postID string, authorID
 	}
 
 	return nil
+}
+
 // GetPostByID obtiene un post por su ID
 func (r *PostRepository) GetPostByID(ctx context.Context, postID string, requesterID string) (*Post, error) {
 	query := `

@@ -74,6 +74,8 @@ func (ctrl *PostController) DeletePost(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "publicación eliminada correctamente"})
+}
+
 // helper para extraer limit y offset de la URL de forma segura
 func getPaginationParams(c *gin.Context) (int, int) {
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "10"))

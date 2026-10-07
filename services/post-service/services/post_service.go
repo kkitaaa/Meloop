@@ -29,6 +29,8 @@ func (s *PostService) EditPost(ctx context.Context, postID string, authorID stri
 // DeletePost procesa la solicitud de eliminación (RF-18)
 func (s *PostService) DeletePost(ctx context.Context, postID string, authorID string) error {
 	return s.repo.DeletePost(ctx, postID, authorID)
+}
+
 func (s *PostService) GetPost(ctx context.Context, postID string, requesterID string) (*repositories.Post, error) {
 	return s.repo.GetPostByID(ctx, postID, requesterID)
 }
