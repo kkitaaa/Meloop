@@ -5,12 +5,197 @@ import 'dart:async';
 import 'friends_screen.dart';
 import '../../features/comments/presentation/comments_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
+import 'friends_screen.dart';
+import '../../features/comments/presentation/comments_screen.dart';
+import '../../features/profile/presentation/profile_screen.dart';
+import '../widgets/post_card.dart';
+import '../widgets/desktop_chat.dart';
+import '../widgets/notifications_menu.dart';
+import '../widgets/level_progress/level_progress.dart';
+import '../features/gamification/presentation/gamification_demo_controller.dart';
 
 class FeedScreen extends StatefulWidget {
   const FeedScreen({super.key});
 
   @override
   State<FeedScreen> createState() => _FeedScreenState();
+}
+
+class _LevelUpBanner extends StatefulWidget {
+  const _LevelUpBanner({required this.reward, required this.onClose, required this.onEquip});
+
+  final LevelUpReward reward;
+  final VoidCallback onClose;
+  final VoidCallback onEquip;
+
+  @override
+  State<_LevelUpBanner> createState() => _LevelUpBannerState();
+}
+
+class _LevelUpBannerState extends State<_LevelUpBanner> with SingleTickerProviderStateMixin {
+  late final AnimationController _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = AnimationController(vsync: this, duration: const Duration(seconds: 10))
+      ..forward()
+      ..addStatusListener((status) {
+        if (status == AnimationStatus.completed) widget.onClose();
+      });
+  }
+
+  @override
+  void dispose() {
+    _timer.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: SlideTransition(
+        position: Tween<Offset>(begin: const Offset(0, -1.2), end: Offset.zero).animate(
+          CurvedAnimation(parent: _timer, curve: const Interval(0, .08, curve: Curves.easeOutBack)),
+        ),
+        child: Container(
+          width: 370,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: .22), blurRadius: 18)],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [Icon(Icons.circle, color: Colors.amber, size: 9), Icon(Icons.square, color: Color(0xFFFF6262), size: 10), Icon(Icons.circle, color: Color(0xFF00AF92), size: 8), Icon(Icons.star, color: Colors.purple, size: 13)],
+              ),
+              const SizedBox(height: 8),
+              Text('¡Subiste a Nivel ${widget.reward.level}!', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF1E7E70))),
+              const SizedBox(height: 6),
+              const Text('Recompensa desbloqueada', style: TextStyle(color: Colors.black54, fontSize: 12)),
+              const SizedBox(height: 10),
+              Row(mainAxisAlignment: MainAxisAlignment.center, children: [const Icon(Icons.gradient, color: Colors.purple), const SizedBox(width: 7), Text(widget.reward.name, style: const TextStyle(fontWeight: FontWeight.bold))]),
+              const SizedBox(height: 12),
+              ElevatedButton(onPressed: widget.onEquip, style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF00AF92), foregroundColor: Colors.white), child: const Text('Equipar ahora')),
+              TextButton(onPressed: widget.onClose, child: const Text('Cerrar')),
+              AnimatedBuilder(
+                animation: _timer,
+                builder: (context, _) => LinearProgressIndicator(value: 1 - _timer.value, minHeight: 3, color: const Color(0xFF00AF92), backgroundColor: Colors.grey[200]),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CompactLevelUpBanner extends StatefulWidget {
+  const _CompactLevelUpBanner({required this.reward, required this.onClose, required this.onEquip});
+  final LevelUpReward reward;
+  final VoidCallback onClose;
+  final VoidCallback onEquip;
+  @override
+  State<_CompactLevelUpBanner> createState() => _CompactLevelUpBannerState();
+}
+
+class _CompactLevelUpBannerState extends State<_CompactLevelUpBanner>
+    with TickerProviderStateMixin {
+  late final AnimationController _timer;
+  late final AnimationController _confetti;
+  @override
+  void initState() {
+    super.initState();
+    _timer = AnimationController(vsync: this, duration: const Duration(seconds: 10))
+      ..forward()
+      ..addStatusListener((status) { if (status == AnimationStatus.completed) widget.onClose(); });
+    _confetti = AnimationController(vsync: this, duration: const Duration(milliseconds: 1500))..repeat();
+  }
+  @override
+  void dispose() { _timer.dispose(); _confetti.dispose(); super.dispose(); }
+  @override
+  Widget build(BuildContext context) => Center(
+    child: SlideTransition(
+      position: Tween<Offset>(begin: const Offset(0, -1), end: Offset.zero).animate(CurvedAnimation(parent: _timer, curve: const Interval(0, .08, curve: Curves.easeOutBack))),
+      child: Container(
+        width: 520, padding: const EdgeInsets.fromLTRB(18, 12, 18, 8),
+        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: .22), blurRadius: 18)]),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          SizedBox(height: 57, child: Stack(children: [
+            AnimatedBuilder(animation: _confetti, builder: (_, __) => Stack(children: [_confettiPiece(.08, Colors.amber, Icons.circle), _confettiPiece(.31, const Color(0xFFFF6262), Icons.square), _confettiPiece(.68, const Color(0xFF00AF92), Icons.circle), _confettiPiece(.9, Colors.purple, Icons.star)])),
+            Center(child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [const Icon(Icons.emoji_events, color: Colors.amber, size: 36), const SizedBox(width: 10), Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Nivel ${widget.reward.level}', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF1E7E70))), Text(widget.reward.name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600))])]))
+          ])),
+          Row(mainAxisAlignment: MainAxisAlignment.center, children: [TextButton(onPressed: widget.onClose, child: const Text('Cerrar')), const SizedBox(width: 10), ElevatedButton(onPressed: widget.onEquip, style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF00AF92), foregroundColor: Colors.white), child: const Text('Equipar ahora'))]),
+          AnimatedBuilder(animation: _timer, builder: (_, __) => LinearProgressIndicator(value: 1 - _timer.value, minHeight: 3, color: const Color(0xFF00AF92), backgroundColor: Colors.grey[200])),
+        ]),
+      ),
+    ),
+  );
+  Widget _confettiPiece(double x, Color color, IconData icon) {
+    final fall = (_confetti.value + x) % 1;
+    return Positioned(left: x * 480, top: fall * 50, child: Transform.rotate(angle: fall * 6.28, child: Icon(icon, color: color, size: 10)));
+  }
+}
+
+class _FullScreenConfetti extends StatefulWidget {
+  const _FullScreenConfetti();
+  @override
+  State<_FullScreenConfetti> createState() => _FullScreenConfettiState();
+}
+
+class _FullScreenConfettiState extends State<_FullScreenConfetti> with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  @override
+  void initState() { super.initState(); _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 1250))..repeat(); }
+  @override
+  void dispose() { _controller.dispose(); super.dispose(); }
+  @override
+  Widget build(BuildContext context) => IgnorePointer(child: LayoutBuilder(builder: (context, size) => AnimatedBuilder(
+    animation: _controller,
+    builder: (_, __) => Stack(children: List.generate(10, (i) {
+      const colors = [Colors.amber, Color(0xFFFF6262), Color(0xFF00AF92), Colors.purple, Colors.orange];
+      final x = ((i * .173) % 1);
+      final fall = (_controller.value + i * .19) % 1;
+      return Positioned(left: x * size.maxWidth, top: -18 + fall * (size.maxHeight + 36), child: Transform.rotate(angle: fall * 10, child: Icon(i.isEven ? Icons.square : Icons.circle, color: colors[i % colors.length], size: 10)));
+    })),
+  )));
+}
+
+class _RewardLevelUpBanner extends StatefulWidget {
+  const _RewardLevelUpBanner({required this.reward, required this.onClose, required this.onEquip});
+  final LevelUpReward reward;
+  final VoidCallback onClose;
+  final VoidCallback onEquip;
+  @override
+  State<_RewardLevelUpBanner> createState() => _RewardLevelUpBannerState();
+}
+
+class _RewardLevelUpBannerState extends State<_RewardLevelUpBanner> with SingleTickerProviderStateMixin {
+  late final AnimationController _timer;
+  @override
+  void initState() { super.initState(); _timer = AnimationController(vsync: this, duration: const Duration(seconds: 10))..forward()..addStatusListener((s) { if (s == AnimationStatus.completed) widget.onClose(); }); }
+  @override
+  void dispose() { _timer.dispose(); super.dispose(); }
+  @override
+  Widget build(BuildContext context) => Center(child: SlideTransition(
+    position: Tween<Offset>(begin: const Offset(0, -1), end: Offset.zero).animate(CurvedAnimation(parent: _timer, curve: const Interval(0, .08, curve: Curves.easeOutBack))),
+    child: Container(width: 520, padding: const EdgeInsets.fromLTRB(18, 14, 18, 8), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: .22), blurRadius: 18)]), child: Column(mainAxisSize: MainAxisSize.min, children: [
+      SizedBox(height: 58, child: AnimatedBuilder(animation: _timer, builder: (_, __) {
+        if (_timer.value < .3) {
+          const phrase = '¡Subiste de nivel!';
+          final progress = (_timer.value / .3).clamp(0, 1).toDouble();
+          final fade = (1 - (progress - .8).clamp(0, .2) * 5).toDouble();
+          return Center(child: Opacity(opacity: fade, child: Text(phrase.substring(0, (phrase.length * progress).floor()), style: const TextStyle(fontSize: 23, fontWeight: FontWeight.bold, color: Color(0xFF1E7E70)))));
+        }
+        return Row(children: [const Icon(Icons.gradient, color: Colors.purple, size: 40), const SizedBox(width: 12), Expanded(child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [Text(widget.reward.name, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold)), const Text('Marco de perfil', style: TextStyle(color: Colors.black54, fontSize: 12))])), ElevatedButton(onPressed: widget.onEquip, style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF00AF92), foregroundColor: Colors.white), child: const Text('Equipar'))]);
+      })),
+      AnimatedBuilder(animation: _timer, builder: (_, __) => LinearProgressIndicator(value: 1 - _timer.value, minHeight: 3, color: const Color(0xFF00AF92), backgroundColor: Colors.grey[200])),
+    ])),
+  ));
 }
 
 class _FeedScreenState extends State<FeedScreen> {
@@ -22,10 +207,12 @@ class _FeedScreenState extends State<FeedScreen> {
   bool _isInitialLoading = true;
   bool _isLoadingMore = false;
   int _currentPage = 1;
+  LevelUpReward? _levelUpReward;
 
   @override
   void initState() {
     super.initState();
+    GamificationDemoController.instance.addListener(_onGamificationChanged);
     _fetchInitialPosts();
 
     _scrollController.addListener(() {
@@ -40,8 +227,14 @@ class _FeedScreenState extends State<FeedScreen> {
 
   @override
   void dispose() {
+    GamificationDemoController.instance.removeListener(_onGamificationChanged);
     _scrollController.dispose();
     super.dispose();
+  }
+
+  void _onGamificationChanged() {
+    final reward = GamificationDemoController.instance.takePendingLevelUp();
+    if (reward != null && mounted) setState(() => _levelUpReward = reward);
   }
 
   Future<void> _fetchInitialPosts() async {
@@ -93,12 +286,38 @@ class _FeedScreenState extends State<FeedScreen> {
 
     return Scaffold(
       backgroundColor: _bgColor,
-      body: Column(
+      body: Stack(
         children: [
-          _buildTopBar(isDesktop),
-          Expanded(
-            child: isDesktop ? _buildDesktopLayout() : _buildMobileLayout(),
+          Column(
+            children: [
+              _buildTopBar(isDesktop),
+              Expanded(
+                child: isDesktop ? _buildDesktopLayout() : _buildMobileLayout(),
+              ),
+            ],
           ),
+          if (isDesktop) const Positioned(right: 24, bottom: 0, child: DesktopChat()),
+          if (_levelUpReward != null)
+            const Positioned.fill(child: _FullScreenConfetti()),
+          if (_levelUpReward != null)
+            Positioned(
+              top: 18,
+              left: 0,
+              right: 0,
+              child: _RewardLevelUpBanner(
+                reward: _levelUpReward!,
+                onClose: () => setState(() => _levelUpReward = null),
+                onEquip: () {
+                  setState(() => _levelUpReward = null);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const ProfileScreen(openInventory: true),
+                    ),
+                  );
+                },
+              ),
+            ),
         ],
       ),
     );
@@ -115,7 +334,6 @@ class _FeedScreenState extends State<FeedScreen> {
           Image.asset(
             'assets/imagenes/meloop.png',
             height: 24,
-            color: Colors.white,
             fit: BoxFit.contain,
           ),
           if (isDesktop) ...[
@@ -168,7 +386,7 @@ class _FeedScreenState extends State<FeedScreen> {
           ],
           Row(
             children: [
-              const Icon(Icons.notifications, color: Colors.white, size: 20),
+              const NotificationsMenu(),
               const SizedBox(width: 16),
               InkWell(
                 onTap: () {
@@ -373,7 +591,28 @@ class _FeedScreenState extends State<FeedScreen> {
   }
 
   Widget _buildLevelCard() {
-    return Container(
+    return AnimatedBuilder(
+      animation: GamificationDemoController.instance,
+      builder: (context, _) {
+        final game = GamificationDemoController.instance;
+        return LevelProgress(
+          level: game.level,
+          xp: game.xp,
+          xpNeeded: GamificationDemoController.xpNeeded,
+          compact: true,
+          accentColor: _tealAccent,
+        );
+      },
+    );
+  }
+
+  Widget _buildLegacyLevelCard() {
+    return AnimatedBuilder(
+      animation: GamificationDemoController.instance,
+      builder: (context, _) {
+        final game = GamificationDemoController.instance;
+        final percentage = (game.xp / GamificationDemoController.xpNeeded * 100).round();
+        return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -385,8 +624,8 @@ class _FeedScreenState extends State<FeedScreen> {
             children: [
               Icon(Icons.star, color: _tealAccent, size: 14),
               const SizedBox(width: 4),
-              const Text(
-                "Nivel 3 -> Buen progreso",
+              Text(
+                "Nivel ${game.level} · (${game.xp} XP / 100 XP) $percentage%",
                 style: TextStyle(
                   color: Colors.black87,
                   fontSize: 11,
@@ -397,7 +636,7 @@ class _FeedScreenState extends State<FeedScreen> {
           ),
           const SizedBox(height: 8),
           LinearProgressIndicator(
-            value: 0.6,
+            value: game.xp / GamificationDemoController.xpNeeded,
             backgroundColor: Colors.grey[200],
             valueColor: AlwaysStoppedAnimation<Color>(_tealAccent),
             minHeight: 6,
@@ -405,6 +644,8 @@ class _FeedScreenState extends State<FeedScreen> {
           ),
         ],
       ),
+        );
+      },
     );
   }
 
@@ -530,7 +771,10 @@ class _FeedScreenState extends State<FeedScreen> {
                             ),
                           );
                         }
-                        return _buildPostCard(_posts[index]);
+                        return PostCard(
+                          postData: _posts[index],
+                          tealAccent: _tealAccent,
+                        );
                       },
                     ),
             ),
