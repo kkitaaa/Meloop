@@ -31,8 +31,83 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8001
 ## Endpoints base
 
 - GET `/` - información general
-- GET `/health` - estado del servicio
+- GET `/health` - comprueba que el proceso está vivo
+- GET `/ready` - comprueba que el modelo y el pipeline de datos están inicializados
 - POST `/predict` - endpoint de prueba para recibir payloads del backend
+- POST `/recommendations/music` - ordena un catálogo de canciones o artistas por similitud
+	con el perfil musical del usuario
+- POST `/recommendations/friends` - devuelve candidatos ordenados por compatibilidad musical
+
+`/health` responde `200` mientras el proceso esté activo. `/ready` responde `200`
+cuando el modelo y el pipeline de procesamiento están inicializados, y `503` si falta
+cualquiera de ellos. Las respuestas de recomendaciones incluyen `model_version` para
+identificar la versión usada; el catálogo y las preferencias se envían en cada petición,
+por lo que no hay un dataset global que cargar al arrancar.
+
+En Docker Compose, el servicio publica `http://ml-service:8001/ready` en la red interna
+y `http://localhost:8001/ready` desde el host. El healthcheck del contenedor consulta
+este endpoint.
+
+### Recomendaciones musicales
+
+`POST /recommendations/music` valida el payload con Pydantic, normaliza el perfil y el
+catálogo mediante `UserPreferencesPipeline`, y usa similitud coseno de scikit-learn para
+ordenar los candidatos. El servicio no inventa canciones: el backend debe enviar el
+catálogo que quiere que el modelo evalúe.
+
+Ejemplo de petición:
+
+```json
+{
+	"user_id": 42,
+	"limit": 2,
+	"profile": {
+		"genres": ["rock"],
+		"artists": ["Arctic Monkeys"],
+		"songs": []
+	},
+	"catalog": [
+		{"item_id": 101, "profile": {"genres": ["rock"], "artists": ["Arctic Monkeys"]}},
+		{"item_id": 102, "profile": {"genres": ["jazz"], "artists": ["Miles Davis"]}}
+	]
+}
+```
+
+La respuesta usa el contrato común de recomendaciones (`user_id`, `recommendations`,
+`model`, `model_version` e `interaction_count`). Cada recomendación incluye `item_id`, `score` y una
+razón basada en las preferencias compartidas. `catalog` debe contener al menos un
+elemento y `limit` está restringido al intervalo 1-50.
+
+### Recomendaciones de amigos
+
+`POST /recommendations/friends` recibe el `user_id`, el perfil musical del usuario y los
+perfiles candidatos. La respuesta incluye como máximo `limit` candidatos, su puntuación de
+compatibilidad y una razón legible basada en las preferencias compartidas. FastAPI publica
+el contrato interactivo en `/docs` y el esquema OpenAPI en `/openapi.json`.
+
+Ejemplo de petición:
+
+```json
+{
+	"user_id": 42,
+	"limit": 5,
+	"profile": {
+		"genres": ["rock"],
+		"artists": ["Arctic Monkeys"],
+		"songs": []
+	},
+	"candidate_profiles": [
+		{
+			"user_id": 7,
+			"profile": {"genres": ["rock"], "artists": ["Radiohead"], "songs": []}
+		}
+	]
+}
+```
+
+Si el usuario no tiene géneros, artistas, canciones o preferencias, el servicio responde
+`200` con `recommendations: []` y no inventa candidatos. Los IDs deben ser positivos y
+`limit` está restringido al intervalo 1-50.
 
 ## Estructura
 

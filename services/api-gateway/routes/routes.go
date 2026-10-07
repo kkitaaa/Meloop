@@ -19,4 +19,22 @@ func SetupRoutes(router *gin.Engine) {
 	// Enrutar peticiones de autenticación (conservando el prefijo /auth en el destino)
 	router.Any("/auth", controllers.ProxyToService("AUTH_SERVICE_URL", "http://localhost:8083", ""))
 	router.Any("/auth/*any", controllers.ProxyToService("AUTH_SERVICE_URL", "http://localhost:8083", ""))
+
+	// Enrutar peticiones de relaciones sociales (conservando el prefijo /friends en el destino)
+	router.Any("/friends", controllers.ProxyToService("SOCIAL_SERVICE_URL", "http://localhost:8086", ""))
+	router.Any("/friends/*any", controllers.ProxyToService("SOCIAL_SERVICE_URL", "http://localhost:8086", ""))
+
+	// Enrutar peticiones de recomendaciones (conservando el prefijo /recommendations en el destino)
+	router.Any("/recommendations", controllers.ProxyToService("RECOMMENDATION_SERVICE_URL", "http://localhost:8087", ""))
+	router.Any("/recommendations/*any", controllers.ProxyToService("RECOMMENDATION_SERVICE_URL", "http://localhost:8087", ""))
+
+	// Enrutar peticiones multimedia (conservando el prefijo /media en el destino)
+	router.Any("/media", controllers.ProxyToService("MEDIA_SERVICE_URL", "http://localhost:8085", ""))
+	router.Any("/media/*any", controllers.ProxyToService("MEDIA_SERVICE_URL", "http://localhost:8085", ""))
+
+	// Enrutar peticiones versionadas v1
+	router.Any("/v1/users", controllers.ProxyToService("USER_SERVICE_URL", "http://localhost:8082", ""))
+	router.Any("/v1/users/*any", controllers.ProxyToService("USER_SERVICE_URL", "http://localhost:8082", ""))
+	router.Any("/v1/media", controllers.ProxyToService("MEDIA_SERVICE_URL", "http://localhost:8085", ""))
+	router.Any("/v1/media/*any", controllers.ProxyToService("MEDIA_SERVICE_URL", "http://localhost:8085", ""))
 }

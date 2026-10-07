@@ -41,8 +41,19 @@ func rabbitURL() string {
 
 func publishPostEvent(eventName, routingKey, userID, postID string) error {
 	logger := logging.New("post-service")
+func publishPostEvent(eventName, routingKey, userID, postID string) error {
+    logger := logging.New("post-service")
 
-	conn, err := amqp.Dial(rabbitURL())
+    rabbitURL := os.Getenv("RABBITMQ_URL")
+    if rabbitURL == "" {
+        rabbitURL = "amqp://meloop:Meloop.67@localhost:5672/"
+    }
+
+    conn, err := amqp.Dial(rabbitURL)
+    if err != nil {
+        return fmt.Errorf("error conectando a RabbitMQ: %w", err)
+    }
+
 	if err != nil {
 		return fmt.Errorf("error conectando a RabbitMQ: %w", err)
 	}
@@ -102,19 +113,20 @@ func publishPostEvent(eventName, routingKey, userID, postID string) error {
 }
 
 func PublishPostLiked(userID, postID string) error {
-	return publishPostEvent(
-		"PostLiked",
-		"post.liked",
-		userID,
-		postID,
-	)
+    return publishPostEvent(
+        "PostLiked",
+        "post.liked",
+        userID,
+        postID,
+    )
 }
 
 func PublishPostUnliked(userID, postID string) error {
-	return publishPostEvent(
-		"PostUnliked",
-		"post.unliked",
-		userID,
-		postID,
-	)
+    return publishPostEvent(
+        "PostUnliked",
+        "post.unliked",
+        userID,
+        postID,
+    )
 }
+

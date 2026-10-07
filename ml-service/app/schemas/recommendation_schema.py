@@ -1,11 +1,59 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
+class Interaction(BaseModel):
+    type: Literal["like", "friend_added", "comment", "post_interaction"]
+    target_id: int = Field(..., ge=1)
+
+
+class UserProfile(BaseModel):
+    genres: list[str] = Field(default_factory=list)
+    artists: list[str] = Field(default_factory=list)
+    songs: list[str] = Field(default_factory=list)
+
+
+class CandidateProfile(BaseModel):
+    user_id: int = Field(..., ge=1)
+    profile: UserProfile = Field(default_factory=UserProfile)
+
+
 class RecommendationRequest(BaseModel):
-    user_id: int = Field(..., description="ID del usuario para generar recomendaciones.")
+    user_id: int = Field(..., ge=1, description="ID del usuario para generar recomendaciones.")
     limit: int = Field(default=10, ge=1, le=50, description="Cantidad máxima de sugerencias.")
+    type: Literal["all", "music", "friends"] = "all"
     preferences: list[str] = Field(
         default_factory=list, description="Gustos o categorías del usuario."
+    )
+    profile: UserProfile = Field(default_factory=UserProfile)
+    candidate_profiles: list[CandidateProfile] = Field(
+        default_factory=list,
+        description="Perfiles candidatos que el modelo debe ordenar.",
+    )
+    interactions: list[Interaction] = Field(
+        default_factory=list,
+        description="Interacciones recientes que pueden cambiar las sugerencias.",
+    )
+
+
+class MusicCatalogItem(BaseModel):
+    item_id: int = Field(..., ge=1)
+    profile: UserProfile = Field(default_factory=UserProfile)
+
+
+class MusicRecommendationRequest(BaseModel):
+    user_id: int = Field(..., ge=1, description="ID del usuario para generar recomendaciones.")
+    limit: int = Field(default=10, ge=1, le=50, description="Cantidad máxima de sugerencias.")
+    preferences: list[str] = Field(
+        default_factory=list, description="Gustos adicionales del usuario."
+    )
+    profile: UserProfile = Field(default_factory=UserProfile)
+    interactions: list[Interaction] = Field(default_factory=list)
+    catalog: list[MusicCatalogItem] = Field(
+        ...,
+        min_length=1,
+        description="Canciones o artistas candidatos que se deben ordenar.",
     )
 
 
@@ -19,3 +67,18 @@ class RecommendationResponse(BaseModel):
     user_id: int
     recommendations: list[RecommendationItem]
     model: str
+    model_version: str
+    interaction_count: int
+
+
+class HealthResponse(BaseModel):
+    status: Literal["ok"]
+    service: str
+
+
+class ReadinessResponse(BaseModel):
+    status: Literal["ready", "not_ready"]
+    service: str
+    model_loaded: bool
+    data_pipeline_loaded: bool
+    model_version: str | None = None

@@ -1,12 +1,28 @@
 package main
 
 import (
+	"database/sql"
 	"log"
 	"os"
 
 	"github.com/gin-gonic/gin"
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
+import (
+    "log"
+    "os"
+
+    "github.com/gin-gonic/gin"
+    "gorm.io/driver/postgres"
+    "gorm.io/gorm"
+
+    "github.com/meloop/post-service/controllers"
+    "github.com/meloop/post-service/messaging"
+    "github.com/meloop/post-service/models"
+    "github.com/meloop/post-service/repositories"
+    "github.com/meloop/post-service/routes"
+    "github.com/meloop/post-service/services"
+
+    infraMinio "github.com/meloop/infrastructure/minio"
+)
 
 	"github.com/meloop/post-service/controllers"
 	"github.com/meloop/post-service/models"
@@ -17,39 +33,72 @@ import (
 )
 
 func main() {
+	// 1. Inicializar el logger
 	logger := logging.New("post-service")
 	logger.Info("service_started")
 
-	// 1. Conectar a Supabase Local (PostgreSQL) en el puerto 15422
-	dbURL := os.Getenv("DB_URL")
-	if dbURL == "" {
-		dbURL = "postgresql://postgres:postgres@127.0.0.1:15422/postgres"
-	}
+    logger := logging.New("post-service")
+    logger.Info("service_started")
 
-	db, err := gorm.Open(postgres.Open(dbURL), &gorm.Config{})
-	if err != nil {
-		log.Fatalf("Error crítico: No se pudo conectar a la base de datos: %v", err)
-	}
+    // 1. Inicializar el cliente de MinIO
+    minioClient, err := infraMinio.InitClient()
+    if err != nil {
+        log.Fatalf("Error crítico: No se pudo conectar a MinIO: %v", err)
+    }
 
-	// 2. Auto-migrar la tabla de likes
-	err = db.AutoMigrate(&models.Like{})
+    // 2. Conectar a Supabase Local (PostgreSQL)
+    dbURL := os.Getenv("DB_URL")
+    if dbURL == "" {
+        dbURL = "postgresql://postgres:postgres@127.0.0.1:15422/postgres"
+    }
+
+    db, err := gorm.Open(postgres.Open(dbURL), &gorm.Config{})
+    if err != nil {
+        log.Fatalf("Error crítico: No se pudo conectar a la base de datos: %v", err)
+    }
+
+    // 3. Auto-migrar las tablas del módulo de likes, comentarios y publicaciones
+    err = db.AutoMigrate(&models.Like{}, &models.Comment{}, &models.Post{})
+    if err != nil {
+        log.Fatalf("Error migrando la base de datos: %v", err)
+    }
+
+    // 4. Publicar un evento de prueba si RabbitMQ está disponible
+    if err := messaging.PublishPostLiked("user-123", "post-456"); err != nil {
+        logger.Error("event_publish_failed", "event", "post.liked", "error", err)
+        log.Printf("Advertencia: RabbitMQ falló, pero el servidor web seguirá iniciando: %v\n", err)
+    } else {
+        logger.Info("event_published", "event", "post.liked")
+    }
+
+    // 5. Inyectar dependencias
+    likeRepo := repositories.NewPostgresLikeRepository(db)
+    likeService := services.NewLikeService(likeRepo)
+    likeController := controllers.NewLikeController(likeService)
+
+    commentRepo := repositories.NewPostgresCommentRepository(db)
+    commentService := services.NewCommentService(commentRepo)
+    commentController := controllers.NewCommentController(commentService)
+
+    postRepo := repositories.NewPostgresPostRepository(db)
+    postController := controllers.NewPostController(postRepo, minioClient)
+
+    router := gin.Default()
+    routes.SetupRoutes(router, likeController, commentController, postController, minioClient)
+
+    logger.Info("http_server_started", "port", "8084")
+    if err := router.Run(":8084"); err != nil {
+        log.Fatalf("Error al iniciar el servidor web: %v", err)
+    }
+}
+
 	if err != nil {
 		log.Fatalf("Error migrando la base de datos: %v", err)
 	}
 
-	// 3. Inyectar dependencias con PostgreSQL
-	repository := repositories.NewPostgresLikeRepository(db)
-	service := services.NewLikeService(repository)
-	controller := controllers.NewLikeController(service)
-
-	router := gin.Default()
-
-	routes.RegisterRoutes(router, controller)
-
-	logger.Info("http_server_started", "port", "8081")
-
-	if err := router.Run(":8081"); err != nil {
-		logger.Error("http_server_failed", "error", err)
-		log.Fatal(err)
-	}
+    logger.Info("http_server_started", "port", "8084")
+    if err := router.Run(":8084"); err != nil {
+        log.Fatalf("Error al iniciar el servidor web: %v", err)
+    }
 }
+

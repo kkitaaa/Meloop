@@ -1,10 +1,16 @@
 import time
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
 from app.logging_config import configure_logging
-from app.schemas.recommendation_schema import RecommendationRequest, RecommendationResponse
+from app.schemas.recommendation_schema import (
+    HealthResponse,
+    MusicRecommendationRequest,
+    ReadinessResponse,
+    RecommendationRequest,
+    RecommendationResponse,
+)
 from app.services.recommendation_service import RecommendationService
 
 logger = configure_logging()
@@ -47,12 +53,26 @@ async def shutdown_event():
     logger.info("service_stopped")
 
 
-@app.get("/health")
+@app.get("/health", response_model=HealthResponse)
 def health_check():
     return {
         "status": "ok",
         "service": "ml-service",
-        "message": "ML service is running",
+    }
+
+
+@app.get("/ready", response_model=ReadinessResponse)
+def readiness_check(response: Response):
+    model_loaded = recommendation_service.model is not None
+    data_pipeline_loaded = recommendation_service.preferences_pipeline is not None
+    ready = recommendation_service.is_ready
+    response.status_code = 200 if ready else 503
+    return {
+        "status": "ready" if ready else "not_ready",
+        "service": "ml-service",
+        "model_loaded": model_loaded,
+        "data_pipeline_loaded": data_pipeline_loaded,
+        "model_version": recommendation_service.model.version if model_loaded else None,
     }
 
 
@@ -66,5 +86,33 @@ def root():
 
 @app.post("/predict", response_model=RecommendationResponse)
 def predict_demo(payload: RecommendationRequest):
-    logger.info("recommendation_requested user_id=%s limit=%s", payload.user_id, payload.limit)
+    logger.info(
+        "recommendation_requested user_id=%s limit=%s interactions=%s",
+        payload.user_id,
+        payload.limit,
+        len(payload.interactions),
+    )
     return recommendation_service.generate(payload)
+
+
+@app.post("/recommendations/friends", response_model=RecommendationResponse)
+def recommend_friends(payload: RecommendationRequest):
+    """Return the best compatible friend candidates for a user profile."""
+    logger.info(
+        "friend_recommendation_requested user_id=%s limit=%s candidates=%s",
+        payload.user_id,
+        payload.limit,
+        len(payload.candidate_profiles),
+    )
+    return recommendation_service.generate_friend_recommendations(payload)
+
+
+@app.post("/recommendations/music", response_model=RecommendationResponse)
+def recommend_music(payload: MusicRecommendationRequest):
+    logger.info(
+        "music_recommendation_requested user_id=%s limit=%s catalog=%s",
+        payload.user_id,
+        payload.limit,
+        len(payload.catalog),
+    )
+    return recommendation_service.generate_music_recommendations(payload)
