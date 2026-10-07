@@ -101,7 +101,9 @@ func recommendationHandler(service *services.RecommendationService) http.Handler
 			return
 		}
 		writer.Header().Set("X-Recommendations-Cache", cacheStatus(cached))
-		if response.FromBackup {
+		if response.Model == "popularity" {
+			writer.Header().Set("X-Recommendations-Source", "popular")
+		} else if response.FromBackup {
 			writer.Header().Set("X-Recommendations-Source", "backup")
 		} else if response.Model == "fallback" {
 			writer.Header().Set("X-Recommendations-Source", "fallback")

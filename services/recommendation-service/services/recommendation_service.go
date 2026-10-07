@@ -21,6 +21,7 @@ type RecommendationService struct {
 	mlClient *MLClient
 	cache    *RecommendationCache
 	profiles repositories.UserProfileRepository
+	popular  repositories.PopularityRepository
 	store    RecommendationStore
 	mu       sync.RWMutex
 	users    map[int]userState
@@ -35,10 +36,12 @@ func NewRecommendationServiceWithRepository(mlClient *MLClient, cacheTTL time.Du
 }
 
 func NewRecommendationServiceWithRepositoryAndStore(mlClient *MLClient, cacheTTL time.Duration, profiles repositories.UserProfileRepository, store RecommendationStore) *RecommendationService {
+	popular, _ := profiles.(repositories.PopularityRepository)
 	return &RecommendationService{
 		mlClient: mlClient,
 		cache:    NewRecommendationCache(cacheTTL),
 		profiles: profiles,
+		popular:  popular,
 		store:    store,
 		users:    make(map[int]userState),
 	}
@@ -67,10 +70,47 @@ func (service *RecommendationService) GetByType(ctx context.Context, userID int,
 		profile = persistedProfile
 		interactions = append(persistedInteractions, interactions...)
 	}
+	preferences := profilePreferences(profile, state.preferences)
+	filteredInteractions := filterInteractions(interactions, recommendationType)
+	if recommendationType != "friends" &&
+		personalSignalCount(preferences, filteredInteractions, profile.InteractionCount) < minimumPersonalSignals &&
+		service.popular != nil {
+		canCheckPriorSet := true
+		if service.store != nil {
+			storedResponse, found, storeErr := service.store.Get(ctx, recommendationStoreKey(userID, recommendationType))
+			if storeErr != nil {
+				slog.Warn("recommendation_backup_read_failed", "user_id", userID, "type", recommendationType, "error", storeErr)
+				canCheckPriorSet = false
+			} else if found && len(storedResponse.Recommendations) > 0 {
+				storedResponse.FromBackup = true
+				storedResponse = limitRecommendations(storedResponse, limit)
+				service.cache.Set(cacheKey, storedResponse)
+				return storedResponse, true, nil
+			}
+		}
+
+		if canCheckPriorSet {
+			popular, err := service.popular.GetPopular(ctx, strconv.Itoa(userID), limit)
+			if err != nil {
+				return models.RecommendationResponse{}, false, fmt.Errorf("load popular recommendations: %w", err)
+			}
+			if len(popular) > 0 {
+				response := popularRecommendationResponse(userID, popular)
+				if service.store != nil {
+					if err := service.store.Set(ctx, recommendationStoreKey(userID, recommendationType), response); err != nil {
+						slog.Warn("recommendation_backup_write_failed", "user_id", userID, "type", recommendationType, "error", err)
+					}
+				}
+				service.cache.Set(cacheKey, response)
+				return response, false, nil
+			}
+		}
+	}
+
 	response, err := service.mlClient.Predict(ctx, models.RecommendationRequest{
 		UserID: userID, Limit: limit, Type: recommendationType,
-		Preferences: profilePreferences(profile, state.preferences), Profile: profile,
-		Interactions: filterInteractions(interactions, recommendationType),
+		Preferences: preferences, Profile: profile,
+		Interactions: filteredInteractions,
 	})
 	if err != nil {
 		if service.store != nil {
@@ -93,6 +133,47 @@ func (service *RecommendationService) GetByType(ctx context.Context, userID int,
 	}
 	service.cache.Set(cacheKey, response)
 	return response, false, nil
+}
+
+const minimumPersonalSignals = 3
+
+func personalSignalCount(preferences []string, interactions []models.Interaction, persistedInteractionCount int) int {
+	interactionCount := len(interactions)
+	if persistedInteractionCount > interactionCount {
+		interactionCount = persistedInteractionCount
+	}
+	return len(preferences) + interactionCount
+}
+
+func popularRecommendationResponse(userID int, popular []models.PopularContent) models.RecommendationResponse {
+	maxCount := int64(0)
+	for _, item := range popular {
+		if item.UsageCount > maxCount {
+			maxCount = item.UsageCount
+		}
+	}
+
+	recommendations := make([]models.RecommendationItem, 0, len(popular))
+	for _, item := range popular {
+		score := 0.0
+		if maxCount > 0 {
+			score = float64(item.UsageCount) / float64(maxCount)
+		}
+		recommendations = append(recommendations, models.RecommendationItem{
+			ItemKey: item.ID,
+			Type:    item.Type,
+			Name:    item.Name,
+			Score:   score,
+			Reason:  "Popular en publicaciones y preferencias recientes",
+		})
+	}
+	return models.RecommendationResponse{
+		UserID:          userID,
+		Recommendations: recommendations,
+		Model:           "popularity",
+		ModelVersion:    "1.0",
+		CalculatedAt:    time.Now().UTC(),
+	}
 }
 
 func recommendationStoreKey(userID int, recommendationType string) string {
