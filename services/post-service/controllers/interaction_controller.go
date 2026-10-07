@@ -1,8 +1,8 @@
 package controllers
 
 import (
-	"net/http"
 	"github.com/gin-gonic/gin"
+	"net/http"
 )
 
 type InteractionController struct {
@@ -17,7 +17,7 @@ func NewInteractionController() *InteractionController {
 func (ctrl *InteractionController) SavePost(c *gin.Context) {
 	postID := c.Param("id")
 	// Simulamos obtener el ID del usuario desde el token JWT
-	userID := c.DefaultQuery("user_id", "current_user_123") 
+	userID := c.DefaultQuery("user_id", "current_user_123")
 
 	// TODO: Llamar a service.SavePost(userID, postID)
 	c.JSON(http.StatusOK, gin.H{
@@ -48,14 +48,14 @@ func (ctrl *InteractionController) GetSavedPosts(c *gin.Context) {
 	// Retornamos una lista vacía simulando la consulta a Supabase
 	c.JSON(http.StatusOK, gin.H{
 		"user_id": userID,
-		"data":    []interface{}{}, 
+		"data":    []interface{}{},
 	})
 }
 
 // SharePost implementa la lógica base para compartir publicaciones (RF-24)[cite: 8]
 func (ctrl *InteractionController) SharePost(c *gin.Context) {
 	postID := c.Param("id")
-	
+
 	type ShareRequest struct {
 		TargetUserID string `json:"target_user_id"` // Para mensajes privados[cite: 8]
 		Platform     string `json:"platform"`       // ej. "whatsapp", "internal"
