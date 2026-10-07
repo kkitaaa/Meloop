@@ -5,6 +5,7 @@ import 'dart:async';
 import '../../../screens/friends_screen.dart';
 import '../../comments/presentation/comments_screen.dart';
 import '../../../widgets/post_card.dart';
+import '../../../widgets/level_progress/level_progress.dart';
 import '../../gamification/presentation/gamification_demo_controller.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -561,6 +562,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildLevelCard() {
+    return AnimatedBuilder(
+      animation: GamificationDemoController.instance,
+      builder: (context, _) {
+        final game = GamificationDemoController.instance;
+        return LevelProgress(
+          level: game.level,
+          xp: game.xp,
+          xpNeeded: GamificationDemoController.xpNeeded,
+          compact: true,
+          accentColor: _tealAccent,
+        );
+      },
+    );
+  }
+
+  Widget _buildLegacyLevelCard() {
     final game = GamificationDemoController.instance;
     final percentage =
         (game.xp / GamificationDemoController.xpNeeded * 100).round();
