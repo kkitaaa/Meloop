@@ -2,7 +2,11 @@ package repositories
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
+	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -110,14 +114,25 @@ func (r *postgresUserRepository) Create(ctx context.Context, user *models.Usuari
 	if r.pool == nil {
 		return errors.New("database connection pool is not initialized")
 	}
+
+	if user.IDUsuario == "" {
+		b := make([]byte, 16)
+		if _, err := rand.Read(b); err == nil {
+			user.IDUsuario = hex.EncodeToString(b)
+		} else {
+			user.IDUsuario = fmt.Sprintf("u_%d", time.Now().UnixNano())
+		}
+	}
+
 	query := `
-		INSERT INTO USUARIO (username, correo, contrasena_hash, id_nivel, experiencia)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO USUARIO (id_usuario, username, correo, contrasena_hash, id_nivel, experiencia)
+		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING id_usuario::text
 	`
 	err := r.pool.QueryRow(
 		ctx,
 		query,
+		user.IDUsuario,
 		user.Username,
 		user.Correo,
 		user.ContrasenaHash,

@@ -11,6 +11,7 @@ import (
 
 type CompatibilityRepository interface {
 	GetMusicalProfiles(ctx context.Context, userAID, userBID string) (*models.UserMusicalData, *models.UserMusicalData, error)
+	GetBatchMusicalProfiles(ctx context.Context, userIDs []string) (map[string]*models.UserMusicalData, error)
 }
 
 type postgresCompatibilityRepository struct {
@@ -120,6 +121,104 @@ func (r *postgresCompatibilityRepository) GetMusicalProfiles(ctx context.Context
 	userB.InteractedTracks = mapKeysToSlice(interactedB)
 
 	return userA, userB, nil
+}
+
+func (r *postgresCompatibilityRepository) GetBatchMusicalProfiles(ctx context.Context, userIDs []string) (map[string]*models.UserMusicalData, error) {
+	if r.pool == nil {
+		return nil, errors.New("database connection pool is not initialized")
+	}
+
+	result := make(map[string]*models.UserMusicalData, len(userIDs))
+	if len(userIDs) == 0 {
+		return result, nil
+	}
+
+	for _, uid := range userIDs {
+		result[uid] = &models.UserMusicalData{
+			UserID:           uid,
+			Genres:           make([]string, 0),
+			Artists:          make([]string, 0),
+			Tracks:           make([]string, 0),
+			InteractedTracks: make([]string, 0),
+		}
+	}
+
+	genresMap := make(map[string]map[string]struct{}, len(userIDs))
+	artistsMap := make(map[string]map[string]struct{}, len(userIDs))
+	tracksMap := make(map[string]map[string]struct{}, len(userIDs))
+	interactedMap := make(map[string]map[string]struct{}, len(userIDs))
+
+	for _, uid := range userIDs {
+		genresMap[uid] = make(map[string]struct{})
+		artistsMap[uid] = make(map[string]struct{})
+		tracksMap[uid] = make(map[string]struct{})
+		interactedMap[uid] = make(map[string]struct{})
+	}
+
+	// 1. Obtener preferencias musicales de todos los usuarios en lote
+	prefRows, err := r.pool.Query(ctx, `
+		SELECT id_usuario::text, UPPER(TRIM(tipo)), TRIM(spotify_id)
+		FROM preferencia_musical
+		WHERE id_usuario::text = ANY($1)
+		  AND spotify_id IS NOT NULL 
+		  AND TRIM(spotify_id) != ''
+	`, userIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer prefRows.Close()
+
+	for prefRows.Next() {
+		var userID, prefType, spotifyID string
+		if err := prefRows.Scan(&userID, &prefType, &spotifyID); err != nil {
+			return nil, err
+		}
+		if _, exists := result[userID]; exists {
+			classifyPreference(prefType, spotifyID, genresMap[userID], artistsMap[userID], tracksMap[userID])
+		}
+	}
+	if err := prefRows.Err(); err != nil {
+		return nil, err
+	}
+
+	// 2. Obtener canciones interactuadas de todos los usuarios en lote
+	intRows, err := r.pool.Query(ctx, `
+		SELECT DISTINCT i.id_usuario::text, COALESCE(c.spotify_id, p.id_cancion::text) AS song_id
+		FROM interaccion i
+		JOIN publicacion p ON p.id_publicacion = i.id_publicacion
+		LEFT JOIN cancion c ON c.id_cancion = p.id_cancion
+		WHERE i.id_usuario::text = ANY($1)
+		  AND p.id_cancion IS NOT NULL
+	`, userIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer intRows.Close()
+
+	for intRows.Next() {
+		var userID, songID string
+		if err := intRows.Scan(&userID, &songID); err != nil {
+			return nil, err
+		}
+		songID = strings.TrimSpace(songID)
+		if songID != "" {
+			if _, exists := result[userID]; exists {
+				interactedMap[userID][songID] = struct{}{}
+			}
+		}
+	}
+	if err := intRows.Err(); err != nil {
+		return nil, err
+	}
+
+	for _, uid := range userIDs {
+		result[uid].Genres = mapKeysToSlice(genresMap[uid])
+		result[uid].Artists = mapKeysToSlice(artistsMap[uid])
+		result[uid].Tracks = mapKeysToSlice(tracksMap[uid])
+		result[uid].InteractedTracks = mapKeysToSlice(interactedMap[uid])
+	}
+
+	return result, nil
 }
 
 func classifyPreference(prefType, spotifyID string, genres, artists, tracks map[string]struct{}) {

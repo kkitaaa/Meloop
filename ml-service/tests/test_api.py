@@ -1,8 +1,44 @@
 from fastapi.testclient import TestClient
 
+from app import main as main_module
 from app.main import app
 
 client = TestClient(app)
+
+
+def test_health_reports_live_process():
+    response = client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok", "service": "ml-service"}
+
+
+def test_ready_reports_loaded_model_and_data_pipeline():
+    response = client.get("/ready")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "ready",
+        "service": "ml-service",
+        "model_loaded": True,
+        "data_pipeline_loaded": True,
+        "model_version": "1.0.0",
+    }
+
+
+def test_ready_returns_service_unavailable_when_model_is_missing(monkeypatch):
+    class UnavailableService:
+        model = None
+        preferences_pipeline = object()
+        is_ready = False
+
+    monkeypatch.setattr(main_module, "recommendation_service", UnavailableService())
+
+    response = client.get("/ready")
+
+    assert response.status_code == 503
+    assert response.json()["status"] == "not_ready"
+    assert response.json()["model_loaded"] is False
 
 
 def test_predict_changes_after_new_like():
@@ -88,6 +124,7 @@ def test_music_recommendations_rank_catalog_with_pipeline_and_model():
     assert response.status_code == 200
     body = response.json()
     assert body["model"] == "music_content_similarity"
+    assert body["model_version"] == "1.0.0"
     assert [item["item_id"] for item in body["recommendations"]] == [101, 102]
     assert body["recommendations"][0]["score"] == 1.0
 
