@@ -2,6 +2,9 @@ package services
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -52,11 +55,6 @@ func (service *RecommendationService) Get(ctx context.Context, userID, limit int
 }
 
 func (service *RecommendationService) GetByType(ctx context.Context, userID int, recommendationType string, limit int) (models.RecommendationResponse, bool, error) {
-	cacheKey := fmt.Sprintf("user:%d:%s:%d", userID, recommendationType, limit)
-	if response, ok := service.cache.Get(cacheKey); ok {
-		return response, true, nil
-	}
-
 	service.mu.RLock()
 	state := service.users[userID]
 	service.mu.RUnlock()
@@ -72,43 +70,51 @@ func (service *RecommendationService) GetByType(ctx context.Context, userID int,
 	}
 	preferences := profilePreferences(profile, state.preferences)
 	filteredInteractions := filterInteractions(interactions, recommendationType)
+	fingerprint, err := recommendationFingerprint(preferences, filteredInteractions, profile.InteractionCount)
+	if err != nil {
+		return models.RecommendationResponse{}, false, fmt.Errorf("fingerprint recommendation inputs: %w", err)
+	}
+	cacheKey := recommendationCacheKey(userID, recommendationType)
+	localCacheKey := localRecommendationCacheKey(userID, recommendationType, fingerprint)
+	if cacheStore, ok := service.store.(RecommendationCacheStore); ok {
+		cached, found, cacheErr := cacheStore.GetCached(ctx, cacheKey)
+		if cacheErr != nil {
+			slog.Warn("recommendation_cache_read_failed", "user_id", userID, "type", recommendationType, "error", cacheErr)
+		} else if found && cached.Fingerprint == fingerprint {
+			service.cache.Set(localCacheKey, cached.Response)
+			return limitRecommendations(cached.Response, limit), true, nil
+		} else if found {
+			if err := cacheStore.InvalidateCached(ctx, userID); err != nil {
+				slog.Warn("recommendation_cache_invalidate_failed", "user_id", userID, "error", err)
+			}
+			service.cache.InvalidateUser(userID)
+		}
+	}
+	if response, ok := service.cache.Get(localCacheKey); ok {
+		return limitRecommendations(response, limit), true, nil
+	}
+
 	if recommendationType != "friends" &&
 		personalSignalCount(preferences, filteredInteractions, profile.InteractionCount) < minimumPersonalSignals &&
 		service.popular != nil {
-		canCheckPriorSet := true
-		if service.store != nil {
-			storedResponse, found, storeErr := service.store.Get(ctx, recommendationStoreKey(userID, recommendationType))
-			if storeErr != nil {
-				slog.Warn("recommendation_backup_read_failed", "user_id", userID, "type", recommendationType, "error", storeErr)
-				canCheckPriorSet = false
-			} else if found && len(storedResponse.Recommendations) > 0 {
-				storedResponse.FromBackup = true
-				storedResponse = limitRecommendations(storedResponse, limit)
-				service.cache.Set(cacheKey, storedResponse)
-				return storedResponse, true, nil
-			}
+		popular, err := service.popular.GetPopular(ctx, strconv.Itoa(userID), recommendationCacheLimit)
+		if err != nil {
+			return models.RecommendationResponse{}, false, fmt.Errorf("load popular recommendations: %w", err)
 		}
-
-		if canCheckPriorSet {
-			popular, err := service.popular.GetPopular(ctx, strconv.Itoa(userID), limit)
-			if err != nil {
-				return models.RecommendationResponse{}, false, fmt.Errorf("load popular recommendations: %w", err)
-			}
-			if len(popular) > 0 {
-				response := popularRecommendationResponse(userID, popular)
-				if service.store != nil {
-					if err := service.store.Set(ctx, recommendationStoreKey(userID, recommendationType), response); err != nil {
-						slog.Warn("recommendation_backup_write_failed", "user_id", userID, "type", recommendationType, "error", err)
-					}
+		if len(popular) > 0 {
+			response := popularRecommendationResponse(userID, popular)
+			service.saveRecommendationCache(ctx, userID, recommendationType, fingerprint, response)
+			if service.store != nil {
+				if err := service.store.Set(ctx, recommendationStoreKey(userID, recommendationType), response); err != nil {
+					slog.Warn("recommendation_backup_write_failed", "user_id", userID, "type", recommendationType, "error", err)
 				}
-				service.cache.Set(cacheKey, response)
-				return response, false, nil
 			}
+			return limitRecommendations(response, limit), false, nil
 		}
 	}
 
 	response, err := service.mlClient.Predict(ctx, models.RecommendationRequest{
-		UserID: userID, Limit: limit, Type: recommendationType,
+		UserID: userID, Limit: recommendationCacheLimit, Type: recommendationType,
 		Preferences: preferences, Profile: profile,
 		Interactions: filteredInteractions,
 	})
@@ -126,16 +132,57 @@ func (service *RecommendationService) GetByType(ctx context.Context, userID int,
 	}
 	response.CalculatedAt = time.Now().UTC()
 	response.FromBackup = false
+	service.saveRecommendationCache(ctx, userID, recommendationType, fingerprint, response)
 	if service.store != nil {
 		if err := service.store.Set(ctx, recommendationStoreKey(userID, recommendationType), response); err != nil {
 			slog.Warn("recommendation_backup_write_failed", "user_id", userID, "type", recommendationType, "error", err)
 		}
 	}
-	service.cache.Set(cacheKey, response)
-	return response, false, nil
+	return limitRecommendations(response, limit), false, nil
 }
 
 const minimumPersonalSignals = 3
+const recommendationCacheTTL = 24 * time.Hour
+const recommendationCacheLimit = 50
+
+type recommendationFingerprintInput struct {
+	Preferences      []string
+	Interactions     []models.Interaction
+	InteractionCount int
+}
+
+func recommendationFingerprint(preferences []string, interactions []models.Interaction, interactionCount int) (string, error) {
+	value, err := json.Marshal(recommendationFingerprintInput{
+		Preferences:      preferences,
+		Interactions:     interactions,
+		InteractionCount: interactionCount,
+	})
+	if err != nil {
+		return "", err
+	}
+	hash := sha256.Sum256(value)
+	return hex.EncodeToString(hash[:]), nil
+}
+
+func recommendationCacheKey(userID int, recommendationType string) string {
+	return fmt.Sprintf("recommendations:calculated:%d:%s", userID, recommendationType)
+}
+
+func localRecommendationCacheKey(userID int, recommendationType, fingerprint string) string {
+	return fmt.Sprintf("user:%d:%s:%s", userID, recommendationType, fingerprint)
+}
+
+func (service *RecommendationService) saveRecommendationCache(ctx context.Context, userID int, recommendationType, fingerprint string, response models.RecommendationResponse) {
+	service.cache.Set(localRecommendationCacheKey(userID, recommendationType, fingerprint), response)
+	if cacheStore, ok := service.store.(RecommendationCacheStore); ok {
+		if err := cacheStore.SetCached(ctx, recommendationCacheKey(userID, recommendationType), CachedRecommendation{
+			Fingerprint: fingerprint,
+			Response:    response,
+		}, recommendationCacheTTL); err != nil {
+			slog.Warn("recommendation_cache_write_failed", "user_id", userID, "type", recommendationType, "error", err)
+		}
+	}
+}
 
 func personalSignalCount(preferences []string, interactions []models.Interaction, persistedInteractionCount int) int {
 	interactionCount := len(interactions)
@@ -211,6 +258,11 @@ func (service *RecommendationService) RecordInteraction(ctx context.Context, use
 	service.users[userID] = state
 	service.mu.Unlock()
 	service.cache.InvalidateUser(userID)
+	if cacheStore, ok := service.store.(RecommendationCacheStore); ok {
+		if err := cacheStore.InvalidateCached(ctx, userID); err != nil {
+			slog.Warn("recommendation_cache_invalidate_failed", "user_id", userID, "error", err)
+		}
+	}
 
 	response, _, err := service.Get(ctx, userID, limit)
 	return response, err

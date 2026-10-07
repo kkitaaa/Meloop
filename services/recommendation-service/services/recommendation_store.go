@@ -16,6 +16,17 @@ type RecommendationStore interface {
 	Set(ctx context.Context, key string, response models.RecommendationResponse) error
 }
 
+type CachedRecommendation struct {
+	Fingerprint string
+	Response    models.RecommendationResponse
+}
+
+type RecommendationCacheStore interface {
+	GetCached(ctx context.Context, key string) (CachedRecommendation, bool, error)
+	SetCached(ctx context.Context, key string, cached CachedRecommendation, ttl time.Duration) error
+	InvalidateCached(ctx context.Context, userID int) error
+}
+
 type RedisRecommendationStore struct {
 	client *redis.Client
 }
@@ -54,6 +65,45 @@ func (store *RedisRecommendationStore) Set(ctx context.Context, key string, resp
 	}
 	if err := store.client.Set(ctx, key, value, 0).Err(); err != nil {
 		return fmt.Errorf("write recommendation backup to Redis: %w", err)
+	}
+	return nil
+}
+
+func (store *RedisRecommendationStore) GetCached(ctx context.Context, key string) (CachedRecommendation, bool, error) {
+	value, err := store.client.Get(ctx, key).Bytes()
+	if errors.Is(err, redis.Nil) {
+		return CachedRecommendation{}, false, nil
+	}
+	if err != nil {
+		return CachedRecommendation{}, false, fmt.Errorf("read calculated recommendation cache from Redis: %w", err)
+	}
+
+	var cached CachedRecommendation
+	if err := json.Unmarshal(value, &cached); err != nil {
+		return CachedRecommendation{}, false, fmt.Errorf("decode calculated recommendation cache from Redis: %w", err)
+	}
+	return cached, true, nil
+}
+
+func (store *RedisRecommendationStore) SetCached(ctx context.Context, key string, cached CachedRecommendation, ttl time.Duration) error {
+	value, err := json.Marshal(cached)
+	if err != nil {
+		return fmt.Errorf("encode calculated recommendation cache for Redis: %w", err)
+	}
+	if err := store.client.Set(ctx, key, value, ttl).Err(); err != nil {
+		return fmt.Errorf("write calculated recommendation cache to Redis: %w", err)
+	}
+	return nil
+}
+
+func (store *RedisRecommendationStore) InvalidateCached(ctx context.Context, userID int) error {
+	keys := []string{
+		recommendationCacheKey(userID, "all"),
+		recommendationCacheKey(userID, "music"),
+		recommendationCacheKey(userID, "friends"),
+	}
+	if err := store.client.Del(ctx, keys...).Err(); err != nil {
+		return fmt.Errorf("invalidate calculated recommendation cache in Redis: %w", err)
 	}
 	return nil
 }

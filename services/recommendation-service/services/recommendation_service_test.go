@@ -39,7 +39,10 @@ func (repository *coldStartRepositoryFake) GetPopular(_ context.Context, _ strin
 }
 
 type recommendationStoreFake struct {
-	responses map[string]models.RecommendationResponse
+	responses        map[string]models.RecommendationResponse
+	cached           map[string]CachedRecommendation
+	cacheTTL         time.Duration
+	invalidatedUsers []int
 }
 
 func (store *recommendationStoreFake) Get(_ context.Context, key string) (models.RecommendationResponse, bool, error) {
@@ -49,6 +52,28 @@ func (store *recommendationStoreFake) Get(_ context.Context, key string) (models
 
 func (store *recommendationStoreFake) Set(_ context.Context, key string, response models.RecommendationResponse) error {
 	store.responses[key] = response
+	return nil
+}
+
+func (store *recommendationStoreFake) GetCached(_ context.Context, key string) (CachedRecommendation, bool, error) {
+	cached, found := store.cached[key]
+	return cached, found, nil
+}
+
+func (store *recommendationStoreFake) SetCached(_ context.Context, key string, cached CachedRecommendation, ttl time.Duration) error {
+	if store.cached == nil {
+		store.cached = make(map[string]CachedRecommendation)
+	}
+	store.cached[key] = cached
+	store.cacheTTL = ttl
+	return nil
+}
+
+func (store *recommendationStoreFake) InvalidateCached(_ context.Context, userID int) error {
+	store.invalidatedUsers = append(store.invalidatedUsers, userID)
+	for _, recommendationType := range []string{"all", "music", "friends"} {
+		delete(store.cached, recommendationCacheKey(userID, recommendationType))
+	}
 	return nil
 }
 
@@ -105,7 +130,7 @@ func TestRecommendationServiceUsesPopularContentForColdStartWithoutPreviousSet(t
 	}
 }
 
-func TestRecommendationServiceUsesPreviousSetBeforePopularityForColdStart(t *testing.T) {
+func TestRecommendationServiceRefreshesChangedColdStartInsteadOfUsingOldSet(t *testing.T) {
 	repository := &coldStartRepositoryFake{
 		popular: []models.PopularContent{{Type: "song", ID: "track-1", UsageCount: 5}},
 	}
@@ -124,11 +149,94 @@ func TestRecommendationServiceUsesPreviousSetBeforePopularityForColdStart(t *tes
 	)
 
 	response, cached, err := service.GetByType(context.Background(), 42, "music", 10)
-	if err != nil || !cached {
-		t.Fatalf("expected the previous recommendation set, response=%+v cached=%v error=%v", response, cached, err)
+	if err != nil || cached {
+		t.Fatalf("expected a fresh response for changed/no input snapshot, response=%+v cached=%v error=%v", response, cached, err)
 	}
-	if !response.FromBackup || response.Model != "previous-model" || repository.popularCalls != 0 {
-		t.Fatalf("expected previous set before popularity query, response=%+v popularity_calls=%d", response, repository.popularCalls)
+	if response.Model != "popularity" || repository.popularCalls != 1 {
+		t.Fatalf("expected fresh popular results instead of the old set, response=%+v popularity_calls=%d", response, repository.popularCalls)
+	}
+}
+
+func TestRecommendationServiceCachesFor24HoursAndRefreshesWhenPreferencesChange(t *testing.T) {
+	var mlCalls atomic.Int32
+	mlServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		mlCalls.Add(1)
+		var payload models.RecommendationRequest
+		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode ML request: %v", err)
+		}
+		_ = json.NewEncoder(writer).Encode(models.RecommendationResponse{
+			UserID:          payload.UserID,
+			Recommendations: []models.RecommendationItem{{ItemID: int(mlCalls.Load())}, {ItemID: 99}},
+			Model:           "test-model",
+		})
+	}))
+	defer mlServer.Close()
+
+	repository := &coldStartRepositoryFake{
+		profile: models.UserProfile{
+			Genres:  []string{"jazz"},
+			Artists: []string{"Miles Davis"},
+			Songs:   []string{"So What"},
+		},
+	}
+	store := &recommendationStoreFake{responses: make(map[string]models.RecommendationResponse)}
+	service := NewRecommendationServiceWithRepositoryAndStore(NewMLClient(mlServer.URL), time.Minute, repository, store)
+	ctx := context.Background()
+
+	first, cached, err := service.GetByType(ctx, 42, "music", 1)
+	if err != nil || cached || len(first.Recommendations) != 1 {
+		t.Fatalf("unexpected first calculation: response=%+v cached=%v error=%v", first, cached, err)
+	}
+	second, cached, err := service.GetByType(ctx, 42, "music", 10)
+	if err != nil || !cached {
+		t.Fatalf("expected Redis cache hit at a different result limit: response=%+v cached=%v error=%v", second, cached, err)
+	}
+	if len(second.Recommendations) != 2 || second.Recommendations[0].ItemID != first.Recommendations[0].ItemID {
+		t.Fatalf("expected complete saved calculation to be served, first=%+v second=%+v", first, second)
+	}
+	if got := mlCalls.Load(); got != 1 {
+		t.Fatalf("expected one ML calculation within 24 hours, got %d", got)
+	}
+	if store.cacheTTL != 24*time.Hour {
+		t.Fatalf("expected a 24-hour Redis TTL, got %s", store.cacheTTL)
+	}
+
+	repository.profile.Genres = []string{"rock"}
+	updated, cached, err := service.GetByType(ctx, 42, "music", 10)
+	if err != nil || cached {
+		t.Fatalf("expected preference change to trigger immediate calculation, response=%+v cached=%v error=%v", updated, cached, err)
+	}
+	if got := mlCalls.Load(); got != 2 {
+		t.Fatalf("expected preferences change to cause second ML calculation, got %d", got)
+	}
+	if len(store.invalidatedUsers) != 1 || store.invalidatedUsers[0] != 42 {
+		t.Fatalf("expected preference change to invalidate user's Redis marker, got %v", store.invalidatedUsers)
+	}
+}
+
+func TestRecommendationServiceInvalidatesRedisCacheWhenInteractionIsRecorded(t *testing.T) {
+	mlServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		_ = json.NewEncoder(writer).Encode(models.RecommendationResponse{UserID: 42, Model: "test-model"})
+	}))
+	defer mlServer.Close()
+
+	store := &recommendationStoreFake{
+		responses: make(map[string]models.RecommendationResponse),
+		cached: map[string]CachedRecommendation{
+			recommendationCacheKey(42, "music"): {Fingerprint: "previous"},
+		},
+	}
+	service := NewRecommendationServiceWithRepositoryAndStore(NewMLClient(mlServer.URL), time.Minute, nil, store)
+
+	if _, err := service.RecordInteraction(context.Background(), 42, models.Interaction{Type: "like", TargetID: 7}, 10); err != nil {
+		t.Fatalf("record interaction: %v", err)
+	}
+	if len(store.invalidatedUsers) != 1 || store.invalidatedUsers[0] != 42 {
+		t.Fatalf("expected Redis cache invalidation for user 42, got %v", store.invalidatedUsers)
+	}
+	if _, found := store.cached[recommendationCacheKey(42, "music")]; found {
+		t.Fatal("expected old Redis recommendation cache entry to be removed")
 	}
 }
 
@@ -190,6 +298,7 @@ func TestRecommendationServicePersistsRecommendationsAndUsesBackupOnMLFailure(t 
 
 	mlUnavailable.Store(true)
 	service.cache.InvalidateUser(42)
+	delete(store.cached, recommendationCacheKey(42, "music"))
 	backup, cached, err := service.GetByType(ctx, 42, "music", 1)
 	if err != nil || !cached {
 		t.Fatalf("expected stored backup response: response=%+v cached=%v error=%v", backup, cached, err)
