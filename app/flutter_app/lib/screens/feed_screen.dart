@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
-
 import 'dart:async';
-
 import 'friends_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
-import '../../widgets/post_card.dart'; // Importación del nuevo componente reutilizable
+import '../../widgets/post_card.dart';
+import '../../widgets/states/loading_state.dart';
+import '../../widgets/states/empty_state.dart';
+import '../../widgets/states/error_state.dart';
 
 class FeedScreen extends StatefulWidget {
   const FeedScreen({super.key});
@@ -20,9 +21,14 @@ class _FeedScreenState extends State<FeedScreen> {
   // --- Lógica de Paginación y Estado Dinámico ---
   final ScrollController _scrollController = ScrollController();
   final List<Map<String, dynamic>> _posts = [];
+  
   bool _isInitialLoading = true;
   bool _isLoadingMore = false;
   int _currentPage = 1;
+  
+  // Nuevas variables para manejo de errores
+  bool _hasError = false;
+  int _errorCode = 200;
 
   @override
   void initState() {
@@ -33,7 +39,7 @@ class _FeedScreenState extends State<FeedScreen> {
     _scrollController.addListener(() {
       if (_scrollController.position.pixels >=
           _scrollController.position.maxScrollExtent - 200) {
-        if (!_isLoadingMore) {
+        if (!_isLoadingMore && !_hasError) {
           _fetchMorePosts();
         }
       }
@@ -48,13 +54,29 @@ class _FeedScreenState extends State<FeedScreen> {
 
   // Simulación de petición HTTP inicial al API Gateway
   Future<void> _fetchInitialPosts() async {
-    setState(() => _isInitialLoading = true);
+    setState(() {
+      _isInitialLoading = true;
+      _hasError = false; // Reseteamos el error al reintentar
+    });
 
     await Future.delayed(const Duration(seconds: 2)); // Simula latencia de red
 
     if (!mounted) return;
 
+    // Puedes cambiar esto a `true` para probar la pantalla de error visualmente
+    bool simulateError = DateTime.now().second % 2 == 0;
+
+    if (simulateError) {
+      setState(() {
+        _isInitialLoading = false;
+        _hasError = false; // Cambia a true para simular un error
+        _errorCode = 500; // Simulando un error de servidor
+      });
+      return;
+    }
+
     setState(() {
+      _posts.clear(); // Limpiamos si es un refresh
       _posts.addAll(_generateMockPosts(1, 5));
       _isInitialLoading = false;
     });
@@ -125,7 +147,6 @@ class _FeedScreenState extends State<FeedScreen> {
           Image.asset(
             'assets/imagenes/meloop.png',
             height: 24,
-            color: Colors.white,
             fit: BoxFit.contain,
           ),
           if (isDesktop) ...[
@@ -523,50 +544,66 @@ class _FeedScreenState extends State<FeedScreen> {
               ],
             ),
             const Divider(height: 32, thickness: 1, color: Colors.black12),
+            
+            // --- IMPLEMENTACIÓN DE LOS ESTADOS DE CARGA, ERROR Y VACÍO ---
             Expanded(
               child: _isInitialLoading
-                  ? Center(child: CircularProgressIndicator(color: _tealAccent))
-                  : ListView.builder(
-                      controller: _scrollController,
-                      itemCount: _posts.length + (_isLoadingMore ? 1 : 0),
-                      itemBuilder: (context, index) {
-                        if (index == _posts.length) {
-                          return Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 24.0),
-                            child: Center(
-                              child: CircularProgressIndicator(
-                                color: _tealAccent,
-                              ),
-                            ),
-                          );
-                        }
-                        // Uso de la tarjeta reutilizable
-                        return PostCard(
-                          postData: _posts[index],
+                  ? const LoadingState() // Estado animado (Skeletons)
+                  : _hasError
+                      ? ErrorState(
+                          errorCode: _errorCode,
+                          onRetry: _fetchInitialPosts, // Botón para volver a intentar
                           tealAccent: _tealAccent,
-                          onDelete: () {
-                            setState(() {
-                              _posts.removeAt(index);
-                            });
-                          },
-                        );
-                      },
-                    ),
+                        )
+                      : _posts.isEmpty
+                          ? const EmptyState(
+                              title: "Feed vacío",
+                              message: "Aún no hay publicaciones recientes. ¡Sé el primero en crear un blog!",
+                              icon: Icons.post_add,
+                            )
+                          : ListView.builder(
+                              controller: _scrollController,
+                              itemCount: _posts.length + (_isLoadingMore ? 1 : 0),
+                              itemBuilder: (context, index) {
+                                if (index == _posts.length) {
+                                  return Padding(
+                                    padding: const EdgeInsets.symmetric(vertical: 24.0),
+                                    child: Center(
+                                      child: CircularProgressIndicator(
+                                        color: _tealAccent,
+                                      ),
+                                    ),
+                                  );
+                                }
+                                // Uso de la tarjeta reutilizable
+                                return PostCard(
+                                  postData: _posts[index],
+                                  tealAccent: _tealAccent,
+                                  onDelete: () {
+                                    setState(() {
+                                      _posts.removeAt(index);
+                                    });
+                                  },
+                                );
+                              },
+                            ),
             ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _tealAccent,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20),
+            
+            if (!_isInitialLoading && !_hasError && _posts.isNotEmpty)
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _tealAccent,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  elevation: 0,
                 ),
-                elevation: 0,
+                onPressed: _fetchMorePosts, // Conectado al botón manual
+                child: const Text(
+                  "Cargar más blogs",
+                  style: TextStyle(color: Colors.white, fontSize: 12),
+                ),
               ),
-              onPressed: () {},
-              child: const Text(
-                "Cargar más blogs",
-                style: TextStyle(color: Colors.white, fontSize: 12),
-              ),
-            ),
           ],
         ),
       ),
