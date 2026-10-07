@@ -4,8 +4,9 @@ import "os"
 
 // Config almacena la configuración requerida para el microservicio de usuarios
 type Config struct {
-	DatabaseURL string
-	Port        string
+	DatabaseURL     string
+	Port            string
+	MediaServiceURL string
 }
 
 // Load carga las variables de entorno o utiliza valores por defecto locales
@@ -20,8 +21,14 @@ func Load() *Config {
 		port = "8082"
 	}
 
+	mediaServiceURL := os.Getenv("MEDIA_SERVICE_URL")
+	if mediaServiceURL == "" {
+		mediaServiceURL = "http://localhost:8085"
+	}
+
 	return &Config{
-		DatabaseURL: dbURL,
-		Port:        port,
+		DatabaseURL:     dbURL,
+		Port:            port,
+		MediaServiceURL: mediaServiceURL,
 	}
 }
