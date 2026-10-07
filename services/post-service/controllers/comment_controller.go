@@ -13,46 +13,77 @@ type CommentController struct {
 }
 
 func NewCommentController(service *services.CommentService) *CommentController {
-	return &CommentController{service: service}
+return &CommentController{
+		service: service,
+	}
 }
 
-func (cc *CommentController) CreateComment(c *gin.Context) {
-	var comment models.Comment
-	if err := c.ShouldBindJSON(&comment); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+// CreateComment crea un comentario principal en una publicación.
+func (controller *CommentController) CreateComment(c *gin.Context) {
+	postID := c.Param("postId")
+
+	var request models.CreateCommentRequest
+
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid request body",
+		})
 		return
 	}
-	comment.PostID = c.Param("postId")
-	created, err := cc.service.CreateComment(comment)
+
+	comment, err := controller.service.CreateComment(postID, request)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
 		return
 	}
-	c.JSON(http.StatusCreated, created)
+
+	c.JSON(http.StatusCreated, comment)
 }
 
-func (cc *CommentController) GetComments(c *gin.Context) {
-	comments, err := cc.service.GetCommentsByPostID(c.Param("postId"))
+// GetComments obtiene los comentarios de una publicación.
+func (controller *CommentController) GetComments(c *gin.Context) {
+	postID := c.Param("postId")
+
+	comments, err := controller.service.GetComments(postID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
 		return
 	}
+
 	c.JSON(http.StatusOK, comments)
 }
 
-func (cc *CommentController) CreateReply(c *gin.Context) {
-	var comment models.Comment
-	if err := c.ShouldBindJSON(&comment); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+// CreateReply crea una respuesta asociada a un comentario.
+func (controller *CommentController) CreateReply(c *gin.Context) {
+	postID := c.Param("postId")
+	commentID := c.Param("commentId")
+
+	var request models.CreateCommentRequest
+
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid request body",
+		})
 		return
 	}
-	comment.PostID = c.Param("postId")
-	parentID := c.Param("commentId")
-	comment.ParentCommentID = &parentID
-	created, err := cc.service.CreateComment(comment)
+
+	reply, err := controller.service.CreateReply(
+		postID,
+		commentID,
+		request,
+	)
+
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
 		return
 	}
-	c.JSON(http.StatusCreated, created)
+
+	c.JSON(http.StatusCreated, reply)
 }
+

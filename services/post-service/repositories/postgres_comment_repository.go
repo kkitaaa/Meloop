@@ -10,7 +10,10 @@ type PostgresCommentRepository struct {
 }
 
 func NewPostgresCommentRepository(db *gorm.DB) *PostgresCommentRepository {
-	return &PostgresCommentRepository{db: db}
+return &PostgresCommentRepository{
+		db: db,
+	}
+
 }
 
 func (r *PostgresCommentRepository) Create(comment models.Comment) (models.Comment, error) {
@@ -20,12 +23,17 @@ func (r *PostgresCommentRepository) Create(comment models.Comment) (models.Comme
 
 func (r *PostgresCommentRepository) GetByPostID(postID string) ([]models.Comment, error) {
 	var comments []models.Comment
-	err := r.db.Where("post_id = ?", postID).Find(&comments).Error
+// Mapeamos a id_publicacion y fecha_creacion
+	err := r.db.Where("id_publicacion = ?", postID).Order("fecha_creacion asc").Find(&comments).Error
 	return comments, err
 }
 
-func (r *PostgresCommentRepository) GetByID(id string) (models.Comment, error) {
+func (r *PostgresCommentRepository) GetByID(commentID string) (models.Comment, error) {
 	var comment models.Comment
-	err := r.db.First(&comment, "id = ?", id).Error
+	// Mapeamos a id_comentario
+	err := r.db.First(&comment, "id_comentario = ?", commentID).Error
+	return comment, err
+}
+
 	return comment, err
 }

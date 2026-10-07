@@ -1,7 +1,7 @@
 package controllers
 
 import (
-	"net/http"
+"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/minio/minio-go/v7"
@@ -26,6 +26,7 @@ func UploadFile(minioClient *minio.Client) gin.HandlerFunc {
 		}
 
 		// 3. Retornar la URL pública
+
 		c.JSON(http.StatusOK, gin.H{
 			"message": "Archivo subido exitosamente",
 			"url":     url,

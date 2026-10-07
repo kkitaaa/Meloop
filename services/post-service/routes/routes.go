@@ -26,16 +26,27 @@ func SetupRoutes(
 
 	router.POST("/posts/:postId/likes", likeController.AddLike)
 	router.DELETE("/posts/:postId/likes/:userId", likeController.RemoveLike)
+  
+    api := router.Group("/api/v1/posts")
+    {
+        // Endpoint principal para registrar la publicación completa
+        api.POST("", postController.CreatePost)
 
-	api := router.Group("/api/v1/posts")
-	{
-		api.POST("", postController.CreatePost)
-		api.POST("/media", controllers.UploadFile(minioClient))
-		api.POST("/:postId/comments", commentController.CreateComment)
-		api.GET("/:postId/comments", commentController.GetComments)
-		api.POST("/:postId/comments/:commentId/replies", commentController.CreateReply)
-	}
+    api := router.Group("/api/v1/posts")
+    {
+        api.POST("", postController.CreatePost)
+        api.POST("/media", controllers.UploadFile(minioClient))
+        api.POST("/:postId/comments", commentController.CreateComment)
+        api.GET("/:postId/comments", commentController.GetComments)
+        api.POST("/:postId/comments/:commentId/replies", commentController.CreateReply)
+    }
 }
+
+        // Comentarios y respuestas
+        api.POST("/:postId/comments", commentController.CreateComment)
+        api.GET("/:postId/comments", commentController.GetComments)
+        api.POST("/:postId/comments/:commentId/replies", commentController.CreateReply)
+    }
 
 // RegisterRoutes keeps compatibility with the branch-local comment-like startup code.
 func RegisterRoutes(router *gin.Engine, likeController interface{}) {
