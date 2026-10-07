@@ -5,7 +5,7 @@ import (
 	"errors"
 
 	// Cambia esto si el nombre del módulo en tu go.mod es distinto
-	"github.com/meloop/post-service/repositories" 
+	"github.com/meloop/post-service/repositories"
 )
 
 type PostService struct {

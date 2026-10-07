@@ -45,7 +45,7 @@ func main() {
 
 	// Middleware simulado de autenticación
 	api.Use(func(c *gin.Context) {
-		c.Set("userID", "user-123") 
+		c.Set("userID", "user-123")
 		c.Next()
 	})
 

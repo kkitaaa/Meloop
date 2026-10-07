@@ -26,7 +26,7 @@ func (r *PostRepository) UpdatePost(ctx context.Context, postID string, authorID
 		SET texto = $1 
 		WHERE id_publicacion = $2 AND id_usuario = $3
 	`
-	
+
 	result, err := r.db.ExecContext(ctx, query, newContent, postID, authorID)
 	if err != nil {
 		return fmt.Errorf("error al actualizar la publicación: %w", err)
@@ -50,7 +50,7 @@ func (r *PostRepository) DeletePost(ctx context.Context, postID string, authorID
 		DELETE FROM publicacion 
 		WHERE id_publicacion = $1 AND id_usuario = $2
 	`
-	
+
 	result, err := r.db.ExecContext(ctx, query, postID, authorID)
 	if err != nil {
 		return fmt.Errorf("error al eliminar la publicación: %w", err)

@@ -8,7 +8,7 @@ import (
 
 // SetupPostRoutes registra los endpoints de publicaciones en el router de Gin
 func SetupPostRoutes(routerGroup *gin.RouterGroup, postCtrl *controllers.PostController) {
-	
+
 	// Agrupamos las rutas bajo "/posts"
 	postRoutes := routerGroup.Group("/posts")
 	{
