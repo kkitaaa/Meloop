@@ -7,7 +7,7 @@ import (
 
 // SetupPostRoutes registra los endpoints de lectura en el router
 func SetupPostRoutes(routerGroup *gin.RouterGroup, postCtrl *controllers.PostController) {
-	
+
 	postRoutes := routerGroup.Group("/posts")
 	{
 		// RF-19: Búsqueda de publicaciones (ej: /posts/search?q=musica&limit=10)

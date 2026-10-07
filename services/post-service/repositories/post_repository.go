@@ -34,7 +34,7 @@ func (r *PostRepository) GetPostByID(ctx context.Context, postID string, request
 		WHERE id_publicacion = $1
 	`
 	row := r.db.QueryRowContext(ctx, query, postID)
-	
+
 	var post Post
 	err := row.Scan(&post.ID, &post.AuthorID, &post.Content, &post.MusicID, &post.UrlMultimedia, &post.CreatedAt)
 	if err != nil {
@@ -70,7 +70,7 @@ func (r *PostRepository) GetPostsByAuthor(ctx context.Context, authorID string, 
 		}
 		posts = append(posts, p)
 	}
-	
+
 	if posts == nil {
 		posts = []Post{}
 	}
@@ -80,7 +80,7 @@ func (r *PostRepository) GetPostsByAuthor(ctx context.Context, authorID string, 
 // SearchPosts busca posts por texto o canción
 func (r *PostRepository) SearchPosts(ctx context.Context, searchTerm string, requesterID string, limit int, offset int) ([]Post, error) {
 	searchPattern := "%" + searchTerm + "%"
-	
+
 	query := `
 		SELECT id_publicacion, id_usuario, texto, id_cancion, url_multimedia, fecha_creacion
 		FROM publicacion
@@ -102,7 +102,7 @@ func (r *PostRepository) SearchPosts(ctx context.Context, searchTerm string, req
 		}
 		posts = append(posts, p)
 	}
-	
+
 	if posts == nil {
 		posts = []Post{}
 	}
