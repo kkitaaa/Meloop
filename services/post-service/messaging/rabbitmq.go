@@ -14,22 +14,46 @@ const (
 	exchangeType = "topic"
 )
 
-type PostLikedEvent struct {
+type PostInteractionEvent struct {
 	Event  string `json:"event"`
 	UserID string `json:"userId"`
 	PostID string `json:"postId"`
 }
 
-func PublishPostLiked(userID string, postID string) error {
-	logger := logging.New("post-service")
-	
-	// Leemos la variable de entorno, o usamos tu credencial local por defecto si falla
-	rabbitURL := os.Getenv("RABBITMQ_URL")
-	if rabbitURL == "" {
-		rabbitURL = "amqp://meloop:Meloop.67@localhost:5672/"
+func rabbitURL() string {
+	user := os.Getenv("RABBITMQ_USER")
+	password := os.Getenv("RABBITMQ_PASSWORD")
+
+	if user == "" {
+		user = "guest"
 	}
 
-	conn, err := amqp.Dial(rabbitURL)
+	if password == "" {
+		password = "guest"
+	}
+
+	return fmt.Sprintf(
+		"amqp://%s:%s@localhost:5672/",
+		user,
+		password,
+	)
+}
+
+func publishPostEvent(eventName, routingKey, userID, postID string) error {
+	logger := logging.New("post-service")
+func publishPostEvent(eventName, routingKey, userID, postID string) error {
+    logger := logging.New("post-service")
+
+    rabbitURL := os.Getenv("RABBITMQ_URL")
+    if rabbitURL == "" {
+        rabbitURL = "amqp://meloop:Meloop.67@localhost:5672/"
+    }
+
+    conn, err := amqp.Dial(rabbitURL)
+    if err != nil {
+        return fmt.Errorf("error conectando a RabbitMQ: %w", err)
+    }
+
 	if err != nil {
 		return fmt.Errorf("error conectando a RabbitMQ: %w", err)
 	}
@@ -54,8 +78,8 @@ func PublishPostLiked(userID string, postID string) error {
 		return fmt.Errorf("error declarando exchange: %w", err)
 	}
 
-	event := PostLikedEvent{
-		Event:  "PostLiked",
+	event := PostInteractionEvent{
+		Event:  eventName,
 		UserID: userID,
 		PostID: postID,
 	}
@@ -67,7 +91,7 @@ func PublishPostLiked(userID string, postID string) error {
 
 	err = ch.Publish(
 		exchange,
-		"post.liked",
+		routingKey,
 		false,
 		false,
 		amqp.Publishing{
@@ -75,12 +99,34 @@ func PublishPostLiked(userID string, postID string) error {
 			Body:        body,
 		},
 	)
-
 	if err != nil {
 		return fmt.Errorf("error publicando evento: %w", err)
 	}
 
-	logger.Info("event_published", "event", "post.liked", "payload_bytes", len(body))
+	logger.Info(
+		"event_published",
+		"event", routingKey,
+		"payload_bytes", len(body),
+	)
 
 	return nil
 }
+
+func PublishPostLiked(userID, postID string) error {
+    return publishPostEvent(
+        "PostLiked",
+        "post.liked",
+        userID,
+        postID,
+    )
+}
+
+func PublishPostUnliked(userID, postID string) error {
+    return publishPostEvent(
+        "PostUnliked",
+        "post.unliked",
+        userID,
+        postID,
+    )
+}
+
