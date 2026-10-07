@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"fmt"
 	"log"
 
 	"github.com/meloop/gamification-service/repositories"
@@ -13,25 +14,31 @@ type ExperienceService struct {
 }
 
 func NewExperienceService(repo *repositories.ExperienceRepository, engine *GamificationEngine) *ExperienceService {
-	return &ExperienceService{repo: repo, engine: engine}
+	return &ExperienceService{
+		repo:   repo,
+		engine: engine,
+	}
 }
 
+// HandleInteractionEvent es el punto de entrada cuando llega un evento (ej. desde RabbitMQ)
 func (s *ExperienceService) HandleInteractionEvent(ctx context.Context, event InteractionEvent) error {
-	log.Printf("Procesando evento asíncrono para usuario: %s", event.ActorID)
-
-	// 1. Validar que el ID no esté vacío
-	if event.ActorID == "" {
-		log.Println("⚠️ Advertencia: El ID del usuario llegó vacío. Ignorando evento.")
+	// 1. Pasar el evento por los filtros anti-abuso y calcular XP[cite: 8]
+	xp, err := s.engine.ProcessEvent(event)
+	if err != nil {
+		// Logueamos el rechazo (rate limit o auto-interacción) pero no devolvemos error fatal
+		// para que el sistema de mensajería no reintente procesar un evento abusivo.
+		log.Printf("Evento descartado por filtros anti-abuso: %v", err)
 		return nil
 	}
 
-	// 2. Llamar al repositorio para sumar 5 puntos de experiencia
-	err := s.repo.AddExperience(ctx, event.ActorID, 5)
+	// 2. Si pasa las validaciones, asignar la experiencia exacta al usuario[cite: 8]
+	log.Printf("Evento válido. Asignando +%d XP al usuario %s", xp, event.ActorID)
+
+	// Aquí llamaríamos a la función atómica que construimos anteriormente
+	err = s.repo.AddExperience(ctx, event.ActorID, xp)
 	if err != nil {
-		log.Printf("❌ Error al sumar experiencia en la BD: %v", err)
-		return err
+		return fmt.Errorf("error al guardar experiencia en BD: %w", err)
 	}
 
-	log.Printf("✅ ¡Experiencia sumada exitosamente al usuario %s en Supabase Local!", event.ActorID)
 	return nil
 }
