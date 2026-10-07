@@ -13,7 +13,7 @@ type CommentController struct {
 }
 
 func NewCommentController(service *services.CommentService) *CommentController {
-	return &CommentController{
+return &CommentController{
 		service: service,
 	}
 }
@@ -86,3 +86,4 @@ func (controller *CommentController) CreateReply(c *gin.Context) {
 
 	c.JSON(http.StatusCreated, reply)
 }
+

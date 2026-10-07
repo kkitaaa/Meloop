@@ -1,10 +1,12 @@
 package main
 
 import (
+	"database/sql"
 	"log"
 	"os"
 
 	"github.com/gin-gonic/gin"
+	"github.com/meloop/post-service/messaging"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
@@ -22,16 +24,16 @@ func main() {
 	logger := logging.New("post-service")
 	logger.Info("service_started")
 
-	// 2. Inicializar el cliente de MinIO (Archivos multimedia)
+	// 1. Inicializar el cliente de MinIO
 	minioClient, err := infraMinio.InitClient()
 	if err != nil {
 		log.Fatalf("Error crítico: No se pudo conectar a MinIO: %v", err)
 	}
 
-	// 3. Conectar a Supabase Local (PostgreSQL)
+	// 2. Conectar a Supabase Local (PostgreSQL)
 	dbURL := os.Getenv("DB_URL")
 	if dbURL == "" {
-		dbURL = "postgresql://postgres:postgres@127.0.0.1:54322/postgres"
+		dbURL = "postgresql://postgres:postgres@127.0.0.1:15422/postgres"
 	}
 
 	db, err := gorm.Open(postgres.Open(dbURL), &gorm.Config{})
@@ -39,26 +41,40 @@ func main() {
 		log.Fatalf("Error crítico: No se pudo conectar a la base de datos: %v", err)
 	}
 
-	// Auto-migrar la tabla de comentarios (creará la tabla si no existe)
-	err = db.AutoMigrate(&models.Comment{})
+	// Auto-migrar las tablas (se añade models.Post para la nueva funcionalidad)
+	err = db.AutoMigrate(&models.Comment{}, &models.Post{})
 	if err != nil {
 		log.Fatalf("Error migrando la base de datos: %v", err)
 	}
 
-	// 4. Inyectar dependencias del sistema de comentarios usando Postgres
+	// 3. Inyectar dependencias de Comentarios
 	commentRepo := repositories.NewPostgresCommentRepository(db)
 	commentService := services.NewCommentService(commentRepo)
 	commentController := controllers.NewCommentController(commentService)
 
+	// 4. Inyectar dependencias de Publicaciones (Post)
+	postRepo := repositories.NewPostgresPostRepository(db)
+	postController := controllers.NewPostController(postRepo, minioClient)
+
 	// 5. Inicializar el servidor web con Gin
 	router := gin.Default()
 
-	// 6. Configurar rutas (Inyectando tanto comentarios como MinIO)
-	routes.SetupRoutes(router, commentController, minioClient)
+	// 6. Configurar rutas
+	routes.SetupRoutes(router, commentController, postController, minioClient)
 
-	// 7. Arrancar el servidor
+	// 7. Mantenemos una prueba (no blocker) para RabbitMQ
+	err = messaging.PublishPostLiked("user-123", "post-456")
+	if err != nil {
+		logger.Error("event_publish_failed", "event", "post.liked", "error", err)
+		log.Printf("Advertencia: RabbitMQ falló, pero el servidor web seguirá iniciando: %v\n", err)
+	} else {
+		logger.Info("event_published", "event", "post.liked")
+	}
+
+	// 8. Arrancar el servidor
 	logger.Info("http_server_started", "port", "8084")
 	if err := router.Run(":8084"); err != nil {
 		log.Fatalf("Error al iniciar el servidor web: %v", err)
 	}
 }
+

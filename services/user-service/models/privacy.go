@@ -16,7 +16,7 @@ const (
 
 // ConfiguracionPrivacidad representa la entidad de persistencia en PostgreSQL (CONFIGURACION_PRIVACIDAD)
 type ConfiguracionPrivacidad struct {
-	IDPrivacidad                int    `json:"id_privacidad,omitempty"`
+	IDPrivacidad                string `json:"id_privacidad,omitempty"`
 	IDUsuario                   string `json:"id_usuario"`
 	VisibilidadPerfil           string `json:"visibilidad_perfil"`
 	VisibilidadPublicaciones    string `json:"visibilidad_publicaciones"`

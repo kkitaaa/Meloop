@@ -11,23 +11,26 @@ import (
 func SetupRoutes(
 	router *gin.Engine,
 	commentController *controllers.CommentController,
+postController *controllers.PostController,
 	minioClient *minio.Client,
 ) {
-	// Health check
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"service": "post-service", "status": "ok"})
 	})
 
-	postGroup := router.Group("/api/v1/posts")
+api := router.Group("/api/v1/posts")
 	{
-		// Subida de archivos multimedia (RF-16)
-		postGroup.POST("/media", controllers.UploadFile(minioClient))
+		// Endpoint principal para registrar la publicación completa
+		api.POST("", postController.CreatePost)
 
-		// Comentarios (RF-21)
-		postGroup.POST("/:postId/comments", commentController.CreateComment)
-		postGroup.GET("/:postId/comments", commentController.GetComments)
+		// Subida independiente de archivos
+		api.POST("/media", controllers.UploadFile(minioClient))
 
-		// Respuestas anidadas (RF-22)
-		postGroup.POST("/:postId/comments/:commentId/replies", commentController.CreateReply)
+		// Comentarios y respuestas
+		api.POST(":/postId/comments", commentController.CreateComment)
+		api.GET(":/postId/comments", commentController.GetComments)
+		api.POST(":/postId/comments/:commentId/replies", commentController.CreateReply)
+	}
+
 	}
 }
