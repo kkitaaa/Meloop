@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"time"
 )
 
 var (
@@ -20,16 +19,15 @@ func NewPostRepository(db *sql.DB) *PostRepository {
 	return &PostRepository{db: db}
 }
 
-// UpdatePost modifica el contenido de una publicación solo si el autor coincide
+// UpdatePost modifica el contenido de una publicación usando el esquema real del MER
 func (r *PostRepository) UpdatePost(ctx context.Context, postID string, authorID string, newContent string) error {
-	// La condición "AND author_id = $2" es el mecanismo de seguridad principal
 	query := `
-		UPDATE posts 
-		SET content = $1, updated_at = $2 
-		WHERE id = $3 AND author_id = $4
+		UPDATE publicacion 
+		SET texto = $1 
+		WHERE id_publicacion = $2 AND id_usuario = $3
 	`
 	
-	result, err := r.db.ExecContext(ctx, query, newContent, time.Now(), postID, authorID)
+	result, err := r.db.ExecContext(ctx, query, newContent, postID, authorID)
 	if err != nil {
 		return fmt.Errorf("error al actualizar la publicación: %w", err)
 	}
@@ -39,7 +37,6 @@ func (r *PostRepository) UpdatePost(ctx context.Context, postID string, authorID
 		return fmt.Errorf("error al verificar filas afectadas: %w", err)
 	}
 
-	// Si no se afectó ninguna fila, el post no existe o el usuario no es el autor
 	if rowsAffected == 0 {
 		return ErrPostNotFoundOrUnauthorized
 	}
@@ -47,11 +44,11 @@ func (r *PostRepository) UpdatePost(ctx context.Context, postID string, authorID
 	return nil
 }
 
-// DeletePost elimina una publicación validando la autoría
+// DeletePost elimina una publicación validando la autoría con el MER
 func (r *PostRepository) DeletePost(ctx context.Context, postID string, authorID string) error {
 	query := `
-		DELETE FROM posts 
-		WHERE id = $1 AND author_id = $2
+		DELETE FROM publicacion 
+		WHERE id_publicacion = $1 AND id_usuario = $2
 	`
 	
 	result, err := r.db.ExecContext(ctx, query, postID, authorID)

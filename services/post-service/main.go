@@ -19,9 +19,8 @@ func main() {
 	logger := logging.New("post-service")
 	logger.Info("service_started")
 
-	// 1. Conexión a la base de datos (Supabase)
-	// Asegúrate de usar las variables de entorno de tu archivo .env en el futuro
-	connStr := "postgresql://postgres:tu_password@tu-host-supabase:6543/postgres?sslmode=require"
+	// 1. Conexión a la base de datos (Supabase Local)
+	connStr := "postgresql://postgres:postgres@127.0.0.1:15422/postgres?sslmode=disable"
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {
 		logger.Error("db_connection_failed", "error", err)
@@ -44,17 +43,16 @@ func main() {
 	// Creamos un grupo de rutas base
 	api := r.Group("/api/v1")
 
-	// NOTA: Aquí deberías inyectar tu Middleware de Autenticación real.
-	// Por ahora simulamos que el usuario "user-123" hizo la petición para que el código compile y funcione.
+	// Middleware simulado de autenticación
 	api.Use(func(c *gin.Context) {
 		c.Set("userID", "user-123") 
 		c.Next()
 	})
 
-	// 4. Conectar las rutas de posts que creamos
+	// 4. Conectar las rutas de posts
 	routes.SetupPostRoutes(api, postController)
 
-	// 5. Tu código original de prueba de RabbitMQ (Lo mantenemos para que no lo pierdas)
+	// 5. Código original de prueba de RabbitMQ
 	err = messaging.PublishPostLiked("user-123", "post-456")
 	if err != nil {
 		logger.Error("event_publish_failed", "event", "post.liked", "error", err)
