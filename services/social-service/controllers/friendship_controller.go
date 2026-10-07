@@ -153,11 +153,18 @@ func (ctrl *FriendshipController) ValidateInteraction(c *gin.Context) {
 }
 
 func (ctrl *FriendshipController) GetFriendSuggestions(c *gin.Context) {
-	userID := c.GetString(ContextUserIDKey)
-	result, err := ctrl.service.GetFriendSuggestions(c, userID)
+	userID := strings.TrimSpace(c.GetString(ContextUserIDKey))
+	if userID == "" {
+		httpresponse.UnauthorizedGin(c, "No se encontró sesión de usuario autenticada")
+		return
+	}
+	result, err := ctrl.service.GetFriendSuggestions(c.Request.Context(), userID)
 	if err != nil {
 		ctrl.handleError(c, err)
 		return
+	}
+	if result == nil {
+		result = []models.FriendSuggestion{}
 	}
 	httpresponse.SuccessGin(c, http.StatusOK, result)
 }
@@ -184,6 +191,10 @@ func (ctrl *FriendshipController) handleError(c *gin.Context, err error) {
 		httpresponse.BadRequestGin(c, "No puedes bloquearte a ti mismo")
 	case errors.Is(err, services.ErrInvalidUser):
 		httpresponse.UnauthorizedGin(c, "No se encontró sesión de usuario autenticada")
+	case errors.Is(err, services.ErrNoMusicalPreferences):
+		httpresponse.BadRequestGin(c, "La cuenta no posee preferencias musicales registradas para realizar el cruce")
+	case errors.Is(err, services.ErrInsufficientCandidates), errors.Is(err, services.ErrNoCandidates):
+		httpresponse.NotFoundGin(c, "No se encontraron candidatos disponibles para sugerencias de amistad")
 	case errors.Is(err, services.ErrRequestConflict):
 		httpresponse.ConflictGin(c, "Ya existe una solicitud o amistad entre estos usuarios")
 	case errors.Is(err, services.ErrAlreadyBlocked):

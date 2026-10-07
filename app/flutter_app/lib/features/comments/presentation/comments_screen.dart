@@ -10,8 +10,8 @@ class CommentsScreen extends StatefulWidget {
 }
 
 class _CommentsScreenState extends State<CommentsScreen> {
-  final Color bgColor = const Color(0xFF0D5C5E);
-  final Color tealAccent = const Color(0xFF1ABC9C);
+  final Color _bgColor = const Color(0xFF0D5C5E);
+  final Color _tealAccent = const Color(0xFF1ABC9C);
 
   final TextEditingController _commentController = TextEditingController();
   final FocusNode _focusNode = FocusNode();
@@ -19,7 +19,6 @@ class _CommentsScreenState extends State<CommentsScreen> {
   String? _replyingToUser;
   bool _isSubmitting = false;
 
-  // Lista de comentarios simulada
   final List<Map<String, dynamic>> _comments = [
     {
       "id": 1,
@@ -45,16 +44,12 @@ class _CommentsScreenState extends State<CommentsScreen> {
   }
 
   void _startReply(String username) {
-    setState(() {
-      _replyingToUser = username;
-    });
+    setState(() => _replyingToUser = username);
     _focusNode.requestFocus();
   }
 
   void _cancelReply() {
-    setState(() {
-      _replyingToUser = null;
-    });
+    setState(() => _replyingToUser = null);
     _focusNode.unfocus();
   }
 
@@ -63,34 +58,29 @@ class _CommentsScreenState extends State<CommentsScreen> {
     if (text.isEmpty) return;
 
     setState(() => _isSubmitting = true);
-
-    // Ocultar teclado
     FocusScope.of(context).unfocus();
 
-    // Simular latencia HTTP al API Gateway
     await Future.delayed(const Duration(seconds: 1));
 
-    // Simulación de Validación del Servidor (Ejemplo Regla RN-03: Moderación)
+    if (!mounted) return;
+
     if (text.toLowerCase().contains("insulto")) {
       setState(() => _isSubmitting = false);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              "Error: El comentario incumple las normas de la comunidad (RN-03).",
-            ),
-            backgroundColor: Colors.redAccent,
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            "Error: El comentario incumple las normas de la comunidad (RN-03).",
           ),
-        );
-      }
+          backgroundColor: Colors.redAccent,
+        ),
+      );
       return;
     }
 
-    // Inserción optimista en la lista local
     setState(() {
       _comments.add({
         "id": DateTime.now().millisecondsSinceEpoch,
-        "user": "MiUsuario", // Usuario logueado
+        "user": "MiUsuario",
         "text": _replyingToUser != null ? "@$_replyingToUser $text" : text,
         "time": "Ahora",
         "likes": 0,
@@ -107,9 +97,9 @@ class _CommentsScreenState extends State<CommentsScreen> {
     final bool isDesktop = screenWidth > 900;
 
     return Scaffold(
-      backgroundColor: bgColor,
+      backgroundColor: _bgColor,
       appBar: AppBar(
-        backgroundColor: tealAccent,
+        backgroundColor: _tealAccent,
         title: const Text(
           "Comentarios",
           style: TextStyle(color: Colors.white, fontSize: 16),
@@ -126,24 +116,18 @@ class _CommentsScreenState extends State<CommentsScreen> {
             color: const Color(0xFFFDFDFD),
             child: Column(
               children: [
-                // Post Original (Contexto)
                 _buildOriginalPost(),
                 const Divider(height: 1, thickness: 4, color: Colors.black12),
-
-                // Lista de Comentarios
                 Expanded(
                   child: ListView.separated(
                     padding: const EdgeInsets.all(24.0),
                     itemCount: _comments.length,
                     separatorBuilder: (context, index) =>
                         const Divider(height: 32),
-                    itemBuilder: (context, index) {
-                      return _buildCommentTile(_comments[index]);
-                    },
+                    itemBuilder: (context, index) =>
+                        _buildCommentTile(_comments[index]),
                   ),
                 ),
-
-                // Barra fija inferior para comentar
                 _buildCommentInputBar(),
               ],
             ),
@@ -269,7 +253,6 @@ class _CommentsScreenState extends State<CommentsScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Indicador de "Respondiendo a..."
             if (_replyingToUser != null)
               Container(
                 padding: const EdgeInsets.symmetric(
@@ -284,7 +267,7 @@ class _CommentsScreenState extends State<CommentsScreen> {
                       "Respondiendo a @$_replyingToUser",
                       style: TextStyle(
                         fontSize: 12,
-                        color: tealAccent,
+                        color: _tealAccent,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
@@ -299,8 +282,6 @@ class _CommentsScreenState extends State<CommentsScreen> {
                   ],
                 ),
               ),
-
-            // Campo de texto y botón enviar
             Padding(
               padding: const EdgeInsets.symmetric(
                 horizontal: 16.0,
@@ -341,7 +322,7 @@ class _CommentsScreenState extends State<CommentsScreen> {
                         )
                       : IconButton(
                           onPressed: _submitComment,
-                          icon: Icon(Icons.send, color: tealAccent),
+                          icon: Icon(Icons.send, color: _tealAccent),
                         ),
                 ],
               ),

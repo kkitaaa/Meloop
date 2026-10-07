@@ -2,20 +2,21 @@ package routes
 
 import (
 	"github.com/gin-gonic/gin"
-	// Cambia esto al nombre real de tu módulo si es distinto en tu go.mod
 	"github.com/meloop/post-service/controllers"
 )
 
-// SetupPostRoutes registra los endpoints de publicaciones en el router de Gin
+// SetupPostRoutes registra los endpoints de lectura en el router
 func SetupPostRoutes(routerGroup *gin.RouterGroup, postCtrl *controllers.PostController) {
 
-	// Agrupamos las rutas bajo "/posts"
 	postRoutes := routerGroup.Group("/posts")
 	{
-		// RF-17: Ruta para que el autor modifique su contenido
-		postRoutes.PUT("/:id", postCtrl.UpdatePost)
+		// RF-19: Búsqueda de publicaciones (ej: /posts/search?q=musica&limit=10)
+		postRoutes.GET("/search", postCtrl.Search)
 
-		// RF-18: Ruta para que el autor elimine su publicación
-		postRoutes.DELETE("/:id", postCtrl.DeletePost)
+		// Visualizar una publicación individual (ej: /posts/post-123)
+		postRoutes.GET("/:id", postCtrl.GetPostByID)
+
+		// RF-19: Obtener publicaciones de un perfil (ej: /posts/author/user-456?limit=5)
+		postRoutes.GET("/author/:authorId", postCtrl.GetPostsByAuthor)
 	}
 }

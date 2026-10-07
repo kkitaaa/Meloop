@@ -67,4 +67,18 @@ class RecommendationResponse(BaseModel):
     user_id: int
     recommendations: list[RecommendationItem]
     model: str
+    model_version: str
     interaction_count: int
+
+
+class HealthResponse(BaseModel):
+    status: Literal["ok"]
+    service: str
+
+
+class ReadinessResponse(BaseModel):
+    status: Literal["ready", "not_ready"]
+    service: str
+    model_loaded: bool
+    data_pipeline_loaded: bool
+    model_version: str | None = None

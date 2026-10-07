@@ -11,16 +11,95 @@ class _FriendsScreenState extends State<FriendsScreen> {
   final Color bgColor = const Color(0xFF0D5C5E);
   final Color tealAccent = const Color(0xFF1ABC9C);
 
+  // Estado local para simular la respuesta del API Gateway
+  final List<Map<String, dynamic>> _friends = [
+    {"id": 1, "name": "Vicente", "status": "Escuchando a Skrillex"},
+    {"id": 2, "name": "Andrea", "status": "Conectado hace 2 min"},
+    {"id": 3, "name": "Felipe", "status": "Escuchando electrónica"},
+    {"id": 4, "name": "Valentina", "status": "Ausente"},
+  ];
+
+  final List<Map<String, dynamic>> _requests = [
+    {
+      "id": 101,
+      "name": "NuevoUsuario_01",
+      "desc": "Te ha enviado una solicitud",
+    },
+    {"id": 102, "name": "DJ_Productor", "desc": "Te ha enviado una solicitud"},
+  ];
+
+  final List<Map<String, dynamic>> _suggestions = [
+    {
+      "id": 201,
+      "name": "Martín",
+      "comp": 95,
+      "desc": "Ambos escuchan a DJ Gouz y Skrillex",
+    },
+    {
+      "id": 202,
+      "name": "Camila",
+      "comp": 82,
+      "desc": "Tienen 12 artistas en común",
+    },
+    {
+      "id": 203,
+      "name": "Pedro",
+      "comp": 60,
+      "desc": "Ambos escuchan electrónica",
+    },
+  ];
+
+  void _removeFriend(int index) {
+    final removed = _friends[index]['name'];
+    setState(() => _friends.removeAt(index));
+    _showSnackBar("Eliminaste a $removed de tus amigos.");
+  }
+
+  void _handleRequest(int index, bool accepted) {
+    final user = _requests[index]['name'];
+    setState(() {
+      if (accepted) {
+        _friends.add({
+          "id": DateTime.now().millisecondsSinceEpoch,
+          "name": user,
+          "status": "Nuevo amigo",
+        });
+      }
+      _requests.removeAt(index);
+    });
+    _showSnackBar(
+      accepted
+          ? "Aceptaste la solicitud de $user."
+          : "Rechazaste la solicitud de $user.",
+    );
+  }
+
+  void _sendFriendRequest(int index) {
+    final user = _suggestions[index]['name'];
+    setState(() => _suggestions.removeAt(index));
+    _showSnackBar("Solicitud enviada a $user.");
+  }
+
+  void _showSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: tealAccent,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    double screenWidth = MediaQuery.of(context).size.width;
-    bool isDesktop = screenWidth > 900;
+    final double screenWidth = MediaQuery.of(context).size.width;
+    final bool isDesktop = screenWidth > 900;
 
     return Scaffold(
       backgroundColor: bgColor,
       body: Column(
         children: [
-          _buildCustomTopBar(isDesktop, context),
+          _buildTopBar(isDesktop, context),
           Expanded(
             child: isDesktop ? _buildDesktopLayout() : _buildMobileLayout(),
           ),
@@ -29,8 +108,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
     );
   }
 
-  // --- TOP BAR ---
-  Widget _buildCustomTopBar(bool isDesktop, BuildContext context) {
+  Widget _buildTopBar(bool isDesktop, BuildContext context) {
     return Container(
       height: 55,
       color: tealAccent,
@@ -44,7 +122,6 @@ class _FriendsScreenState extends State<FriendsScreen> {
             color: Colors.white,
             fit: BoxFit.contain,
           ),
-
           if (isDesktop) ...[
             Row(
               children: [
@@ -77,7 +154,6 @@ class _FriendsScreenState extends State<FriendsScreen> {
               ),
             ),
           ],
-
           Row(
             children: const [
               Icon(Icons.notifications, color: Colors.white, size: 20),
@@ -120,7 +196,6 @@ class _FriendsScreenState extends State<FriendsScreen> {
     );
   }
 
-  // --- LAYOUTS ---
   Widget _buildDesktopLayout() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 32.0, vertical: 24.0),
@@ -189,9 +264,9 @@ class _FriendsScreenState extends State<FriendsScreen> {
                   ),
                 ),
                 const SizedBox(height: 4),
-                const Text(
-                  "245 Amigos",
-                  style: TextStyle(
+                Text(
+                  "${_friends.length} Amigos",
+                  style: const TextStyle(
                     fontSize: 12,
                     color: Color(0xFF1ABC9C),
                     fontWeight: FontWeight.bold,
@@ -220,7 +295,6 @@ class _FriendsScreenState extends State<FriendsScreen> {
     );
   }
 
-  // --- CONTENEDOR CENTRAL DE AMIGOS ---
   Widget _buildFriendsPaper() {
     return Container(
       height: 650,
@@ -237,7 +311,6 @@ class _FriendsScreenState extends State<FriendsScreen> {
         length: 3,
         child: Column(
           children: [
-            // Cabecera y Tabs
             Padding(
               padding: const EdgeInsets.only(
                 left: 32,
@@ -265,15 +338,13 @@ class _FriendsScreenState extends State<FriendsScreen> {
                 fontWeight: FontWeight.bold,
                 fontSize: 13,
               ),
-              tabs: const [
-                Tab(text: "Mis Amigos"),
-                Tab(text: "Solicitudes (2)"),
-                Tab(text: "Sugerencias"),
+              tabs: [
+                const Tab(text: "Mis Amigos"),
+                Tab(text: "Solicitudes (${_requests.length})"),
+                const Tab(text: "Sugerencias"),
               ],
             ),
             const Divider(height: 1, thickness: 1, color: Colors.black12),
-
-            // Vistas de las Tabs
             Expanded(
               child: TabBarView(
                 children: [
@@ -289,26 +360,30 @@ class _FriendsScreenState extends State<FriendsScreen> {
     );
   }
 
-  // 1. Pestaña: Mis Amigos
   Widget _buildMyFriendsTab() {
+    if (_friends.isEmpty) {
+      return const Center(child: Text("No tienes amigos en tu red aún."));
+    }
+
     return ListView.separated(
       padding: const EdgeInsets.all(24),
-      itemCount: 4,
+      itemCount: _friends.length,
       separatorBuilder: (context, index) =>
           const Divider(color: Colors.black12),
       itemBuilder: (context, index) {
+        final friend = _friends[index];
         return ListTile(
           leading: const CircleAvatar(
             backgroundColor: Colors.black87,
             child: Icon(Icons.person, color: Colors.white),
           ),
           title: Text(
-            "Amigo ${index + 1}",
+            friend["name"],
             style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
           ),
-          subtitle: const Text(
-            "Escuchando a Skrillex",
-            style: TextStyle(fontSize: 12, color: Colors.grey),
+          subtitle: Text(
+            friend["status"],
+            style: const TextStyle(fontSize: 12, color: Colors.grey),
           ),
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
@@ -316,7 +391,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
               IconButton(
                 tooltip: "Bloquear",
                 icon: const Icon(Icons.block, color: Colors.grey, size: 20),
-                onPressed: () {},
+                onPressed: () => _removeFriend(index),
               ),
               IconButton(
                 tooltip: "Eliminar amigo",
@@ -325,7 +400,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
                   color: Colors.redAccent,
                   size: 20,
                 ),
-                onPressed: () {},
+                onPressed: () => _removeFriend(index),
               ),
             ],
           ),
@@ -334,26 +409,30 @@ class _FriendsScreenState extends State<FriendsScreen> {
     );
   }
 
-  // 2. Pestaña: Solicitudes
   Widget _buildRequestsTab() {
+    if (_requests.isEmpty) {
+      return const Center(child: Text("No tienes solicitudes pendientes."));
+    }
+
     return ListView.separated(
       padding: const EdgeInsets.all(24),
-      itemCount: 2,
+      itemCount: _requests.length,
       separatorBuilder: (context, index) =>
           const Divider(color: Colors.black12),
       itemBuilder: (context, index) {
+        final request = _requests[index];
         return ListTile(
           leading: const CircleAvatar(
             backgroundColor: Colors.indigo,
             child: Icon(Icons.person, color: Colors.white),
           ),
           title: Text(
-            "NuevoUsuario_0${index + 1}",
+            request["name"],
             style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
           ),
-          subtitle: const Text(
-            "Te ha enviado una solicitud de amistad",
-            style: TextStyle(fontSize: 12, color: Colors.grey),
+          subtitle: Text(
+            request["desc"],
+            style: const TextStyle(fontSize: 12, color: Colors.grey),
           ),
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
@@ -365,7 +444,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
                     borderRadius: BorderRadius.circular(20),
                   ),
                 ),
-                onPressed: () {},
+                onPressed: () => _handleRequest(index, false),
                 child: const Text(
                   "Rechazar",
                   style: TextStyle(color: Colors.grey, fontSize: 12),
@@ -380,7 +459,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
                     borderRadius: BorderRadius.circular(20),
                   ),
                 ),
-                onPressed: () {},
+                onPressed: () => _handleRequest(index, true),
                 child: const Text(
                   "Aceptar",
                   style: TextStyle(color: Colors.white, fontSize: 12),
@@ -393,25 +472,19 @@ class _FriendsScreenState extends State<FriendsScreen> {
     );
   }
 
-  // 3. Pestaña: Sugerencias
   Widget _buildSuggestionsTab() {
-    // Datos simulados con porcentajes de compatibilidad
-    final suggestions = [
-      {
-        "name": "Martín",
-        "comp": 95,
-        "desc": "Ambos escuchan a DJ Gouz y Skrillex",
-      },
-      {"name": "Camila", "comp": 82, "desc": "Tienen 12 artistas en común"},
-      {"name": "Vicente", "comp": 60, "desc": "Ambos escuchan electrónica"},
-    ];
+    if (_suggestions.isEmpty) {
+      return const Center(
+        child: Text("No hay más sugerencias por el momento."),
+      );
+    }
 
     return ListView.separated(
       padding: const EdgeInsets.all(24),
-      itemCount: suggestions.length,
+      itemCount: _suggestions.length,
       separatorBuilder: (context, index) => const SizedBox(height: 16),
       itemBuilder: (context, index) {
-        final sugg = suggestions[index];
+        final sugg = _suggestions[index];
         final comp = sugg["comp"] as int;
 
         return Container(
@@ -453,7 +526,6 @@ class _FriendsScreenState extends State<FriendsScreen> {
                       style: const TextStyle(fontSize: 11, color: Colors.grey),
                     ),
                     const SizedBox(height: 8),
-                    // Etiqueta de Compatibilidad Musical
                     Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 8,
@@ -493,14 +565,14 @@ class _FriendsScreenState extends State<FriendsScreen> {
                     borderRadius: BorderRadius.circular(20),
                   ),
                 ),
-                onPressed: () {},
+                onPressed: () => _sendFriendRequest(index),
                 icon: const Icon(
                   Icons.person_add,
                   color: Colors.white,
                   size: 16,
                 ),
                 label: const Text(
-                  "Conectar",
+                  "Enviar Solicitud",
                   style: TextStyle(color: Colors.white, fontSize: 12),
                 ),
               ),

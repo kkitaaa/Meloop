@@ -33,4 +33,27 @@ func SetupRoutes(router *gin.Engine, controller *controllers.FriendshipControlle
 		protected.GET("/suggestions", controller.GetFriendSuggestions)
 		protected.GET("/recommendations", controller.GetFriendSuggestions)
 	}
+
+	// Acceso directo a sugerencias de amistad
+	suggestions := router.Group("/suggestions")
+	suggestions.Use(controllers.AuthRequired())
+	{
+		suggestions.GET("", controller.GetFriendSuggestions)
+	}
+}
+
+// SetupSuggestionRoutes configura las rutas REST de sugerencias de amistad (RF-14).
+func SetupSuggestionRoutes(router *gin.Engine, controller *controllers.SuggestionController) {
+	friends := router.Group("/friends")
+	friends.Use(controllers.AuthRequired())
+	{
+		friends.GET("/suggestions", controller.GetFriendSuggestions)
+		friends.GET("/recommendations", controller.GetFriendSuggestions)
+	}
+
+	suggestions := router.Group("/suggestions")
+	suggestions.Use(controllers.AuthRequired())
+	{
+		suggestions.GET("", controller.GetFriendSuggestions)
+	}
 }

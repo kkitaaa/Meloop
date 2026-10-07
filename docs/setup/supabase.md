@@ -12,12 +12,12 @@ La primera vez tardará unos minutos en descargar las imágenes de PostgreSQL, e
 
 Construir la estructura de tablas: Para asegurar que la base de datos se arme correctamente con las tablas y claves foráneas en el orden adecuado, ejecutar:
 
-
 npx supabase db reset
-Acceder al panel visual (Supabase Studio): Abrir el navegador de preferencia e ingresar explícitamente a http://localhost:54323. En el menú lateral izquierdo, bajo "Table Editor", estarán disponibles todas las tablas listas para ser consultadas o llenadas con datos de prueba.
+
+Acceder al panel visual (Supabase Studio): Abrir `http://localhost:15423`. En el menú lateral izquierdo, bajo "Table Editor", estarán disponibles las tablas para consultarlas y llenarlas con datos de prueba.
 
 Actualizar variables de entorno en Go: Cada desarrollador debe modificar el archivo .env de los microservicios que tenga a cargo (Auth, Social, Post, etc.), reemplazando la conexión a la nube por la credencial local exacta:
-DB_URL="postgresql://postgres:postgres@127.0.0.1:54322/postgres"
+DB_URL="postgresql://postgres:postgres@127.0.0.1:15422/postgres"
 
 Apagar el entorno al finalizar: Para detener los contenedores y liberar memoria RAM tras la jornada de desarrollo, ejecutar en la terminal:
 
