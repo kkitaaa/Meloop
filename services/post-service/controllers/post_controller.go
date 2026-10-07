@@ -9,9 +9,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/minio/minio-go/v7"
 	"github.com/meloop/post-service/models"
 	"github.com/meloop/post-service/repositories"
+	"github.com/minio/minio-go/v7"
 )
 
 type PostController struct {
@@ -28,7 +28,6 @@ func NewPostController(repo *repositories.PostgresPostRepository, minioClient *m
 
 func (pc *PostController) CreatePost(c *gin.Context) {
 	var req models.CreatePostRequest
-	// Usamos ShouldBind para soportar tanto JSON como form-data (necesario para archivos)
 	if err := c.ShouldBind(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "datos de formulario inválidos"})
 		return
@@ -37,7 +36,11 @@ func (pc *PostController) CreatePost(c *gin.Context) {
 	post := models.Post{
 		AuthorID: req.AuthorID,
 		Content:  req.Content,
-		MusicID:  req.MusicID,
+	}
+
+	// Solo asignamos MusicID si el usuario envió uno válido para evitar errores de llave foránea
+	if req.MusicID != "" {
+		post.MusicID = &req.MusicID
 	}
 
 	// Integración con MinIO si la petición incluye un archivo multimedia (RF-16)

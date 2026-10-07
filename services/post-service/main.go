@@ -31,7 +31,7 @@ func main() {
 	// 3. Conectar a Supabase Local (PostgreSQL)
 	dbURL := os.Getenv("DB_URL")
 	if dbURL == "" {
-		dbURL = "postgresql://postgres:postgres@127.0.0.1:54322/postgres"
+		dbURL = "postgresql://postgres:postgres@127.0.0.1:15422/postgres"
 	}
 
 	db, err := gorm.Open(postgres.Open(dbURL), &gorm.Config{})
