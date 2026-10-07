@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"log"
 
-	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/meloop/gamification-service/services"
+	amqp "github.com/rabbitmq/amqp091-go"
 )
 
 type RabbitMQConsumer struct {

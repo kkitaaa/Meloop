@@ -1,4 +1,5 @@
 package services
+
 import "time"
 
 type InteractionEvent struct {
