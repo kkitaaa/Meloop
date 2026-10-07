@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+
 import 'dart:async';
+
 import '../../../screens/friends_screen.dart';
 import '../../comments/presentation/comments_screen.dart';
 
@@ -108,7 +110,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (!mounted) return;
 
     setState(() {
-      // Simulamos que el usuario "Usuario_01" u otros tienen contenido, 
+      // Simulamos que el usuario "Usuario_01" u otros tienen contenido,
       // y si es un usuario sin posts simulamos lista vacía para probar el estado requerido.
       if (_displayUsername == "UsuarioVacioTest") {
         _posts.clear();
@@ -228,8 +230,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child:
-                  const Text("Cancelar", style: TextStyle(color: Colors.grey)),
+              child: const Text(
+                "Cancelar",
+                style: TextStyle(color: Colors.grey),
+              ),
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: _tealAccent),
@@ -246,8 +250,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                 );
               },
-              child:
-                  const Text("Guardar", style: TextStyle(color: Colors.white)),
+              child: const Text(
+                "Guardar",
+                style: TextStyle(color: Colors.white),
+              ),
             ),
           ],
         );
@@ -567,11 +573,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildStatsAndEditRow({bool isMobile = false}) {
-    final int equippedCount =
-        _inventory.where((i) => i['isEquipped'] as bool).length;
+    final int equippedCount = _inventory
+        .where((i) => i['isEquipped'] as bool)
+        .length;
     final statsRow = Row(
-      mainAxisAlignment:
-          isMobile ? MainAxisAlignment.spaceEvenly : MainAxisAlignment.start,
+      mainAxisAlignment: isMobile
+          ? MainAxisAlignment.spaceEvenly
+          : MainAxisAlignment.start,
       children: [
         _pillStat("Amigos 5"),
         if (!isMobile) const SizedBox(width: 12),
@@ -583,11 +591,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     if (isMobile) {
       return Column(
-        children: [
-          statsRow,
-          const SizedBox(height: 12),
-          _editProfileBtn(),
-        ],
+        children: [statsRow, const SizedBox(height: 12), _editProfileBtn()],
       );
     }
 
@@ -607,10 +611,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 4,
-          ),
+          BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 4),
         ],
       ),
       child: Text(
@@ -651,10 +652,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         color: const Color(0xFFFDFDFD),
         borderRadius: BorderRadius.circular(8),
         boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.1),
-            blurRadius: 10,
-          ),
+          BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 10),
         ],
       ),
       child: Column(
@@ -889,39 +887,39 @@ class _ProfileScreenState extends State<ProfileScreen> {
             child: _isInitialLoading
                 ? Center(child: CircularProgressIndicator(color: _tealAccent))
                 : _posts.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.post_add, size: 48, color: Colors.grey[400]),
-                            const SizedBox(height: 12),
-                            Text(
-                              "Aún no tiene publicaciones",
-                              style: TextStyle(
-                                color: _paperTextColor.withValues(alpha: 0.6),
-                                fontSize: 14,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.post_add, size: 48, color: Colors.grey[400]),
+                        const SizedBox(height: 12),
+                        Text(
+                          "Aún no tiene publicaciones",
+                          style: TextStyle(
+                            color: _paperTextColor.withValues(alpha: 0.6),
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
-                      )
-                    : ListView.builder(
-                        itemCount: _posts.length + (_isLoadingMore ? 1 : 0),
-                        itemBuilder: (context, index) {
-                          if (index == _posts.length) {
-                            return Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 16.0),
-                              child: Center(
-                                child: CircularProgressIndicator(
-                                  color: _tealAccent,
-                                ),
-                              ),
-                            );
-                          }
-                          return _buildPostCard(_posts[index]);   
-                        },
-                      ),
+                      ],
+                    ),
+                  )
+                : ListView.builder(
+                    itemCount: _posts.length + (_isLoadingMore ? 1 : 0),
+                    itemBuilder: (context, index) {
+                      if (index == _posts.length) {
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 16.0),
+                          child: Center(
+                            child: CircularProgressIndicator(
+                              color: _tealAccent,
+                            ),
+                          ),
+                        );
+                      }
+                      return _buildPostCard(_posts[index]);
+                    },
+                  ),
           ),
         ],
       ),
@@ -982,16 +980,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 item['type'] == 'frame'
                     ? "Marco"
                     : item['type'] == 'pin'
-                        ? "Pin"
-                        : "Fondo",
+                    ? "Pin"
+                    : "Fondo",
                 style: const TextStyle(fontSize: 10, color: Colors.grey),
               ),
               const SizedBox(height: 16),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: isEquipped ? Colors.white : _tealAccent,
-                  foregroundColor:
-                      isEquipped ? Colors.redAccent : Colors.white,
+                  foregroundColor: isEquipped ? Colors.redAccent : Colors.white,
                   side: isEquipped
                       ? const BorderSide(color: Colors.redAccent)
                       : null,
@@ -1076,11 +1073,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           const SizedBox(height: 12),
           Text(
             postData["content"],
-            style: TextStyle(
-              fontSize: 13,
-              color: _paperTextColor,
-              height: 1.4,
-            ),
+            style: TextStyle(fontSize: 13, color: _paperTextColor, height: 1.4),
           ),
           const SizedBox(height: 16),
           Row(

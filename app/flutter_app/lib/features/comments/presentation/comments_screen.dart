@@ -68,7 +68,9 @@ class _CommentsScreenState extends State<CommentsScreen> {
       setState(() => _isSubmitting = false);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text("Error: El comentario incumple las normas de la comunidad (RN-03)."),
+          content: Text(
+            "Error: El comentario incumple las normas de la comunidad (RN-03).",
+          ),
           backgroundColor: Colors.redAccent,
         ),
       );
@@ -120,8 +122,10 @@ class _CommentsScreenState extends State<CommentsScreen> {
                   child: ListView.separated(
                     padding: const EdgeInsets.all(24.0),
                     itemCount: _comments.length,
-                    separatorBuilder: (context, index) => const Divider(height: 32),
-                    itemBuilder: (context, index) => _buildCommentTile(_comments[index]),
+                    separatorBuilder: (context, index) =>
+                        const Divider(height: 32),
+                    itemBuilder: (context, index) =>
+                        _buildCommentTile(_comments[index]),
                   ),
                 ),
                 _buildCommentInputBar(),

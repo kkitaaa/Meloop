@@ -20,14 +20,33 @@ class _FriendsScreenState extends State<FriendsScreen> {
   ];
 
   final List<Map<String, dynamic>> _requests = [
-    {"id": 101, "name": "NuevoUsuario_01", "desc": "Te ha enviado una solicitud"},
+    {
+      "id": 101,
+      "name": "NuevoUsuario_01",
+      "desc": "Te ha enviado una solicitud",
+    },
     {"id": 102, "name": "DJ_Productor", "desc": "Te ha enviado una solicitud"},
   ];
 
   final List<Map<String, dynamic>> _suggestions = [
-    {"id": 201, "name": "Martín", "comp": 95, "desc": "Ambos escuchan a DJ Gouz y Skrillex"},
-    {"id": 202, "name": "Camila", "comp": 82, "desc": "Tienen 12 artistas en común"},
-    {"id": 203, "name": "Pedro", "comp": 60, "desc": "Ambos escuchan electrónica"},
+    {
+      "id": 201,
+      "name": "Martín",
+      "comp": 95,
+      "desc": "Ambos escuchan a DJ Gouz y Skrillex",
+    },
+    {
+      "id": 202,
+      "name": "Camila",
+      "comp": 82,
+      "desc": "Tienen 12 artistas en común",
+    },
+    {
+      "id": 203,
+      "name": "Pedro",
+      "comp": 60,
+      "desc": "Ambos escuchan electrónica",
+    },
   ];
 
   void _removeFriend(int index) {
@@ -40,11 +59,19 @@ class _FriendsScreenState extends State<FriendsScreen> {
     final user = _requests[index]['name'];
     setState(() {
       if (accepted) {
-        _friends.add({"id": DateTime.now().millisecondsSinceEpoch, "name": user, "status": "Nuevo amigo"});
+        _friends.add({
+          "id": DateTime.now().millisecondsSinceEpoch,
+          "name": user,
+          "status": "Nuevo amigo",
+        });
       }
       _requests.removeAt(index);
     });
-    _showSnackBar(accepted ? "Aceptaste la solicitud de $user." : "Rechazaste la solicitud de $user.");
+    _showSnackBar(
+      accepted
+          ? "Aceptaste la solicitud de $user."
+          : "Rechazaste la solicitud de $user.",
+    );
   }
 
   void _sendFriendRequest(int index) {
@@ -98,7 +125,11 @@ class _FriendsScreenState extends State<FriendsScreen> {
           if (isDesktop) ...[
             Row(
               children: [
-                _navLink('Inicio', isActive: false, onTap: () => Navigator.pop(context)),
+                _navLink(
+                  'Inicio',
+                  isActive: false,
+                  onTap: () => Navigator.pop(context),
+                ),
                 _navLink('Amigos', isActive: true, onTap: () {}),
                 _navLink('Artistas y canciones', isActive: false, onTap: () {}),
               ],
@@ -113,7 +144,10 @@ class _FriendsScreenState extends State<FriendsScreen> {
                 children: const [
                   Icon(Icons.play_circle_fill, color: Colors.white, size: 18),
                   SizedBox(width: 8),
-                  Text("Playing... DJ Gouz", style: TextStyle(color: Colors.white, fontSize: 12)),
+                  Text(
+                    "Playing... DJ Gouz",
+                    style: TextStyle(color: Colors.white, fontSize: 12),
+                  ),
                   SizedBox(width: 8),
                   Icon(Icons.graphic_eq, color: Colors.white, size: 16),
                 ],
@@ -136,7 +170,11 @@ class _FriendsScreenState extends State<FriendsScreen> {
     );
   }
 
-  Widget _navLink(String text, {required bool isActive, required VoidCallback onTap}) {
+  Widget _navLink(
+    String text, {
+    required bool isActive,
+    required VoidCallback onTap,
+  }) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -274,7 +312,12 @@ class _FriendsScreenState extends State<FriendsScreen> {
         child: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.only(left: 32, right: 32, top: 24, bottom: 8),
+              padding: const EdgeInsets.only(
+                left: 32,
+                right: 32,
+                top: 24,
+                bottom: 8,
+              ),
               child: Row(
                 children: [
                   const Icon(Icons.people_alt, size: 28),
@@ -291,7 +334,10 @@ class _FriendsScreenState extends State<FriendsScreen> {
               indicatorWeight: 3,
               labelColor: tealAccent,
               unselectedLabelColor: Colors.grey,
-              labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+              labelStyle: const TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 13,
+              ),
               tabs: [
                 const Tab(text: "Mis Amigos"),
                 Tab(text: "Solicitudes (${_requests.length})"),
@@ -322,7 +368,8 @@ class _FriendsScreenState extends State<FriendsScreen> {
     return ListView.separated(
       padding: const EdgeInsets.all(24),
       itemCount: _friends.length,
-      separatorBuilder: (context, index) => const Divider(color: Colors.black12),
+      separatorBuilder: (context, index) =>
+          const Divider(color: Colors.black12),
       itemBuilder: (context, index) {
         final friend = _friends[index];
         return ListTile(
@@ -348,7 +395,11 @@ class _FriendsScreenState extends State<FriendsScreen> {
               ),
               IconButton(
                 tooltip: "Eliminar amigo",
-                icon: const Icon(Icons.person_remove, color: Colors.redAccent, size: 20),
+                icon: const Icon(
+                  Icons.person_remove,
+                  color: Colors.redAccent,
+                  size: 20,
+                ),
                 onPressed: () => _removeFriend(index),
               ),
             ],
@@ -366,7 +417,8 @@ class _FriendsScreenState extends State<FriendsScreen> {
     return ListView.separated(
       padding: const EdgeInsets.all(24),
       itemCount: _requests.length,
-      separatorBuilder: (context, index) => const Divider(color: Colors.black12),
+      separatorBuilder: (context, index) =>
+          const Divider(color: Colors.black12),
       itemBuilder: (context, index) {
         final request = _requests[index];
         return ListTile(
@@ -422,7 +474,9 @@ class _FriendsScreenState extends State<FriendsScreen> {
 
   Widget _buildSuggestionsTab() {
     if (_suggestions.isEmpty) {
-      return const Center(child: Text("No hay más sugerencias por el momento."));
+      return const Center(
+        child: Text("No hay más sugerencias por el momento."),
+      );
     }
 
     return ListView.separated(
