@@ -6,6 +6,10 @@ import (
 
     "github.com/gin-gonic/gin"
     "github.com/meloop/post-service/controllers"
+)
+
+    "github.com/gin-gonic/gin"
+    "github.com/meloop/post-service/controllers"
     "github.com/minio/minio-go/v7"
 )
 
@@ -20,9 +24,9 @@ func SetupRoutes(
         c.JSON(http.StatusOK, gin.H{"service": "post-service", "status": "ok"})
     })
 
-    router.POST("/posts/:postId/likes", likeController.AddLike)
-    router.DELETE("/posts/:postId/likes/:userId", likeController.RemoveLike)
-
+	router.POST("/posts/:postId/likes", likeController.AddLike)
+	router.DELETE("/posts/:postId/likes/:userId", likeController.RemoveLike)
+  
     api := router.Group("/api/v1/posts")
     {
         // Endpoint principal para registrar la publicación completa
@@ -43,4 +47,10 @@ func SetupRoutes(
         api.GET("/:postId/comments", commentController.GetComments)
         api.POST("/:postId/comments/:commentId/replies", commentController.CreateReply)
     }
+
+// RegisterRoutes keeps compatibility with the branch-local comment-like startup code.
+func RegisterRoutes(router *gin.Engine, likeController interface{}) {
+	router.POST("/v1/comments/:id/likes", func(c *gin.Context) {
+		c.JSON(http.StatusNotImplemented, gin.H{"message": "comment like routes are registered in main.go"})
+	})
 }

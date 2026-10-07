@@ -30,6 +30,14 @@ import (
 	"github.com/meloop/post-service/routes"
 	"github.com/meloop/post-service/services"
 	"github.com/meloop/services/common/logging"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
+
+	"github.com/meloop/post-service/controllers"
+	"github.com/meloop/post-service/models"
+	"github.com/meloop/post-service/repositories"
+	"github.com/meloop/post-service/routes"
+	"github.com/meloop/post-service/services"
 )
 
 func main() {
