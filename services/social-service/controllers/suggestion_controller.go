@@ -11,17 +11,14 @@ import (
 	"github.com/meloop/social-service/services"
 )
 
-// SuggestionController maneja la capa HTTP/REST de sugerencias de amistad (RF-14).
 type SuggestionController struct {
 	service services.FriendshipService
 }
 
-// NewSuggestionController inicializa un nuevo controlador de sugerencias.
 func NewSuggestionController(service services.FriendshipService) *SuggestionController {
 	return &SuggestionController{service: service}
 }
 
-// GetFriendSuggestions obtiene la lista de sugerencias de amistad para el usuario autenticado.
 func (ctrl *SuggestionController) GetFriendSuggestions(c *gin.Context) {
 	userID := strings.TrimSpace(c.GetString(ContextUserIDKey))
 	if userID == "" {

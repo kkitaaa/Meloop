@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
+
 import 'dart:async';
+
 import 'friends_screen.dart';
 import '../../features/comments/presentation/comments_screen.dart';
-import '../../features/profile/presentation/profile_screen.dart'; 
-import '../widgets/post_card.dart'; 
-
+import '../../features/profile/presentation/profile_screen.dart';
 
 class FeedScreen extends StatefulWidget {
   const FeedScreen({super.key});
@@ -530,10 +530,7 @@ class _FeedScreenState extends State<FeedScreen> {
                             ),
                           );
                         }
-                        return PostCard(
-                          postData: _posts[index],
-                          tealAccent: _tealAccent,
-                        );
+                        return _buildPostCard(_posts[index]);
                       },
                     ),
             ),
@@ -595,9 +592,8 @@ class _FeedScreenState extends State<FeedScreen> {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (context) => ProfileScreen(
-                            username: postData["user"],
-                          ),
+                          builder: (context) =>
+                              ProfileScreen(username: postData["user"]),
                         ),
                       );
                     },
@@ -616,9 +612,8 @@ class _FeedScreenState extends State<FeedScreen> {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (context) => ProfileScreen(
-                                username: postData["user"],
-                              ),
+                              builder: (context) =>
+                                  ProfileScreen(username: postData["user"]),
                             ),
                           );
                         },

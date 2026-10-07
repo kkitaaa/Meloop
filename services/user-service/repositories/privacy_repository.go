@@ -66,6 +66,7 @@ func (r *postgresPrivacyRepository) CreateDefault(ctx context.Context, userID st
 	var conf models.ConfiguracionPrivacidad
 	query := `
 		INSERT INTO CONFIGURACION_PRIVACIDAD (
+			id_privacidad,
 			id_usuario,
 			visibilidad_perfil,
 			visibilidad_publicaciones,
@@ -73,7 +74,7 @@ func (r *postgresPrivacyRepository) CreateDefault(ctx context.Context, userID st
 			recepcion_mensajes,
 			recepcion_solicitudes_amistad
 		)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, $6)
 		ON CONFLICT (id_usuario) DO UPDATE
 		SET id_usuario = EXCLUDED.id_usuario
 		RETURNING id_privacidad, id_usuario::text, visibilidad_perfil, visibilidad_publicaciones,
@@ -144,6 +145,7 @@ func (r *postgresPrivacyRepository) Update(ctx context.Context, config *models.C
 			// Si no existía la fila para actualizar, se inserta con los valores especificados
 			insertQuery := `
 				INSERT INTO CONFIGURACION_PRIVACIDAD (
+					id_privacidad,
 					id_usuario,
 					visibilidad_perfil,
 					visibilidad_publicaciones,
@@ -151,7 +153,7 @@ func (r *postgresPrivacyRepository) Update(ctx context.Context, config *models.C
 					recepcion_mensajes,
 					recepcion_solicitudes_amistad
 				)
-				VALUES ($1, $2, $3, $4, $5, $6)
+				VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, $6)
 				RETURNING id_privacidad, id_usuario::text, visibilidad_perfil, visibilidad_publicaciones,
 				          visibilidad_interacciones, recepcion_mensajes, recepcion_solicitudes_amistad
 			`
