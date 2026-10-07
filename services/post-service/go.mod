@@ -4,6 +4,7 @@ go 1.26.6
 
 require (
 	github.com/gin-gonic/gin v1.12.0
+	github.com/lib/pq v1.12.3
 	github.com/meloop/services/common v0.0.0-unpublished
 	github.com/rabbitmq/amqp091-go v1.13.0
 )

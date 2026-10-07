@@ -2,7 +2,8 @@ package main
 
 import (
 	"context"
-	"log"
+	"errors"
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
@@ -16,28 +17,37 @@ import (
 )
 
 func main() {
-	logger := logging.New("gamification-service")
-	logger.Info("service_started")
+	if err := run(); err != nil {
+		logging.New("gamification-service").Error("service_stopped", "error", err)
+		os.Exit(1)
+	}
+}
 
+func run() error {
+	logger := logging.New("gamification-service")
 	cfg := config.Load()
 
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer cancel()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
-	var repo repositories.GamificationRepository
 	pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
 	if err != nil {
-		logger.Error("database_pool_init_failed", "error", err)
-	} else {
-		defer pool.Close()
-		repo = repositories.NewGamificationRepository(pool)
+		return fmt.Errorf("initialize database pool: %w", err)
+	}
+	defer pool.Close()
+
+	if err := pool.Ping(ctx); err != nil {
+		return fmt.Errorf("connect to database: %w", err)
 	}
 
+	repo := repositories.NewGamificationRepository(pool)
 	publisher := messaging.NewPublisher(cfg.RabbitMQURL)
 	service := services.NewGamificationService(repo, publisher)
 
-	if err := messaging.StartConsumer(ctx, cfg.RabbitMQURL, service); err != nil && ctx.Err() == nil {
-		logger.Error("event_consumer_failed", "error", err)
-		log.Fatal(err)
+	logger.Info("service_started")
+	if err := messaging.StartConsumer(ctx, cfg.RabbitMQURL, service); err != nil && !errors.Is(err, context.Canceled) {
+		return fmt.Errorf("event consumer stopped: %w", err)
 	}
+
+	return nil
 }

@@ -3,6 +3,7 @@ module github.com/meloop/gamification-service
 go 1.26.6
 
 require (
+	github.com/lib/pq v1.12.3
 	github.com/jackc/pgx/v5 v5.8.0
 	github.com/meloop/services/common v0.0.0-unpublished
 	github.com/rabbitmq/amqp091-go v1.13.0
