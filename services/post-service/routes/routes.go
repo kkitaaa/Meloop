@@ -1,10 +1,40 @@
 package routes
 
 import (
+package routes
+
+import (
+	"net/http"
+
 	"github.com/gin-gonic/gin"
+	"github.com/meloop/post-service/controllers"
+	"github.com/minio/minio-go/v7"
 )
 
-// RegisterRoutes se mantiene por compatibilidad con main.go en esta rama.
+func SetupRoutes(
+	router *gin.Engine,
+	commentController *controllers.CommentController,
+	postController *controllers.PostController,
+	minioClient *minio.Client,
+) {
+	router.GET("/health", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"service": "post-service", "status": "ok"})
+	})
+
+	api := router.Group("/api/v1/posts")
+	{
+		api.POST("", postController.CreatePost)
+		api.POST("/media", controllers.UploadFile(minioClient))
+		api.POST("/:postId/comments", commentController.CreateComment)
+		api.GET("/:postId/comments", commentController.GetComments)
+		api.POST("/:postId/comments/:commentId/replies", commentController.CreateReply)
+	}
+}
+
+// RegisterRoutes keeps compatibility with the branch-local comment-like startup code.
 func RegisterRoutes(router *gin.Engine, likeController interface{}) {
-	// Vacío en esta rama, los endpoints se registran en main.go
+	router.POST("/v1/comments/:id/likes", func(c *gin.Context) {
+		c.JSON(http.StatusNotImplemented, gin.H{"message": "comment like routes are registered in main.go"})
+	})
+}
 }

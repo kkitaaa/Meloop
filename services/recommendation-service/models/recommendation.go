@@ -1,14 +1,24 @@
 package models
 
+import "time"
+
 type Interaction struct {
 	Type     string `json:"type"`
 	TargetID int    `json:"target_id"`
 }
 
 type UserProfile struct {
-	Genres  []string `json:"genres"`
-	Artists []string `json:"artists"`
-	Songs   []string `json:"songs"`
+	Genres           []string `json:"genres"`
+	Artists          []string `json:"artists"`
+	Songs            []string `json:"songs"`
+	InteractionCount int      `json:"-"`
+}
+
+type PopularContent struct {
+	Type       string
+	ID         string
+	Name       string
+	UsageCount int64
 }
 
 type RecommendationRequest struct {
@@ -21,9 +31,12 @@ type RecommendationRequest struct {
 }
 
 type RecommendationItem struct {
-	ItemID int     `json:"item_id"`
-	Score  float64 `json:"score"`
-	Reason string  `json:"reason"`
+	ItemID  int     `json:"item_id,omitempty"`
+	ItemKey string  `json:"item_key,omitempty"`
+	Type    string  `json:"type,omitempty"`
+	Name    string  `json:"name,omitempty"`
+	Score   float64 `json:"score"`
+	Reason  string  `json:"reason"`
 }
 
 type RecommendationResponse struct {
@@ -32,4 +45,6 @@ type RecommendationResponse struct {
 	Model            string               `json:"model"`
 	ModelVersion     string               `json:"model_version"`
 	InteractionCount int                  `json:"interaction_count"`
+	CalculatedAt     time.Time            `json:"calculated_at,omitempty"`
+	FromBackup       bool                 `json:"from_backup"`
 }

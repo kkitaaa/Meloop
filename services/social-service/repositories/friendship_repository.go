@@ -348,8 +348,8 @@ func (r *postgresFriendshipRepository) BlockUser(ctx context.Context, blockerID,
 	}
 
 	_, err = tx.Exec(ctx, `
-		INSERT INTO bloqueo (id_usuario_bloqueador, id_usuario_bloqueado)
-		VALUES ($1, $2)`, blockerID, blockedID)
+		INSERT INTO bloqueo (id_bloqueo, id_usuario_bloqueador, id_usuario_bloqueado)
+		VALUES (gen_random_uuid()::text, $1, $2)`, blockerID, blockedID)
 	if err != nil {
 		return err
 	}
