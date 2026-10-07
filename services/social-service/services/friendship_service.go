@@ -10,20 +10,23 @@ import (
 )
 
 var (
-	ErrSelfRequest        = errors.New("cannot send a friendship request to yourself")
-	ErrRequestConflict    = errors.New("friendship request already exists")
-	ErrBlocked            = errors.New("friendship requests are not allowed between these users")
-	ErrRequestNotFound    = errors.New("friendship request not found")
-	ErrNotReceiver        = errors.New("only the receiver can manage this request")
-	ErrNotSender          = errors.New("only the sender can cancel this request")
-	ErrRequestProcessed   = errors.New("friendship request was already processed")
-	ErrInvalidUser        = errors.New("authenticated user is required")
-	ErrSelfBlock          = errors.New("cannot block yourself")
-	ErrAlreadyBlocked     = errors.New("user is already blocked")
-	ErrFriendshipNotFound = errors.New("friendship not found")
-	ErrNotFriends         = errors.New("users are not friends")
-	ErrNotAuthorized      = errors.New("user is not authorized for this operation")
-	ErrUserNotFound       = errors.New("user not found")
+	ErrSelfRequest            = errors.New("cannot send a friendship request to yourself")
+	ErrRequestConflict        = errors.New("friendship request already exists")
+	ErrBlocked                = errors.New("friendship requests are not allowed between these users")
+	ErrRequestNotFound        = errors.New("friendship request not found")
+	ErrNotReceiver            = errors.New("only the receiver can manage this request")
+	ErrNotSender              = errors.New("only the sender can cancel this request")
+	ErrRequestProcessed       = errors.New("friendship request was already processed")
+	ErrInvalidUser            = errors.New("authenticated user is required")
+	ErrSelfBlock              = errors.New("cannot block yourself")
+	ErrAlreadyBlocked         = errors.New("user is already blocked")
+	ErrFriendshipNotFound     = errors.New("friendship not found")
+	ErrNotFriends             = errors.New("users are not friends")
+	ErrNotAuthorized          = errors.New("user is not authorized for this operation")
+	ErrUserNotFound           = errors.New("user not found")
+	ErrNoMusicalPreferences   = errors.New("no musical preferences found for user")
+	ErrInsufficientCandidates = errors.New("insufficient candidates found for suggestions")
+	ErrNoCandidates           = errors.New("no candidates available for suggestions")
 )
 
 type EventPublisher interface {
@@ -42,15 +45,21 @@ type FriendshipService interface {
 	GetFriendProfile(ctx context.Context, userID, friendID string) (*models.FriendProfile, error)
 	BlockUser(ctx context.Context, blockerID, blockedID string) error
 	ValidateInteraction(ctx context.Context, user1ID, user2ID string) error
+	GetFriendSuggestions(ctx context.Context, userID string) ([]models.FriendSuggestion, error)
 }
 
 type friendshipService struct {
-	repo      repositories.FriendshipRepository
-	publisher EventPublisher
+	repo       repositories.FriendshipRepository
+	publisher  EventPublisher
+	compatRepo repositories.CompatibilityRepository
 }
 
-func NewFriendshipService(repo repositories.FriendshipRepository, publisher EventPublisher) FriendshipService {
-	return &friendshipService{repo: repo, publisher: publisher}
+func NewFriendshipService(repo repositories.FriendshipRepository, publisher EventPublisher, compatRepo ...repositories.CompatibilityRepository) FriendshipService {
+	var cr repositories.CompatibilityRepository
+	if len(compatRepo) > 0 {
+		cr = compatRepo[0]
+	}
+	return &friendshipService{repo: repo, publisher: publisher, compatRepo: cr}
 }
 
 func (s *friendshipService) SendRequest(ctx context.Context, senderID, receiverID string) (*models.FriendRequest, error) {
@@ -86,9 +95,7 @@ func (s *friendshipService) AcceptRequest(ctx context.Context, requestID int, re
 		return nil, mapRepositoryError(err)
 	}
 	if s.publisher != nil {
-		if err := s.publisher.PublishFriendAccepted(ctx, request); err != nil {
-			return request, err
-		}
+		_ = s.publisher.PublishFriendAccepted(ctx, request)
 	}
 	return request, nil
 }
