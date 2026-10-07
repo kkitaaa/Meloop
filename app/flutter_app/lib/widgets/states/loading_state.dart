@@ -22,7 +22,11 @@ class LoadingState extends StatelessWidget {
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Container(width: 120, height: 12, color: Colors.grey[200]),
+                      Container(
+                        width: 120,
+                        height: 12,
+                        color: Colors.grey[200],
+                      ),
                       const SizedBox(height: 6),
                       Container(width: 80, height: 10, color: Colors.grey[100]),
                     ],
@@ -30,7 +34,11 @@ class LoadingState extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 16),
-              Container(width: double.infinity, height: 12, color: Colors.grey[200]),
+              Container(
+                width: double.infinity,
+                height: 12,
+                color: Colors.grey[200],
+              ),
               const SizedBox(height: 8),
               Container(width: 250, height: 12, color: Colors.grey[200]),
               const SizedBox(height: 16),

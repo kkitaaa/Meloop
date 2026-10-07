@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+
 import 'dart:async';
+
 import 'friends_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
 import '../../widgets/post_card.dart';
@@ -21,11 +23,11 @@ class _FeedScreenState extends State<FeedScreen> {
   // --- Lógica de Paginación y Estado Dinámico ---
   final ScrollController _scrollController = ScrollController();
   final List<Map<String, dynamic>> _posts = [];
-  
+
   bool _isInitialLoading = true;
   bool _isLoadingMore = false;
   int _currentPage = 1;
-  
+
   // Nuevas variables para manejo de errores
   bool _hasError = false;
   int _errorCode = 200;
@@ -544,51 +546,52 @@ class _FeedScreenState extends State<FeedScreen> {
               ],
             ),
             const Divider(height: 32, thickness: 1, color: Colors.black12),
-            
+
             // --- IMPLEMENTACIÓN DE LOS ESTADOS DE CARGA, ERROR Y VACÍO ---
             Expanded(
               child: _isInitialLoading
                   ? const LoadingState() // Estado animado (Skeletons)
                   : _hasError
-                      ? ErrorState(
-                          errorCode: _errorCode,
-                          onRetry: _fetchInitialPosts, // Botón para volver a intentar
-                          tealAccent: _tealAccent,
-                        )
-                      : _posts.isEmpty
-                          ? const EmptyState(
-                              title: "Feed vacío",
-                              message: "Aún no hay publicaciones recientes. ¡Sé el primero en crear un blog!",
-                              icon: Icons.post_add,
-                            )
-                          : ListView.builder(
-                              controller: _scrollController,
-                              itemCount: _posts.length + (_isLoadingMore ? 1 : 0),
-                              itemBuilder: (context, index) {
-                                if (index == _posts.length) {
-                                  return Padding(
-                                    padding: const EdgeInsets.symmetric(vertical: 24.0),
-                                    child: Center(
-                                      child: CircularProgressIndicator(
-                                        color: _tealAccent,
-                                      ),
-                                    ),
-                                  );
-                                }
-                                // Uso de la tarjeta reutilizable
-                                return PostCard(
-                                  postData: _posts[index],
-                                  tealAccent: _tealAccent,
-                                  onDelete: () {
-                                    setState(() {
-                                      _posts.removeAt(index);
-                                    });
-                                  },
-                                );
-                              },
+                  ? ErrorState(
+                      errorCode: _errorCode,
+                      onRetry:
+                          _fetchInitialPosts, // Botón para volver a intentar
+                      tealAccent: _tealAccent,
+                    )
+                  : _posts.isEmpty
+                  ? const EmptyState(
+                      title: "Feed vacío",
+                      message: "Aún no hay publicaciones recientes. ¡Sé el primero en crear un blog!",
+                      icon: Icons.post_add,
+                    )
+                  : ListView.builder(
+                      controller: _scrollController,
+                      itemCount: _posts.length + (_isLoadingMore ? 1 : 0),
+                      itemBuilder: (context, index) {
+                        if (index == _posts.length) {
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 24.0),
+                            child: Center(
+                              child: CircularProgressIndicator(
+                                color: _tealAccent,
+                              ),
                             ),
+                          );
+                        }
+                        // Uso de la tarjeta reutilizable
+                        return PostCard(
+                          postData: _posts[index],
+                          tealAccent: _tealAccent,
+                          onDelete: () {
+                            setState(() {
+                              _posts.removeAt(index);
+                            });
+                          },
+                        );
+                      },
+                    ),
             ),
-            
+
             if (!_isInitialLoading && !_hasError && _posts.isNotEmpty)
               ElevatedButton(
                 style: ElevatedButton.styleFrom(

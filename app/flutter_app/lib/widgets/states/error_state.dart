@@ -36,11 +36,19 @@ class ErrorState extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.wifi_tethering_error_rounded, size: 56, color: Colors.red[300]),
+            Icon(
+              Icons.wifi_tethering_error_rounded,
+              size: 56,
+              color: Colors.red[300],
+            ),
             const SizedBox(height: 16),
             const Text(
               "¡Ups! Algo salió mal",
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87),
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: Colors.black87,
+              ),
             ),
             const SizedBox(height: 8),
             Text(
@@ -53,11 +61,16 @@ class ErrorState extends StatelessWidget {
               style: ElevatedButton.styleFrom(
                 backgroundColor: tealAccent,
                 elevation: 0,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
               ),
               onPressed: onRetry,
               icon: const Icon(Icons.refresh, color: Colors.white, size: 16),
-              label: const Text("Reintentar", style: TextStyle(color: Colors.white)),
+              label: const Text(
+                "Reintentar",
+                style: TextStyle(color: Colors.white),
+              ),
             ),
           ],
         ),

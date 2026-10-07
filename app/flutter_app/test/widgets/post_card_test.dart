@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
-import 'package:flutter_app/widgets/post_card.dart'; 
+import 'package:flutter_app/widgets/post_card.dart';
 
-// Mock para simular la función onDelete 
+// Mock para simular la función onDelete
 class MockDeleteCallback extends Mock {
   void call();
 }
@@ -11,7 +11,10 @@ class MockDeleteCallback extends Mock {
 void main() {
   const Color tealAccent = Color(0xFF1ABC9C);
 
-  Widget createWidgetUnderTest(Map<String, dynamic> postData, {VoidCallback? onDelete}) {
+  Widget createWidgetUnderTest(
+    Map<String, dynamic> postData, {
+    VoidCallback? onDelete,
+  }) {
     return MaterialApp(
       home: Scaffold(
         body: SingleChildScrollView(
@@ -26,26 +29,31 @@ void main() {
   }
 
   group('PostCard Widget Tests', () {
-    testWidgets('Renderiza contenido básico (texto, autor, likes y comentarios)', (WidgetTester tester) async {
-      final postData = {
-        "id": 1,
-        "user": "VicenteTest",
-        "time": "Hace 5 min",
-        "content": "Contenido de prueba automatizada",
-        "likes": 42,
-        "comments": 5,
-        "isAuthor": true,
-      };
+    testWidgets(
+      'Renderiza contenido básico (texto, autor, likes y comentarios)',
+      (WidgetTester tester) async {
+        final postData = {
+          "id": 1,
+          "user": "VicenteTest",
+          "time": "Hace 5 min",
+          "content": "Contenido de prueba automatizada",
+          "likes": 42,
+          "comments": 5,
+          "isAuthor": true,
+        };
 
-      await tester.pumpWidget(createWidgetUnderTest(postData));
+        await tester.pumpWidget(createWidgetUnderTest(postData));
 
-      expect(find.text("VicenteTest"), findsOneWidget);
-      expect(find.text("Contenido de prueba automatizada"), findsOneWidget);
-      expect(find.text("42 Likes"), findsOneWidget);
-      expect(find.text("5 Comentarios"), findsOneWidget);
-    });
+        expect(find.text("VicenteTest"), findsOneWidget);
+        expect(find.text("Contenido de prueba automatizada"), findsOneWidget);
+        expect(find.text("42 Likes"), findsOneWidget);
+        expect(find.text("5 Comentarios"), findsOneWidget);
+      },
+    );
 
-    testWidgets('Muestra reproductor musical e imagen si vienen en los datos', (WidgetTester tester) async {
+    testWidgets('Muestra reproductor musical e imagen si vienen en los datos', (
+      WidgetTester tester,
+    ) async {
       final postData = {
         "id": 2,
         "user": "Camila",
@@ -62,31 +70,36 @@ void main() {
       expect(find.text("Bohemian Rhapsody"), findsOneWidget);
       expect(find.text("Queen"), findsOneWidget);
       expect(find.byIcon(Icons.graphic_eq), findsOneWidget);
-      
+
       // Verifica que el widget de Imagen se intenta renderizar
       expect(find.byType(Image), findsOneWidget);
     });
 
-    testWidgets('Muestra opciones correctas en el menú según el ROL (No Autor = Guardar/Reportar)', (WidgetTester tester) async {
-      final postData = {
-        "id": 3,
-        "user": "OtroUsuario",
-        "content": "Post ajeno",
-        "isAuthor": false,
-      };
+    testWidgets(
+      'Muestra opciones correctas en el menú según el ROL (No Autor = Guardar/Reportar)',
+      (WidgetTester tester) async {
+        final postData = {
+          "id": 3,
+          "user": "OtroUsuario",
+          "content": "Post ajeno",
+          "isAuthor": false,
+        };
 
-      await tester.pumpWidget(createWidgetUnderTest(postData));
+        await tester.pumpWidget(createWidgetUnderTest(postData));
 
-      // Abrir menú
-      await tester.tap(find.byIcon(Icons.more_horiz));
-      await tester.pumpAndSettle();
+        // Abrir menú
+        await tester.tap(find.byIcon(Icons.more_horiz));
+        await tester.pumpAndSettle();
 
-      expect(find.text("Guardar publicación"), findsOneWidget);
-      expect(find.text("Reportar"), findsOneWidget);
-      expect(find.text("Eliminar"), findsNothing); // No debe poder eliminar
-    });
+        expect(find.text("Guardar publicación"), findsOneWidget);
+        expect(find.text("Reportar"), findsOneWidget);
+        expect(find.text("Eliminar"), findsNothing); // No debe poder eliminar
+      },
+    );
 
-    testWidgets('Elimina publicación exitosamente mediante el callback', (WidgetTester tester) async {
+    testWidgets('Elimina publicación exitosamente mediante el callback', (
+      WidgetTester tester,
+    ) async {
       final mockOnDelete = MockDeleteCallback();
       final postData = {
         "id": 4,
@@ -95,7 +108,9 @@ void main() {
         "isAuthor": true,
       };
 
-      await tester.pumpWidget(createWidgetUnderTest(postData, onDelete: mockOnDelete));
+      await tester.pumpWidget(
+        createWidgetUnderTest(postData, onDelete: mockOnDelete),
+      );
 
       await tester.tap(find.byIcon(Icons.more_horiz));
       await tester.pumpAndSettle();
