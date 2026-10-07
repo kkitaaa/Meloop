@@ -8,8 +8,8 @@ import (
 )
 
 var (
-	ErrLikeAlreadyExists = errors.New("el usuario ya dio like a este comentario")
-	ErrLikeNotFound      = errors.New("like no encontrado")
+	ErrCommentLikeAlreadyExists = errors.New("el usuario ya dio like a este comentario")
+	ErrCommentLikeNotFound      = errors.New("like no encontrado")
 )
 
 type CommentLikeRepository interface {

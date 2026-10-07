@@ -27,6 +27,9 @@ type CommentLikedEvent struct {
 }
 
 func rabbitURL() string {
+	if u := os.Getenv("RABBITMQ_URL"); u != "" {
+		return u
+	}
 	user := os.Getenv("RABBITMQ_USER")
 	password := os.Getenv("RABBITMQ_PASSWORD")
 
@@ -40,34 +43,11 @@ func rabbitURL() string {
 
 	return fmt.Sprintf("amqp://%s:%s@localhost:5672/", user, password)
 }
-	}
-
-	if password == "" {
-		password = "guest"
-	}
-
-	return fmt.Sprintf(
-		"amqp://%s:%s@localhost:5672/",
-		user,
-		password,
-	)
-}
 
 func publishPostEvent(eventName, routingKey, userID, postID string) error {
 	logger := logging.New("post-service")
-func publishPostEvent(eventName, routingKey, userID, postID string) error {
-    logger := logging.New("post-service")
 
-    rabbitURL := os.Getenv("RABBITMQ_URL")
-    if rabbitURL == "" {
-        rabbitURL = "amqp://meloop:Meloop.67@localhost:5672/"
-    }
-
-    conn, err := amqp.Dial(rabbitURL)
-    if err != nil {
-        return fmt.Errorf("error conectando a RabbitMQ: %w", err)
-    }
-
+	conn, err := amqp.Dial(rabbitURL())
 	if err != nil {
 		return fmt.Errorf("error conectando a RabbitMQ: %w", err)
 	}

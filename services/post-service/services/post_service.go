@@ -1,11 +1,13 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"regexp"
 
 	"github.com/meloop/post-service/models"
+	"github.com/meloop/post-service/repositories"
 )
 
 // spotifyIDRegex valida que el ID sea alfanumérico y de exactamente 22 caracteres
@@ -37,13 +39,6 @@ func ValidateMusicReferences(refs []models.MusicReference) error {
 	}
 	return nil
 }
-	"context"
-	"errors"
-
-	// Cambia esto si el nombre del módulo en tu go.mod es distinto
-
-	"github.com/meloop/post-service/repositories"
-)
 
 type PostService struct {
 	repo *repositories.PostRepository

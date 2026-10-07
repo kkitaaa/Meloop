@@ -2,63 +2,72 @@ package main
 
 import (
 	"log"
-	"os"
+	"net/http"
 
-	"github.com/gin-gonic/gin"
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
-
-	infraMinio "github.com/meloop/infrastructure/minio"
-	"github.com/meloop/post-service/controllers"
-	"github.com/meloop/post-service/models"
-	"github.com/meloop/post-service/repositories"
-	"github.com/meloop/post-service/routes"
-	"github.com/meloop/post-service/services"
+	"github.com/meloop/services/common/httpresponse"
 	"github.com/meloop/services/common/logging"
 )
 
+func healthHandler(w http.ResponseWriter, r *http.Request) {
+	httpresponse.Success(w, http.StatusOK, map[string]string{
+		"service": "test-service",
+		"status":  "ok",
+	})
+}
+
+func validationErrorHandler(w http.ResponseWriter, r *http.Request) {
+	details := map[string]string{
+		"field": "email",
+		"issue": "invalid_format",
+	}
+	httpresponse.ErrorWithDetails(
+		w,
+		http.StatusBadRequest,
+		httpresponse.ErrValidation,
+		"El campo 'email' es obligatorio y debe ser un correo válido",
+		details,
+	)
+}
+
+func unauthorizedHandler(w http.ResponseWriter, r *http.Request) {
+	httpresponse.Unauthorized(w, "Token de autenticación vencido o inválido")
+}
+
+func forbiddenHandler(w http.ResponseWriter, r *http.Request) {
+	httpresponse.Forbidden(w, "No tienes permisos para acceder a este recurso")
+}
+
+func notFoundHandler(w http.ResponseWriter, r *http.Request) {
+	httpresponse.NotFound(w, "El usuario con ID 123 no existe")
+}
+
+func internalErrorHandler(w http.ResponseWriter, r *http.Request) {
+	httpresponse.InternalError(w)
+}
+
+func panicHandler(w http.ResponseWriter, r *http.Request) {
+	panic("¡Algo explotó en el servidor de pruebas!")
+}
+
 func main() {
-	// 1. Inicializar el logger
-	logger := logging.New("post-service")
-	logger.Info("service_started")
+	logger := logging.New("test-service")
+	mux := http.NewServeMux()
 
-	// 2. Inicializar el cliente de MinIO (Archivos multimedia)
-	minioClient, err := infraMinio.InitClient()
-	if err != nil {
-		log.Fatalf("Error crítico: No se pudo conectar a MinIO: %v", err)
-	}
+	mux.HandleFunc("/health", healthHandler)
+	mux.HandleFunc("/validation-error", validationErrorHandler)
+	mux.HandleFunc("/unauthorized", unauthorizedHandler)
+	mux.HandleFunc("/forbidden", forbiddenHandler)
+	mux.HandleFunc("/not-found", notFoundHandler)
+	mux.HandleFunc("/internal-error", internalErrorHandler)
+	mux.HandleFunc("/panic", panicHandler)
 
-	// 3. Conectar a Supabase Local (PostgreSQL) usando el puerto 15422
-	dbURL := "postgresql://postgres:postgres@127.0.0.1:15422/postgres?sslmode=disable"
+	// Envolver el enrutador con el middleware Recovery
+	handler := httpresponse.RecoveryWithLogger(logger, logging.HTTPMiddleware(logger, mux))
 
-	db, err := gorm.Open(postgres.Open(dbURL), &gorm.Config{})
-	if err != nil {
-		log.Fatalf("Error crítico: No se pudo conectar a la base de datos: %v", err)
-	}
+	logger.Info("service_started", "port", 8081)
 
-	// 4. Inicializar el repositorio de comentarios
-	commentRepo := repositories.NewPostgresCommentRepository(db)
-
-	// Auto-migrar la tabla de comentarios
-	err = db.AutoMigrate(&models.Comment{})
-	if err != nil {
-		log.Fatalf("Error migrando la base de datos: %v", err)
-	}
-
-	// 4. Inyectar dependencias del sistema de comentarios usando Postgres
-	commentRepo := repositories.NewPostgresCommentRepository(db)
-	commentService := services.NewCommentService(commentRepo)
-	commentController := controllers.NewCommentController(commentService)
-
-	// 5. Inicializar el servidor web con Gin
-	router := gin.Default()
-
-	// 6. Configurar rutas
-	routes.SetupRoutes(router, commentController, minioClient)
-
-	// 7. Arrancar el servidor
-	logger.Info("http_server_started", "port", "8084")
-	if err := router.Run(":8084"); err != nil {
-		log.Fatalf("Error al iniciar el servidor web: %v", err)
+	if err := http.ListenAndServe(":8081", handler); err != nil {
+		logger.Error("service_stopped", "error", err)
+		log.Fatal(err)
 	}
 }

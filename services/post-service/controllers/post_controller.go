@@ -36,8 +36,6 @@ func CreatePost(c *gin.Context) {
 	})
 }
 
-)
-
 type PostController struct {
 	postService *services.PostService
 }

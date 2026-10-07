@@ -34,6 +34,3 @@ func (r *PostgresCommentRepository) GetByID(commentID string) (models.Comment, e
 	err := r.db.First(&comment, "id_comentario = ?", commentID).Error
 	return comment, err
 }
-
-	return comment, err
-}
