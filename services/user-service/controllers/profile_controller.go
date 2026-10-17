@@ -3,6 +3,7 @@ package controllers
 import (
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/meloop/services/common/httpresponse"
@@ -83,4 +84,69 @@ func (ctrl *ProfileController) UpdateProfile(c *gin.Context) {
 	}
 
 	httpresponse.SuccessGin(c, http.StatusOK, updated)
+}
+
+// GetOwnProfile consulta el perfil del usuario autenticado (GET /v1/users/me/profile - RF-06)
+func (ctrl *ProfileController) GetOwnProfile(c *gin.Context) {
+	userID := strings.TrimSpace(c.GetString(ContextUserIDKey))
+	if userID == "" {
+		httpresponse.UnauthorizedGin(c, "No se encontró sesión de usuario autenticada")
+		return
+	}
+
+	ctrl.handleOwnProfile(c, userID)
+}
+
+// GetUserProfile consulta el perfil de otro usuario identificado por su ID (GET /v1/users/:id/profile - RF-06)
+func (ctrl *ProfileController) GetUserProfile(c *gin.Context) {
+	requestingUserID := strings.TrimSpace(c.GetString(ContextUserIDKey))
+	if requestingUserID == "" {
+		httpresponse.UnauthorizedGin(c, "No se encontró sesión de usuario autenticada")
+		return
+	}
+
+	targetID := strings.TrimSpace(c.Param("id"))
+	if targetID == "" {
+		httpresponse.NotFoundGin(c, "Usuario no encontrado")
+		return
+	}
+
+	// Si el ID solicitado es "me" o coincide con el propio solicitante, devolver perfil propio
+	if targetID == "me" || targetID == requestingUserID {
+		ctrl.handleOwnProfile(c, requestingUserID)
+		return
+	}
+
+	profile, err := ctrl.profileService.GetThirdPartyProfile(c.Request.Context(), requestingUserID, targetID)
+	if err != nil {
+		if errors.Is(err, services.ErrBlocked) {
+			// RN-09: Recurso no disponible ante bloqueo bidireccional sin confirmar existencia
+			httpresponse.NotFoundGin(c, "Perfil no disponible")
+			return
+		}
+		if errors.Is(err, services.ErrUserNotFound) {
+			httpresponse.NotFoundGin(c, "Usuario no encontrado")
+			return
+		}
+
+		httpresponse.InternalErrorGin(c)
+		return
+	}
+
+	httpresponse.SuccessGin(c, http.StatusOK, profile)
+}
+
+func (ctrl *ProfileController) handleOwnProfile(c *gin.Context, userID string) {
+	profile, err := ctrl.profileService.GetOwnProfile(c.Request.Context(), userID)
+	if err != nil {
+		if errors.Is(err, services.ErrUserNotFound) {
+			httpresponse.NotFoundGin(c, "Usuario no encontrado")
+			return
+		}
+
+		httpresponse.InternalErrorGin(c)
+		return
+	}
+
+	httpresponse.SuccessGin(c, http.StatusOK, profile)
 }

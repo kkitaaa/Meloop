@@ -10,16 +10,16 @@ import (
 )
 
 const (
-	bucketName    = "meloop-media"
-	maxImageSize  = 5 << 20  // 5 MB
-	maxAudioSize  = 15 << 20 // 15 MB
+	bucketName   = "meloop-media"
+	maxImageSize = 5 << 20  // 5 MB
+	maxAudioSize = 15 << 20 // 15 MB
 )
 
 // UploadMedia contiene la lógica para recibir, validar (tamaño/formato) y procesar imágenes y audios[cite: 9].
 func UploadMedia(minioClient *minio.Client, file *multipart.FileHeader) (string, error) {
 	// 1. Validar el formato y tamaño
 	contentType := file.Header.Get("Content-Type")
-	
+
 	switch contentType {
 	case "image/jpeg", "image/png":
 		if file.Size > maxImageSize {

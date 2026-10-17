@@ -11,11 +11,11 @@ const (
 
 // MusicReference representa la entidad musical (canción, artista, álbum) enlazada al post
 type MusicReference struct {
-	Provider      string        `json:"provider"`                 // ej: "spotify", "youtube"
-	ReferenceID   string        `json:"reference_id"`             // ej: el spotify_id
-	ReferenceType ReferenceType `json:"reference_type"`           // track, artist, album
-	Title         string        `json:"title,omitempty"`          // Metadato opcional para caché/UI rápida
-	CoverURL      string        `json:"cover_url,omitempty"`      // Metadato opcional
+	Provider      string        `json:"provider"`            // ej: "spotify", "youtube"
+	ReferenceID   string        `json:"reference_id"`        // ej: el spotify_id
+	ReferenceType ReferenceType `json:"reference_type"`      // track, artist, album
+	Title         string        `json:"title,omitempty"`     // Metadato opcional para caché/UI rápida
+	CoverURL      string        `json:"cover_url,omitempty"` // Metadato opcional
 }
 
 // CreatePostRequest es el payload esperado en el endpoint HTTP/REST
