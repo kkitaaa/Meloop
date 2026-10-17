@@ -8,10 +8,10 @@ import (
 )
 
 type GamificationController struct {
-	service *services.GamificationService
+	service services.GamificationService
 }
 
-func NewGamificationController(service *services.GamificationService) *GamificationController {
+func NewGamificationController(service services.GamificationService) *GamificationController {
 	return &GamificationController{service: service}
 }
 
@@ -27,14 +27,13 @@ func (gc *GamificationController) AddXP(c *gin.Context) {
 		return
 	}
 
-	progress, unlocked, err := gc.service.AddXP(req.UserID, req.XP)
+	result, err := gc.service.ProcessExperience(c.Request.Context(), req.UserID, req.XP)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "error procesando experiencia"})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"progress": progress,
-		"unlocked_rewards": unlocked,
+		"result": result,
 	})
 }
