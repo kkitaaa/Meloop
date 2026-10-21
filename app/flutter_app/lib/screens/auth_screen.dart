@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter/foundation.dart';
 
+import '../core/navigation/responsive_navigation_shell.dart';
 import 'feed_screen.dart';
 
 class AuthScreen extends StatelessWidget {
@@ -115,6 +117,10 @@ class AuthScreen extends StatelessWidget {
   }
 
   Widget _buildLoginForm(BuildContext context) {
+    final isAndroidMobile =
+        defaultTargetPlatform == TargetPlatform.android &&
+        MediaQuery.sizeOf(context).width <= 900;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -176,7 +182,11 @@ class AuthScreen extends StatelessWidget {
             onPressed: () {
               Navigator.pushReplacement(
                 context,
-                MaterialPageRoute(builder: (context) => const FeedScreen()),
+                MaterialPageRoute(
+                  builder: (context) => isAndroidMobile
+                      ? const ResponsiveNavigationShell()
+                      : const FeedScreen(),
+                ),
               );
             },
             child: const Text(

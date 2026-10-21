@@ -321,6 +321,55 @@ class _FeedScreenState extends State<FeedScreen> {
   }
 
   Widget _buildTopBar(bool isDesktop) {
+    if (!isDesktop) {
+      return Container(
+        height: 55,
+        color: _tealAccent,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Center(
+                  child: Image.asset(
+                    'assets/imagenes/meloop.png',
+                    height: 24,
+                    fit: BoxFit.contain,
+                  ),
+                ),
+              ),
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                InkWell(
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const ProfileScreen(),
+                      ),
+                    );
+                  },
+                  child: const CircleAvatar(
+                    radius: 14,
+                    backgroundColor: Colors.white,
+                    child: Icon(
+                      Icons.person,
+                      color: Color(0xFF1ABC9C),
+                      size: 18,
+                    ),
+                  ),
+                ),
+                const NotificationsMenu(),
+              ],
+            ),
+          ],
+        ),
+      );
+    }
+
     return Container(
       height: 55,
       color: _tealAccent,
@@ -694,6 +743,8 @@ class _FeedScreenState extends State<FeedScreen> {
   }
 
   Widget _buildFeedPaper() {
+    final isMobile = MediaQuery.of(context).size.width <= 900;
+
     return Container(
       decoration: BoxDecoration(
         color: const Color(0xFFFDFDFD),
@@ -708,47 +759,34 @@ class _FeedScreenState extends State<FeedScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 32.0, vertical: 24.0),
         child: Column(
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Row(
-                  children: [
-                    const Text(
-                      "Ultimos Blogs:",
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
+            SizedBox(
+              height: 40,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  if (!isMobile)
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        "Ultimos Blogs:",
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
-                    const SizedBox(width: 16),
-                    _filterChip("recientes", isActive: true),
-                    _filterChip("tendencias", isActive: false),
-                    _filterChip("amigos", isActive: false),
-                  ],
-                ),
-                OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(
-                    side: BorderSide(color: _tealAccent),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 12,
+                  Center(
+                    child: Wrap(
+                      alignment: WrapAlignment.center,
+                      children: [
+                        _filterChip("recientes", isActive: true),
+                        _filterChip("tendencias", isActive: false),
+                        _filterChip("amigos", isActive: false),
+                      ],
                     ),
                   ),
-                  onPressed: () {},
-                  icon: Icon(Icons.edit, color: _tealAccent, size: 14),
-                  label: Text(
-                    "escribir blog",
-                    style: TextStyle(
-                      color: _tealAccent,
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
             const Divider(height: 32, thickness: 1, color: Colors.black12),
             Expanded(

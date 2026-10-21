@@ -3,7 +3,14 @@ import 'package:flutter/material.dart';
 /// Chat flotante de demostración para pantallas de escritorio.
 /// No abre WebSockets todavía: los mensajes viven solo durante esta sesión.
 class DesktopChat extends StatefulWidget {
-  const DesktopChat({super.key});
+  const DesktopChat({
+    super.key,
+    this.fullScreen = false,
+    this.onConversationChanged,
+  });
+
+  final bool fullScreen;
+  final ValueChanged<bool>? onConversationChanged;
 
   @override
   State<DesktopChat> createState() => _DesktopChatState();
@@ -35,14 +42,18 @@ class _DesktopChatState extends State<DesktopChat> {
       preview: 'Amigo me puedes mandar el link del gi...',
       time: '13:20',
       avatarColor: const Color(0xFF303030),
-      messages: [_ChatMessage('Amigo me puedes mandar el link del gif?', false, '13:20')],
+      messages: [
+        _ChatMessage('Amigo me puedes mandar el link del gif?', false, '13:20'),
+      ],
     ),
     _Conversation(
       name: 'Rigby.gato',
       preview: 'Enviaste una canción',
       time: 'Ayer',
       avatarColor: const Color(0xFFC08366),
-      messages: [_ChatMessage('Te envié una canción', true, 'Ayer', status: 'Leído')],
+      messages: [
+        _ChatMessage('Te envié una canción', true, 'Ayer', status: 'Leído'),
+      ],
     ),
     _Conversation(
       name: 'Usuario Bloqueado',
@@ -61,13 +72,21 @@ class _DesktopChatState extends State<DesktopChat> {
 
   void _openConversation(_Conversation conversation) {
     setState(() => _conversation = conversation);
+    widget.onConversationChanged?.call(true);
+  }
+
+  void _closeConversation() {
+    setState(() => _conversation = null);
+    widget.onConversationChanged?.call(false);
   }
 
   void _sendMessage() {
     final text = _messageController.text.trim();
     if (text.isEmpty || _conversation == null) return;
     setState(() {
-      _conversation!.messages.add(_ChatMessage(text, true, 'Ahora', status: 'Enviado'));
+      _conversation!.messages.add(
+        _ChatMessage(text, true, 'Ahora', status: 'Enviado'),
+      );
       _conversation!.preview = text;
       _conversation!.time = 'Ahora';
     });
@@ -76,6 +95,57 @@ class _DesktopChatState extends State<DesktopChat> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.fullScreen) {
+      return PopScope<Object?>(
+        canPop: _conversation == null,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop && _conversation != null) _closeConversation();
+        },
+        child: Material(
+          color: const Color(0xFFFAFAFA),
+          child: SafeArea(
+            child: Column(
+              children: [
+                Container(
+                  height: 56,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  color: _headerColor,
+                  child: Row(
+                    children: [
+                      if (_conversation != null)
+                        IconButton(
+                          tooltip: 'Volver a conversaciones',
+                          onPressed: _closeConversation,
+                          icon: const Icon(
+                            Icons.arrow_back,
+                            color: Colors.white,
+                          ),
+                        ),
+                      const Icon(
+                        Icons.chat_bubble_outline,
+                        color: Colors.white,
+                        size: 19,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        _conversation?.name ?? 'Chat',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(child: _conversation == null ? _inbox() : _chat()),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     return Material(
       color: Colors.transparent,
       elevation: 14,
@@ -89,14 +159,19 @@ class _DesktopChatState extends State<DesktopChat> {
           color: const Color(0xFFFAFAFA),
           borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
           boxShadow: [
-            BoxShadow(color: Colors.black.withValues(alpha: .22), blurRadius: 18),
+            BoxShadow(
+              color: Colors.black.withValues(alpha: .22),
+              blurRadius: 18,
+            ),
           ],
         ),
         child: Column(
           children: [
             InkWell(
               onTap: () => setState(() => _isOpen = !_isOpen),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(12),
+              ),
               child: Container(
                 height: 46,
                 padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -111,22 +186,46 @@ class _DesktopChatState extends State<DesktopChat> {
                         tooltip: 'Volver a conversaciones',
                         padding: EdgeInsets.zero,
                         constraints: const BoxConstraints(),
-                        icon: const Icon(Icons.arrow_back, color: Colors.white, size: 21),
-                        onPressed: () => setState(() => _conversation = null),
+                        icon: const Icon(
+                          Icons.arrow_back,
+                          color: Colors.white,
+                          size: 21,
+                        ),
+                        onPressed: _closeConversation,
                       ),
                     if (_conversation != null) const SizedBox(width: 10),
-                    const Icon(Icons.chat_bubble_outline, color: Colors.white, size: 19),
+                    const Icon(
+                      Icons.chat_bubble_outline,
+                      color: Colors.white,
+                      size: 19,
+                    ),
                     const SizedBox(width: 8),
-                    const Text('Chat', style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w600)),
+                    const Text(
+                      'Chat',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                     const Spacer(),
                     if (_conversation == null && _isOpen)
-                      const CircleAvatar(radius: 5, backgroundColor: Color(0xFF36C1A4)),
-                    Icon(_isOpen ? Icons.keyboard_arrow_down : Icons.keyboard_arrow_up, color: Colors.white),
+                      const CircleAvatar(
+                        radius: 5,
+                        backgroundColor: Color(0xFF36C1A4),
+                      ),
+                    Icon(
+                      _isOpen
+                          ? Icons.keyboard_arrow_down
+                          : Icons.keyboard_arrow_up,
+                      color: Colors.white,
+                    ),
                   ],
                 ),
               ),
             ),
-            if (_isOpen) Expanded(child: _conversation == null ? _inbox() : _chat()),
+            if (_isOpen)
+              Expanded(child: _conversation == null ? _inbox() : _chat()),
           ],
         ),
       ),
@@ -147,7 +246,12 @@ class _DesktopChatState extends State<DesktopChat> {
             child: Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: .06), blurRadius: 5)],
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: .06),
+                    blurRadius: 5,
+                  ),
+                ],
               ),
               child: Row(
                 children: [
@@ -157,13 +261,29 @@ class _DesktopChatState extends State<DesktopChat> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(conversation.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                        Text(
+                          conversation.name,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15,
+                          ),
+                        ),
                         const SizedBox(height: 5),
-                        Text(conversation.preview, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.black45, fontSize: 12)),
+                        Text(
+                          conversation.preview,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.black45,
+                            fontSize: 12,
+                          ),
+                        ),
                       ],
                     ),
                   ),
-                  Text(conversation.time, style: const TextStyle(color: Colors.black38, fontSize: 11)),
+                  Text(
+                    conversation.time,
+                    style: const TextStyle(color: Colors.black38, fontSize: 11),
+                  ),
                 ],
               ),
             ),
@@ -187,8 +307,18 @@ class _DesktopChatState extends State<DesktopChat> {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(conversation.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                  if (conversation.online) const Text('En línea', style: TextStyle(color: _accentColor, fontSize: 11)),
+                  Text(
+                    conversation.name,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                  ),
+                  if (conversation.online)
+                    const Text(
+                      'En línea',
+                      style: TextStyle(color: _accentColor, fontSize: 11),
+                    ),
                 ],
               ),
             ],
@@ -199,7 +329,8 @@ class _DesktopChatState extends State<DesktopChat> {
           child: ListView.builder(
             padding: const EdgeInsets.all(12),
             itemCount: conversation.messages.length,
-            itemBuilder: (context, index) => _bubble(conversation.messages[index]),
+            itemBuilder: (context, index) =>
+                _bubble(conversation.messages[index]),
           ),
         ),
         Container(
@@ -216,12 +347,21 @@ class _DesktopChatState extends State<DesktopChat> {
                     filled: true,
                     fillColor: Colors.white,
                     isDense: true,
-                    contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(22)), borderSide: BorderSide.none),
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 10,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.all(Radius.circular(22)),
+                      borderSide: BorderSide.none,
+                    ),
                   ),
                 ),
               ),
-              IconButton(icon: const Icon(Icons.send_rounded, color: Colors.white), onPressed: _sendMessage),
+              IconButton(
+                icon: const Icon(Icons.send_rounded, color: Colors.white),
+                onPressed: _sendMessage,
+              ),
             ],
           ),
         ),
@@ -237,13 +377,25 @@ class _DesktopChatState extends State<DesktopChat> {
         margin: const EdgeInsets.only(bottom: 10),
         padding: const EdgeInsets.fromLTRB(12, 9, 10, 6),
         constraints: const BoxConstraints(maxWidth: 255),
-        decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(10)),
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(10),
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            Text(message.text, style: const TextStyle(color: Colors.white, fontSize: 13)),
+            Text(
+              message.text,
+              style: const TextStyle(color: Colors.white, fontSize: 13),
+            ),
             const SizedBox(height: 3),
-            Text('${message.time}${message.status == null ? '' : ' · ${message.status}'}', style: TextStyle(color: Colors.white.withValues(alpha: .6), fontSize: 9)),
+            Text(
+              '${message.time}${message.status == null ? '' : ' · ${message.status}'}',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: .6),
+                fontSize: 9,
+              ),
+            ),
           ],
         ),
       ),
@@ -263,7 +415,14 @@ class _DesktopChatState extends State<DesktopChat> {
 }
 
 class _Conversation {
-  _Conversation({required this.name, required this.preview, required this.time, required this.avatarColor, required this.messages, this.online = false});
+  _Conversation({
+    required this.name,
+    required this.preview,
+    required this.time,
+    required this.avatarColor,
+    required this.messages,
+    this.online = false,
+  });
 
   final String name;
   String preview;

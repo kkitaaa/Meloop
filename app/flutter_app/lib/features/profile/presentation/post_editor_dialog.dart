@@ -1,5 +1,15 @@
 import 'package:flutter/material.dart';
 
+Future<String?> showPostEditorDialog(
+  BuildContext context, {
+  required Color tealAccent,
+}) {
+  return showDialog<String>(
+    context: context,
+    builder: (context) => PostEditorDialog(tealAccent: tealAccent),
+  );
+}
+
 class PostEditorDialog extends StatefulWidget {
   final Map<String, dynamic>?
   postData; // Si es null, es Creación. Si trae datos, es Edición.
