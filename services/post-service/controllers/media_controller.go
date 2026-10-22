@@ -1,11 +1,11 @@
 package controllers
 
 import (
-"net/http"
+	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/minio/minio-go/v7"
 	"github.com/meloop/post-service/services"
+	"github.com/minio/minio-go/v7"
 )
 
 // UploadFile es una función que retorna el handler de Gin, inyectando el cliente de MinIO

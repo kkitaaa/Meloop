@@ -9,7 +9,7 @@ import (
 )
 
 type CommentService struct {
-repository repositories.CommentRepository
+	repository repositories.CommentRepository
 }
 
 func NewCommentService(repository repositories.CommentRepository) *CommentService {
@@ -138,4 +138,3 @@ func buildCommentTree(comments []models.Comment) []models.Comment {
 
 	return result
 }
-
