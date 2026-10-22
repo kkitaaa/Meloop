@@ -3,8 +3,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../features/notifications/presentation/notification_scope.dart';
+import '../features/notifications/presentation/grouped_notification.dart';
 import '../features/notifications/state/app_notification.dart';
 import '../features/notifications/state/notification_controller.dart';
+import '../features/profile/presentation/profile_screen.dart';
 import '../features/posts/post_detail_screen.dart';
 import '../screens/friends_screen.dart';
 
@@ -94,7 +96,7 @@ class _NotificationsMenuState extends State<NotificationsMenu> {
         .toList();
 
     return SizedBox(
-      height: _showSettings ? 270 : 360,
+      height: _showSettings ? 390 : 360,
       child: Material(
         color: Colors.white,
         borderRadius: BorderRadius.circular(10),
@@ -129,7 +131,7 @@ class _NotificationsMenuState extends State<NotificationsMenu> {
             ),
             const Divider(height: 1),
             if (_showSettings)
-              _settingsPanel(notifications)
+              Expanded(child: _settingsPanel(notifications))
             else
               Expanded(
                 child: _notificationsList(context, items, notifications),
@@ -142,35 +144,49 @@ class _NotificationsMenuState extends State<NotificationsMenu> {
 
   Widget _settingsPanel(NotificationController notifications) => Padding(
     padding: const EdgeInsets.all(10),
-    child: Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const Padding(
-          padding: EdgeInsets.all(6),
-          child: Text(
-            'Elige qué alertas quieres recibir.',
-            style: TextStyle(color: Colors.black54, fontSize: 12),
+    child: SingleChildScrollView(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Padding(
+            padding: EdgeInsets.all(6),
+            child: Text(
+              'Elige qué alertas quieres recibir.',
+              style: TextStyle(color: Colors.black54, fontSize: 12),
+            ),
           ),
-        ),
-        _preferenceSwitch(
-          notifications,
-          'like',
-          'Likes en publicaciones',
-          Icons.favorite,
-        ),
-        _preferenceSwitch(
-          notifications,
-          'comment',
-          'Comentarios',
-          Icons.mode_comment_outlined,
-        ),
-        _preferenceSwitch(
-          notifications,
-          'friend',
-          'Solicitudes de amistad',
-          Icons.person_add_alt_1,
-        ),
-      ],
+          _preferenceSwitch(
+            notifications,
+            'like',
+            'Likes en publicaciones',
+            Icons.favorite,
+          ),
+          _preferenceSwitch(
+            notifications,
+            'comment',
+            'Comentarios',
+            Icons.mode_comment_outlined,
+          ),
+          _preferenceSwitch(
+            notifications,
+            'friend',
+            'Solicitudes de amistad',
+            Icons.person_add_alt_1,
+          ),
+          _preferenceSwitch(
+            notifications,
+            'level',
+            'Subidas de nivel',
+            Icons.trending_up,
+          ),
+          _preferenceSwitch(
+            notifications,
+            'reward',
+            'Recompensas desbloqueadas',
+            Icons.card_giftcard,
+          ),
+        ],
+      ),
     ),
   );
 
@@ -192,6 +208,7 @@ class _NotificationsMenuState extends State<NotificationsMenu> {
     List<AppNotification> items,
     NotificationController notifications,
   ) {
+    final groups = GroupedNotification.group(items);
     if (items.isEmpty) {
       return const Padding(
         padding: EdgeInsets.all(32),
@@ -201,14 +218,15 @@ class _NotificationsMenuState extends State<NotificationsMenu> {
 
     return ListView.separated(
       shrinkWrap: true,
-      itemCount: items.length,
+      itemCount: groups.length,
       separatorBuilder: (_, _) => const Divider(height: 1),
       itemBuilder: (context, index) {
-        final item = items[index];
+        final group = groups[index];
+        final item = group.latest;
         return InkWell(
-          onTap: () => _openNotification(context, item, notifications),
+          onTap: () => _openNotification(context, group, notifications),
           child: Container(
-            color: item.isRead ? Colors.white : const Color(0xFFE9F8F5),
+            color: group.isRead ? Colors.white : const Color(0xFFE9F8F5),
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             child: Row(
               children: [
@@ -227,10 +245,10 @@ class _NotificationsMenuState extends State<NotificationsMenu> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        item.title,
+                        group.title,
                         style: TextStyle(
                           fontSize: 13,
-                          fontWeight: item.isRead
+                          fontWeight: group.isRead
                               ? FontWeight.normal
                               : FontWeight.bold,
                         ),
@@ -248,6 +266,18 @@ class _NotificationsMenuState extends State<NotificationsMenu> {
                     ],
                   ),
                 ),
+                if (group.count > 1)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 6),
+                    child: Text(
+                      '${group.count}',
+                      style: const TextStyle(
+                        color: Color(0xFF1E7E70),
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
                 if (!item.isRead)
                   const Icon(Icons.circle, size: 8, color: Color(0xFF00AF92)),
               ],
@@ -260,10 +290,13 @@ class _NotificationsMenuState extends State<NotificationsMenu> {
 
   void _openNotification(
     BuildContext context,
-    AppNotification item,
+    GroupedNotification group,
     NotificationController notifications,
   ) {
-    notifications.markRead(item.id);
+    final item = group.latest;
+    for (final notification in group.notifications) {
+      notifications.markRead(notification.id);
+    }
     _menuController.close();
     if (item.postId != null) {
       Navigator.push(
@@ -277,6 +310,18 @@ class _NotificationsMenuState extends State<NotificationsMenu> {
         context,
         MaterialPageRoute(builder: (_) => const FriendsScreen()),
       );
+    } else if (item.kind == NotificationKind.levelUp) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const ProfileScreen()),
+      );
+    } else if (item.kind == NotificationKind.reward) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => const ProfileScreen(openInventory: true),
+        ),
+      );
     }
   }
 
@@ -284,12 +329,16 @@ class _NotificationsMenuState extends State<NotificationsMenu> {
     NotificationKind.like => Icons.favorite,
     NotificationKind.comment => Icons.mode_comment,
     NotificationKind.friendRequest => Icons.person_add_alt_1,
+    NotificationKind.levelUp => Icons.trending_up,
+    NotificationKind.reward => Icons.card_giftcard,
   };
 
   Color _iconColor(NotificationKind kind) => switch (kind) {
     NotificationKind.like => const Color(0xFFFF6262),
     NotificationKind.comment => const Color(0xFF00AF92),
     NotificationKind.friendRequest => const Color(0xFF5B7FFF),
+    NotificationKind.levelUp => const Color(0xFFFFB020),
+    NotificationKind.reward => const Color(0xFF9C5BFF),
   };
 }
 

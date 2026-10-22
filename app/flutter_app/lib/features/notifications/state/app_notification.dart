@@ -1,4 +1,4 @@
-enum NotificationKind { like, comment, friendRequest }
+enum NotificationKind { like, comment, friendRequest, levelUp, reward }
 
 class AppNotification {
   const AppNotification({
@@ -8,6 +8,9 @@ class AppNotification {
     required this.detail,
     required this.createdAt,
     this.postId,
+    this.actorName,
+    this.actorNames = const [],
+    this.groupCount = 1,
     this.isRead = false,
   });
 
@@ -17,6 +20,9 @@ class AppNotification {
   final String detail;
   final DateTime createdAt;
   final int? postId;
+  final String? actorName;
+  final List<String> actorNames;
+  final int groupCount;
   final bool isRead;
 
   AppNotification copyWith({bool? isRead}) => AppNotification(
@@ -26,6 +32,9 @@ class AppNotification {
     detail: detail,
     createdAt: createdAt,
     postId: postId,
+    actorName: actorName,
+    actorNames: actorNames,
+    groupCount: groupCount,
     isRead: isRead ?? this.isRead,
   );
 
@@ -33,5 +42,7 @@ class AppNotification {
     NotificationKind.like => 'like',
     NotificationKind.comment => 'comment',
     NotificationKind.friendRequest => 'friend',
+    NotificationKind.levelUp => 'level',
+    NotificationKind.reward => 'reward',
   };
 }

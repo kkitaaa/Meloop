@@ -25,6 +25,8 @@ class NotificationController extends ChangeNotifier
     'like': true,
     'comment': true,
     'friend': true,
+    'level': true,
+    'reward': true,
   };
   final List<AppNotification> _notifications = [];
 

@@ -44,6 +44,7 @@ class MockNotificationRepository implements NotificationRepository {
         detail: isLike ? 'Hace un momento' : '“Qué buena canción”',
         createdAt: now,
         postId: isLike ? 1 : 2,
+        actorName: isLike ? 'Camila' : 'Felipe',
       ),
     ];
   }
@@ -131,6 +132,8 @@ class HttpNotificationRepository implements NotificationRepository {
     'like' => 'LIKE',
     'comment' => 'COMENTARIO',
     'friend' => 'SOLICITUD_AMISTAD',
+    'level' => 'SUBIDA_NIVEL',
+    'reward' => 'RECOMPENSA_DESBLOQUEADA',
     _ => throw ArgumentError.value(
       type,
       'type',
@@ -181,6 +184,17 @@ class HttpNotificationRepository implements NotificationRepository {
     final actor = _stringValue(
       json['actor_name'] ?? json['nombre_emisor'] ?? data['actorName'],
     );
+    final actorNames = _stringList(
+      json['actor_names'] ?? json['nombres_actores'] ?? data['actorNames'],
+    );
+    final groupCount = _intValue(
+      json['group_count'] ??
+          json['count'] ??
+          json['cantidad'] ??
+          json['total'] ??
+          data['groupCount'] ??
+          data['count'],
+    );
     final title =
         _stringValue(json['title'] ?? json['titulo']) ??
         _defaultTitle(kind, actor);
@@ -205,6 +219,9 @@ class HttpNotificationRepository implements NotificationRepository {
           : rawPostId is String
           ? int.tryParse(rawPostId)
           : null,
+      actorName: actor,
+      actorNames: actorNames,
+      groupCount: groupCount ?? 1,
       isRead: json['leida'] == true || json['read'] == true,
     );
   }
@@ -218,6 +235,8 @@ class HttpNotificationRepository implements NotificationRepository {
     'friend' ||
     'solicitud_amistad' ||
     'friend.requested' => NotificationKind.friendRequest,
+    'subida_nivel' || 'level_up' || 'levelup' => NotificationKind.levelUp,
+    'recompensa_desbloqueada' || 'reward_unlocked' => NotificationKind.reward,
     _ => throw FormatException('Tipo de notificación desconocido: $value'),
   };
 
@@ -227,8 +246,21 @@ class HttpNotificationRepository implements NotificationRepository {
       NotificationKind.like => 'A $name le gustó tu publicación',
       NotificationKind.comment => '$name comentó tu publicación',
       NotificationKind.friendRequest => '$name te envió una solicitud',
+      NotificationKind.levelUp => '¡Subiste de nivel!',
+      NotificationKind.reward => '¡Desbloqueaste una recompensa!',
     };
   }
+
+  List<String> _stringList(Object? value) {
+    if (value is! List) return const [];
+    return value.whereType<String>().where((name) => name.isNotEmpty).toList();
+  }
+
+  int? _intValue(Object? value) => switch (value) {
+    int count when count > 0 => count,
+    String count => int.tryParse(count),
+    _ => null,
+  };
 
   String? _stringValue(Object? value) =>
       value is String && value.isNotEmpty ? value : null;
