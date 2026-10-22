@@ -111,7 +111,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   void _ensureRgbReward() {
     if (!GamificationDemoController.instance.rgbFrameUnlocked ||
-        _inventory.any((item) => item['id'] == 'frame-rgb')) return;
+        _inventory.any((item) => item['id'] == 'frame-rgb'))
+      return;
     setState(() {
       _inventory.add({
         'id': 'frame-rgb',
@@ -578,8 +579,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Widget _buildLegacyLevelCard() {
     final game = GamificationDemoController.instance;
-    final percentage =
-        (game.xp / GamificationDemoController.xpNeeded * 100).round();
+    final percentage = (game.xp / GamificationDemoController.xpNeeded * 100)
+        .round();
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(

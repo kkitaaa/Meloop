@@ -34,6 +34,7 @@ func (gc *GamificationController) AddXP(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"result": result,
+		"progress":         result,
+		"unlocked_rewards": result.UnlockedRewards,
 	})
 }

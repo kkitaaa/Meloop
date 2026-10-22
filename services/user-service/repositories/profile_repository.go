@@ -14,10 +14,15 @@ import (
 	"github.com/meloop/user-service/models"
 )
 
-// ProfileRepository define las operaciones de persistencia para el diseño y personalización de perfil (RF-07)
+// ProfileRepository define las operaciones de persistencia para el diseño y personalización de perfil (RF-06, RF-07)
 type ProfileRepository interface {
 	GetProfile(ctx context.Context, userID string) (*models.ProfileResponse, error)
 	UpdateProfile(ctx context.Context, userID string, profile *models.Profile) (*models.ProfileResponse, error)
+
+	// Métodos para consulta de perfiles propios y de terceros (RF-06)
+	GetFullProfileData(ctx context.Context, userID string) (*models.UserProfileData, error)
+	IsBlocked(ctx context.Context, user1ID, user2ID string) (bool, error)
+	IsFriend(ctx context.Context, user1ID, user2ID string) (bool, error)
 }
 
 type postgresProfileRepository struct {
@@ -307,4 +312,180 @@ func generateRandomID() string {
 	b := make([]byte, 16)
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
+}
+
+// GetFullProfileData consolida toda la información disponible del usuario para RF-06
+func (r *postgresProfileRepository) GetFullProfileData(ctx context.Context, userID string) (*models.UserProfileData, error) {
+	if r.pool == nil {
+		return nil, errors.New("el pool de base de datos no está inicializado")
+	}
+
+	var data models.UserProfileData
+	var bio, foto, banner, tema *string
+	var coloresBytes []byte
+
+	query := `
+		SELECT 
+			u.id_usuario::text, 
+			u.username, 
+			u.experiencia, 
+			u.id_nivel,
+			COALESCE(n.numero, u.id_nivel, 1),
+			COALESCE(p.biografia, ''), 
+			COALESCE(p.foto_perfil, ''), 
+			COALESCE(p.banner, ''), 
+			COALESCE(p.tema, 'default'), 
+			COALESCE(p.colores, '{}'::jsonb)
+		FROM USUARIO u
+		LEFT JOIN NIVEL n ON n.id_nivel = u.id_nivel
+		LEFT JOIN PERFIL p ON p.id_usuario = u.id_usuario
+		WHERE u.id_usuario = $1
+	`
+	err := r.pool.QueryRow(ctx, query, userID).Scan(
+		&data.IDUsuario,
+		&data.Username,
+		&data.Experiencia,
+		&data.IDNivel,
+		&data.NivelNumero,
+		&bio,
+		&foto,
+		&banner,
+		&tema,
+		&coloresBytes,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("error al consultar perfil consolidado de usuario: %w", err)
+	}
+
+	if bio != nil {
+		data.Biografia = *bio
+	}
+	if foto != nil {
+		data.FotoPerfil = *foto
+	}
+	if banner != nil {
+		data.Banner = *banner
+	}
+	if tema != nil {
+		data.Tema = *tema
+	} else {
+		data.Tema = "default"
+	}
+
+	data.Colores = make(map[string]interface{})
+	if len(coloresBytes) > 0 {
+		_ = json.Unmarshal(coloresBytes, &data.Colores)
+	}
+
+	// 1. Consultar insignias (RECOMPENSA de tipo 'INSIGNIA' y habilitada = TRUE)
+	data.Insignias = make([]models.InsigniaDTO, 0)
+	queryInsignias := `
+		SELECT i.id_recompensa, COALESCE(r.tipo, 'INSIGNIA'), i.equipada, COALESCE(i.fecha_desbloqueo, NOW())
+		FROM INVENTARIO i
+		JOIN RECOMPENSA r ON i.id_recompensa = r.id_recompensa
+		WHERE i.id_usuario = $1
+		  AND UPPER(TRIM(r.tipo)) = 'INSIGNIA'
+		  AND COALESCE(r.habilitada, TRUE) = TRUE
+		ORDER BY i.fecha_desbloqueo DESC, i.id_inventario ASC
+	`
+	rowsIns, err := r.pool.Query(ctx, queryInsignias, userID)
+	if err == nil {
+		for rowsIns.Next() {
+			var ins models.InsigniaDTO
+			if err := rowsIns.Scan(&ins.IDRecompensa, &ins.Tipo, &ins.Equipada, &ins.FechaDesbloqueo); err == nil {
+				data.Insignias = append(data.Insignias, ins)
+			}
+		}
+		rowsIns.Close()
+	}
+
+	// 2. Consultar elementos de personalización equipados (INVENTARIO con equipada = TRUE y recompensa habilitada)
+	data.ElementosEquipados = make([]models.EquippedItemDTO, 0)
+	queryEquipados := `
+		SELECT i.id_inventario, i.id_recompensa, COALESCE(r.tipo, ''), COALESCE(i.fecha_desbloqueo, NOW())
+		FROM INVENTARIO i
+		JOIN RECOMPENSA r ON i.id_recompensa = r.id_recompensa
+		WHERE i.id_usuario = $1
+		  AND i.equipada = TRUE
+		  AND COALESCE(r.habilitada, TRUE) = TRUE
+		ORDER BY i.fecha_desbloqueo DESC, i.id_inventario ASC
+	`
+	rowsEq, err := r.pool.Query(ctx, queryEquipados, userID)
+	if err == nil {
+		for rowsEq.Next() {
+			var eq models.EquippedItemDTO
+			if err := rowsEq.Scan(&eq.IDInventario, &eq.IDRecompensa, &eq.Tipo, &eq.FechaDesbloqueo); err == nil {
+				data.ElementosEquipados = append(data.ElementosEquipados, eq)
+			}
+		}
+		rowsEq.Close()
+	}
+
+	// 3. Consultar preferencias musicales
+	musicPrefs, err := r.getMusicalPreferences(ctx, userID, nil)
+	if err != nil || musicPrefs == nil {
+		data.InformacionMusical = &models.MusicalPreferences{
+			Generos:   make([]string, 0),
+			Artistas:  make([]string, 0),
+			Canciones: make([]string, 0),
+		}
+	} else {
+		data.InformacionMusical = musicPrefs
+	}
+
+	// 4. Consultar estadísticas consolidadas (publicaciones y amigos aceptados)
+	queryStats := `
+		SELECT 
+			COALESCE((SELECT COUNT(*) FROM PUBLICACION WHERE id_usuario = $1), 0),
+			COALESCE((SELECT COUNT(*) FROM AMISTAD WHERE (id_usuario_1 = $1 OR id_usuario_2 = $1) AND estado = 'ACEPTADA'), 0)
+	`
+	_ = r.pool.QueryRow(ctx, queryStats, userID).Scan(&data.Estadisticas.Publicaciones, &data.Estadisticas.Amigos)
+
+	return &data, nil
+}
+
+// IsBlocked verifica si existe un bloqueo bidireccional entre dos usuarios (RN-09)
+func (r *postgresProfileRepository) IsBlocked(ctx context.Context, user1ID, user2ID string) (bool, error) {
+	if r.pool == nil {
+		return false, errors.New("el pool de base de datos no está inicializado")
+	}
+
+	var blocked bool
+	query := `
+		SELECT EXISTS (
+			SELECT 1 FROM BLOQUEO
+			WHERE (id_usuario_bloqueador = $1 AND id_usuario_bloqueado = $2)
+			   OR (id_usuario_bloqueador = $2 AND id_usuario_bloqueado = $1)
+		)
+	`
+	err := r.pool.QueryRow(ctx, query, user1ID, user2ID).Scan(&blocked)
+	if err != nil {
+		return false, fmt.Errorf("error al verificar bloqueo entre usuarios: %w", err)
+	}
+	return blocked, nil
+}
+
+// IsFriend verifica si dos usuarios son amigos aceptados en la tabla AMISTAD
+func (r *postgresProfileRepository) IsFriend(ctx context.Context, user1ID, user2ID string) (bool, error) {
+	if r.pool == nil {
+		return false, errors.New("el pool de base de datos no está inicializado")
+	}
+
+	var isFriend bool
+	query := `
+		SELECT EXISTS (
+			SELECT 1 FROM AMISTAD
+			WHERE ((id_usuario_1 = $1 AND id_usuario_2 = $2)
+			    OR (id_usuario_1 = $2 AND id_usuario_2 = $1))
+			  AND estado = 'ACEPTADA'
+		)
+	`
+	err := r.pool.QueryRow(ctx, query, user1ID, user2ID).Scan(&isFriend)
+	if err != nil {
+		return false, fmt.Errorf("error al verificar amistad entre usuarios: %w", err)
+	}
+	return isFriend, nil
 }

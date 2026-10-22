@@ -9,11 +9,12 @@ import (
 )
 
 type ExperienceService struct {
-	repo   *repositories.ExperienceRepository
+	repo   repositories.ExperienceRepository
 	engine *GamificationEngine
 }
 
-func NewExperienceService(repo *repositories.ExperienceRepository, engine *GamificationEngine) *ExperienceService {
+// NewExperienceService inicializa la capa de servicio
+func NewExperienceService(repo repositories.ExperienceRepository, engine *GamificationEngine) *ExperienceService {
 	return &ExperienceService{
 		repo:   repo,
 		engine: engine,
@@ -46,7 +47,8 @@ func (s *ExperienceService) HandleInteractionEvent(ctx context.Context, event In
 	// 2. Si pasa las validaciones, asignar la experiencia exacta al usuario
 	log.Printf("Evento válido. Asignando +%d XP al usuario %s", xp, event.ActorID)
 
-	err = s.repo.AddExperience(ctx, event.ActorID, xp)
+	// Guardar experiencia atómicamente con reintentos
+	_, err = s.repo.AddExperienceWithRetry(ctx, event.ActorID, xp, 3)
 	if err != nil {
 		return fmt.Errorf("error al guardar experiencia en BD: %w", err)
 	}

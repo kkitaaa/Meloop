@@ -40,7 +40,7 @@ func main() {
 	privacySrv := services.NewPrivacyService(privacyRepo, userRepo)
 	notifSrv := services.NewNotificationConfigService(notifRepo, userRepo)
 	inventorySrv := services.NewInventoryService(inventoryRepo, userRepo)
-	profileSrv := services.NewProfileService(profileRepo, userRepo, mediaVerifier)
+	profileSrv := services.NewProfileService(profileRepo, userRepo, mediaVerifier, privacyRepo)
 
 	accountCtrl := controllers.NewAccountController(userSrv)
 	privacyCtrl := controllers.NewPrivacyController(privacySrv)
@@ -70,7 +70,11 @@ func main() {
 		protected.PATCH("/me/username", accountCtrl.UpdateUsername)
 		protected.POST("/me/email", accountCtrl.RequestEmailChange)
 
-		// Edición de perfil (RF-07)
+		// Consulta y edición de perfil (RF-06, RF-07)
+		protected.GET("/me/profile", profileCtrl.GetOwnProfile)
+		protected.GET("/me/perfil", profileCtrl.GetOwnProfile)
+		protected.GET("/:id/profile", profileCtrl.GetUserProfile)
+		protected.GET("/:id/perfil", profileCtrl.GetUserProfile)
 		protected.PUT("/me/profile", profileCtrl.UpdateProfile)
 		protected.PUT("/me/perfil", profileCtrl.UpdateProfile)
 
@@ -96,7 +100,11 @@ func main() {
 	v1Protected := router.Group("/v1/users")
 	v1Protected.Use(controllers.AuthRequired())
 	{
-		// Edición de perfil (RF-07)
+		// Consulta y edición de perfil (RF-06, RF-07)
+		v1Protected.GET("/me/profile", profileCtrl.GetOwnProfile)
+		v1Protected.GET("/me/perfil", profileCtrl.GetOwnProfile)
+		v1Protected.GET("/:id/profile", profileCtrl.GetUserProfile)
+		v1Protected.GET("/:id/perfil", profileCtrl.GetUserProfile)
 		v1Protected.PUT("/me/profile", profileCtrl.UpdateProfile)
 		v1Protected.PUT("/me/perfil", profileCtrl.UpdateProfile)
 
