@@ -1,5 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
+import '../features/notifications/presentation/notification_scope.dart';
+import '../features/notifications/state/app_notification.dart';
+import '../features/notifications/state/notification_controller.dart';
 import '../features/posts/post_detail_screen.dart';
 import '../screens/friends_screen.dart';
 
@@ -13,52 +18,81 @@ class NotificationsMenu extends StatefulWidget {
 class _NotificationsMenuState extends State<NotificationsMenu> {
   final MenuController _menuController = MenuController();
   bool _showSettings = false;
-  final _preferences = <String, bool>{'like': true, 'comment': true, 'friend': true};
-  final _items = <_NotificationItem>[
-    _NotificationItem(type: 'like', title: 'A Camila le gustó tu publicación', detail: 'Hace 2 min', postId: 1),
-    _NotificationItem(type: 'comment', title: 'Felipe comentó tu publicación', detail: '“Qué buena canción”', postId: 2),
-    _NotificationItem(type: 'friend', title: 'Valentina te envió una solicitud', detail: 'Hace 1 hora'),
-  ];
 
   @override
   Widget build(BuildContext context) {
-    final unread = _items.where((item) => !item.read && _preferences[item.type]!).length;
-    return MenuAnchor(
-      controller: _menuController,
-      style: const MenuStyle(
-        padding: WidgetStatePropertyAll(EdgeInsets.zero),
-        elevation: WidgetStatePropertyAll(12),
-      ),
-      menuChildren: [
-        SizedBox(width: 365, child: _buildPanel(context)),
-      ],
-      builder: (context, controller, child) => Stack(
-        clipBehavior: Clip.none,
-        children: [
-          IconButton(
-            tooltip: 'Notificaciones',
-            icon: const Icon(Icons.notifications, color: Colors.white, size: 20),
-            onPressed: () => controller.isOpen ? controller.close() : controller.open(),
+    final notifications = NotificationScope.of(context);
+    final panelWidth = (MediaQuery.sizeOf(context).width - 24).clamp(
+      0.0,
+      365.0,
+    );
+
+    return AnimatedBuilder(
+      animation: notifications,
+      builder: (context, _) => MenuAnchor(
+        controller: _menuController,
+        style: const MenuStyle(
+          padding: WidgetStatePropertyAll(EdgeInsets.zero),
+          elevation: WidgetStatePropertyAll(12),
+        ),
+        menuChildren: [
+          SizedBox(
+            width: panelWidth,
+            child: _buildPanel(context, notifications),
           ),
-          if (unread > 0)
-            Positioned(
-              top: 6,
-              right: 6,
-              child: Container(
-                width: 14,
-                height: 14,
-                alignment: Alignment.center,
-                decoration: const BoxDecoration(color: Color(0xFFFF6262), shape: BoxShape.circle),
-                child: Text('$unread', style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold)),
-              ),
-            ),
         ],
+        builder: (context, controller, child) => Stack(
+          clipBehavior: Clip.none,
+          alignment: Alignment.center,
+          children: [
+            IconButton(
+              tooltip: 'Notificaciones',
+              icon: _NotificationPulseIcon(
+                pulse: notifications.notificationPulse,
+              ),
+              onPressed: () =>
+                  controller.isOpen ? controller.close() : controller.open(),
+            ),
+            if (notifications.unreadCount > 0)
+              Positioned(
+                top: 6,
+                right: 6,
+                child: Container(
+                  width: 14,
+                  height: 14,
+                  alignment: Alignment.center,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFFF6262),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Text(
+                    '${notifications.unreadCount}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 8,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildPanel(BuildContext context) {
-    final items = _items.where((item) => _preferences[item.type]!).toList();
+  Widget _buildPanel(
+    BuildContext context,
+    NotificationController notifications,
+  ) {
+    final items = notifications.notifications
+        .where(
+          (item) => notifications.preference(
+            AppNotification.preferenceKey(item.kind),
+          ),
+        )
+        .toList();
+
     return SizedBox(
       height: _showSettings ? 270 : 360,
       child: Material(
@@ -69,47 +103,102 @@ class _NotificationsMenuState extends State<NotificationsMenu> {
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
-              child: Row(children: [
-                Text(_showSettings ? 'Preferencias' : 'Notificaciones', style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
-                const Spacer(),
-                IconButton(
-                  tooltip: _showSettings ? 'Ver notificaciones' : 'Configurar notificaciones',
-                  icon: Icon(_showSettings ? Icons.arrow_back : Icons.tune, color: const Color(0xFF1E7E70)),
-                  onPressed: () => setState(() => _showSettings = !_showSettings),
-                ),
-              ]),
+              child: Row(
+                children: [
+                  Text(
+                    _showSettings ? 'Preferencias' : 'Notificaciones',
+                    style: const TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    tooltip: _showSettings
+                        ? 'Ver notificaciones'
+                        : 'Configurar notificaciones',
+                    icon: Icon(
+                      _showSettings ? Icons.arrow_back : Icons.tune,
+                      color: const Color(0xFF1E7E70),
+                    ),
+                    onPressed: () =>
+                        setState(() => _showSettings = !_showSettings),
+                  ),
+                ],
+              ),
             ),
             const Divider(height: 1),
             if (_showSettings)
-              _settingsPanel()
+              _settingsPanel(notifications)
             else
-              Expanded(child: _notificationsList(context, items)),
+              Expanded(
+                child: _notificationsList(context, items, notifications),
+              ),
           ],
         ),
       ),
     );
   }
 
-  Widget _settingsPanel() => Padding(
+  Widget _settingsPanel(NotificationController notifications) => Padding(
     padding: const EdgeInsets.all(10),
-    child: Column(mainAxisSize: MainAxisSize.min, children: [
-      const Padding(padding: EdgeInsets.all(6), child: Text('Elige qué alertas quieres recibir.', style: TextStyle(color: Colors.black54, fontSize: 12))),
-      _preferenceSwitch('like', 'Likes en publicaciones', Icons.favorite),
-      _preferenceSwitch('comment', 'Comentarios', Icons.mode_comment_outlined),
-      _preferenceSwitch('friend', 'Solicitudes de amistad', Icons.person_add_alt_1),
-    ]),
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Padding(
+          padding: EdgeInsets.all(6),
+          child: Text(
+            'Elige qué alertas quieres recibir.',
+            style: TextStyle(color: Colors.black54, fontSize: 12),
+          ),
+        ),
+        _preferenceSwitch(
+          notifications,
+          'like',
+          'Likes en publicaciones',
+          Icons.favorite,
+        ),
+        _preferenceSwitch(
+          notifications,
+          'comment',
+          'Comentarios',
+          Icons.mode_comment_outlined,
+        ),
+        _preferenceSwitch(
+          notifications,
+          'friend',
+          'Solicitudes de amistad',
+          Icons.person_add_alt_1,
+        ),
+      ],
+    ),
   );
 
-  Widget _preferenceSwitch(String key, String label, IconData icon) => SwitchListTile(
-    value: _preferences[key]!,
-    activeColor: const Color(0xFF00AF92),
-    onChanged: (value) => setState(() => _preferences[key] = value),
+  Widget _preferenceSwitch(
+    NotificationController notifications,
+    String key,
+    String label,
+    IconData icon,
+  ) => SwitchListTile(
+    value: notifications.preference(key),
+    activeThumbColor: const Color(0xFF00AF92),
+    onChanged: (value) => unawaited(notifications.setPreference(key, value)),
     secondary: Icon(icon, color: const Color(0xFF1E7E70), size: 20),
     title: Text(label, style: const TextStyle(fontSize: 13)),
   );
 
-  Widget _notificationsList(BuildContext context, List<_NotificationItem> items) {
-    if (items.isEmpty) return const Padding(padding: EdgeInsets.all(32), child: Text('No hay notificaciones para mostrar.'));
+  Widget _notificationsList(
+    BuildContext context,
+    List<AppNotification> items,
+    NotificationController notifications,
+  ) {
+    if (items.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.all(32),
+        child: Text('No hay notificaciones para mostrar.'),
+      );
+    }
+
     return ListView.separated(
       shrinkWrap: true,
       itemCount: items.length,
@@ -117,41 +206,161 @@ class _NotificationsMenuState extends State<NotificationsMenu> {
       itemBuilder: (context, index) {
         final item = items[index];
         return InkWell(
-          onTap: () => _openNotification(context, item),
+          onTap: () => _openNotification(context, item, notifications),
           child: Container(
-            color: item.read ? Colors.white : const Color(0xFFE9F8F5),
+            color: item.isRead ? Colors.white : const Color(0xFFE9F8F5),
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            child: Row(children: [
-              CircleAvatar(radius: 18, backgroundColor: _iconColor(item.type).withValues(alpha: .15), child: Icon(_icon(item.type), size: 18, color: _iconColor(item.type))),
-              const SizedBox(width: 10),
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(item.title, style: TextStyle(fontSize: 13, fontWeight: item.read ? FontWeight.normal : FontWeight.bold)), const SizedBox(height: 3), Text(item.detail, style: const TextStyle(fontSize: 11, color: Colors.black54))])),
-              if (!item.read) const Icon(Icons.circle, size: 8, color: Color(0xFF00AF92)),
-            ]),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  radius: 18,
+                  backgroundColor: _iconColor(item.kind).withValues(alpha: .15),
+                  child: Icon(
+                    _icon(item.kind),
+                    size: 18,
+                    color: _iconColor(item.kind),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item.title,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: item.isRead
+                              ? FontWeight.normal
+                              : FontWeight.bold,
+                        ),
+                      ),
+                      if (item.detail.isNotEmpty) ...[
+                        const SizedBox(height: 3),
+                        Text(
+                          item.detail,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: Colors.black54,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                if (!item.isRead)
+                  const Icon(Icons.circle, size: 8, color: Color(0xFF00AF92)),
+              ],
+            ),
           ),
         );
       },
     );
   }
 
-  void _openNotification(BuildContext context, _NotificationItem item) {
-    setState(() => item.read = true);
+  void _openNotification(
+    BuildContext context,
+    AppNotification item,
+    NotificationController notifications,
+  ) {
+    notifications.markRead(item.id);
     _menuController.close();
     if (item.postId != null) {
-      Navigator.push(context, MaterialPageRoute(builder: (_) => PostDetailScreen(postId: item.postId!)));
-    } else {
-      Navigator.push(context, MaterialPageRoute(builder: (_) => const FriendsScreen()));
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => PostDetailScreen(postId: item.postId!),
+        ),
+      );
+    } else if (item.kind == NotificationKind.friendRequest) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const FriendsScreen()),
+      );
     }
   }
 
-  IconData _icon(String type) => switch (type) { 'like' => Icons.favorite, 'comment' => Icons.mode_comment, _ => Icons.person_add_alt_1 };
-  Color _iconColor(String type) => switch (type) { 'like' => const Color(0xFFFF6262), 'comment' => const Color(0xFF00AF92), _ => const Color(0xFF5B7FFF) };
+  IconData _icon(NotificationKind kind) => switch (kind) {
+    NotificationKind.like => Icons.favorite,
+    NotificationKind.comment => Icons.mode_comment,
+    NotificationKind.friendRequest => Icons.person_add_alt_1,
+  };
+
+  Color _iconColor(NotificationKind kind) => switch (kind) {
+    NotificationKind.like => const Color(0xFFFF6262),
+    NotificationKind.comment => const Color(0xFF00AF92),
+    NotificationKind.friendRequest => const Color(0xFF5B7FFF),
+  };
 }
 
-class _NotificationItem {
-  _NotificationItem({required this.type, required this.title, required this.detail, this.postId});
-  final String type;
-  final String title;
-  final String detail;
-  final int? postId;
-  bool read = false;
+class _NotificationPulseIcon extends StatefulWidget {
+  const _NotificationPulseIcon({required this.pulse});
+
+  final int pulse;
+
+  @override
+  State<_NotificationPulseIcon> createState() => _NotificationPulseIconState();
+}
+
+class _NotificationPulseIconState extends State<_NotificationPulseIcon>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 3),
+  );
+
+  @override
+  void didUpdateWidget(covariant _NotificationPulseIcon oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.pulse != oldWidget.pulse) _controller.forward(from: 0);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: 30,
+    height: 30,
+    child: AnimatedBuilder(
+      animation: _controller,
+      builder: (context, _) => Stack(
+        alignment: Alignment.center,
+        children: [
+          if (_controller.isAnimating)
+            CustomPaint(
+              size: const Size.square(30),
+              painter: _RadarPainter(_controller.value),
+            ),
+          const Icon(Icons.notifications, color: Colors.white, size: 20),
+        ],
+      ),
+    ),
+  );
+}
+
+class _RadarPainter extends CustomPainter {
+  const _RadarPainter(this.progress);
+
+  final double progress;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    for (var wave = 0; wave < 3; wave++) {
+      final phase = progress * 3 - wave;
+      if (phase < 0 || phase > 1) continue;
+      final paint = Paint()
+        ..color = const Color(0xFF8FFFE9).withValues(alpha: 1 - phase)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5;
+      canvas.drawCircle(size.center(Offset.zero), 8 + phase * 10, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _RadarPainter oldDelegate) =>
+      progress != oldDelegate.progress;
 }
