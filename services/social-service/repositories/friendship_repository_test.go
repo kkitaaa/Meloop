@@ -48,4 +48,10 @@ func TestFriendshipRepository_NilPool(t *testing.T) {
 	if _, err := repo.GetMutualFriendsCount(ctx, "u1", []string{"u2"}); err == nil {
 		t.Error("expected error with nil pool on GetMutualFriendsCount")
 	}
+	if _, err := repo.ExcludeBlocked(ctx, "u1", []string{"u2"}); err == nil {
+		t.Error("expected error with nil pool on ExcludeBlocked")
+	}
+	if _, err := repo.GetBlockedCandidateIDs(ctx, "u1", []string{"u2"}); err == nil {
+		t.Error("expected error with nil pool on GetBlockedCandidateIDs")
+	}
 }

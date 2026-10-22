@@ -7,21 +7,16 @@ import (
 	"time"
 )
 
-type ExperienceRepository interface {
-	AddExperienceAtomic(ctx context.Context, userID string, xpToAdd int) (int, error)
-	AddExperienceWithRetry(ctx context.Context, userID string, xpToAdd int, maxRetries int) (int, error)
-}
-
-type PostgresExperienceRepository struct {
+type ExperienceRepository struct {
 	db *sql.DB
 }
 
-func NewPostgresExperienceRepository(db *sql.DB) *PostgresExperienceRepository {
-	return &PostgresExperienceRepository{db: db}
+func NewExperienceRepository(db *sql.DB) *ExperienceRepository {
+	return &ExperienceRepository{db: db}
 }
 
 // AddExperienceAtomic actualiza la experiencia usando los nombres reales del MER (tabla usuario)
-func (r *PostgresExperienceRepository) AddExperienceAtomic(ctx context.Context, userID string, xpToAdd int) (int, error) {
+func (r *ExperienceRepository) AddExperienceAtomic(ctx context.Context, userID string, xpToAdd int) (int, error) {
 	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 	if err != nil {
 		return 0, fmt.Errorf("error al iniciar transacción: %w", err)
@@ -50,7 +45,7 @@ func (r *PostgresExperienceRepository) AddExperienceAtomic(ctx context.Context, 
 }
 
 // AddExperienceWithRetry agrega reintentos en caso de fallos de red
-func (r *PostgresExperienceRepository) AddExperienceWithRetry(ctx context.Context, userID string, xpToAdd int, maxRetries int) (int, error) {
+func (r *ExperienceRepository) AddExperienceWithRetry(ctx context.Context, userID string, xpToAdd int, maxRetries int) (int, error) {
 	var newXP int
 	var err error
 
@@ -71,4 +66,9 @@ func (r *PostgresExperienceRepository) AddExperienceWithRetry(ctx context.Contex
 	}
 
 	return 0, fmt.Errorf("se superó el máximo de reintentos (%d): %w", maxRetries, err)
+}
+
+func (r *ExperienceRepository) AddExperience(ctx context.Context, userID string, xpToAdd int) error {
+	_, err := r.AddExperienceWithRetry(ctx, userID, xpToAdd, 3)
+	return err
 }

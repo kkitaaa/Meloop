@@ -67,6 +67,12 @@ func (m *mockFriendshipRepoForSuggestions) GetMutualFriendsCount(ctx context.Con
 	}
 	return m.mutual, nil
 }
+func (m *mockFriendshipRepoForSuggestions) ExcludeBlocked(ctx context.Context, userID string, candidateIDs []string) ([]string, error) {
+	return candidateIDs, nil
+}
+func (m *mockFriendshipRepoForSuggestions) GetBlockedCandidateIDs(ctx context.Context, userID string, candidateIDs []string) ([]string, error) {
+	return []string{}, nil
+}
 
 type mockCompatibilityRepoForSuggestions struct {
 	profiles map[string]*models.UserMusicalData
