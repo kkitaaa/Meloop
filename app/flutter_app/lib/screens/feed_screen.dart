@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-
 import 'dart:async';
 
 import 'friends_screen.dart';
@@ -8,6 +7,7 @@ import '../../widgets/post_card.dart';
 import '../../widgets/states/loading_state.dart';
 import '../../widgets/states/empty_state.dart';
 import '../../widgets/states/error_state.dart';
+import '../features/profile/presentation/blocked_users_screen.dart';
 
 class FeedScreen extends StatefulWidget {
   const FeedScreen({super.key});
@@ -71,7 +71,7 @@ class _FeedScreenState extends State<FeedScreen> {
     if (simulateError) {
       setState(() {
         _isInitialLoading = false;
-        _hasError = false; // Cambia a true para simular un error
+        _hasError = false; // Cambia a true para simular un error visualmente de nuevo si quieres
         _errorCode = 500; // Simulando un error de servidor
       });
       return;
@@ -201,6 +201,21 @@ class _FeedScreenState extends State<FeedScreen> {
           ],
           Row(
             children: [
+              // Botón de Ajustes para ir a la pantalla de bloqueados
+              IconButton(
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                icon: const Icon(Icons.settings, color: Colors.white, size: 20),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const BlockedUsersScreen(),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(width: 16),
               const Icon(Icons.notifications, color: Colors.white, size: 20),
               const SizedBox(width: 16),
               InkWell(
