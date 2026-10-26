@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import 'mutual_friends_screen.dart';
 
 class MutualFriendsRow extends StatelessWidget {
@@ -59,7 +60,11 @@ class MutualFriendsRow extends StatelessWidget {
                           backgroundColor: Colors.grey[300],
                           // Si falla la red, mostramos el ícono
                           onBackgroundImageError: (_, __) {},
-                          child: const Icon(Icons.person, size: 12, color: Colors.white),
+                          child: const Icon(
+                            Icons.person,
+                            size: 12,
+                            color: Colors.white,
+                          ),
                         ),
                       ),
                     ),

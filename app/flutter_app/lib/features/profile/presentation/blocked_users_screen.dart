@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+
 import 'dart:async';
+
 import 'package:flutter_app/widgets/states/loading_state.dart';
 import 'package:flutter_app/widgets/states/empty_state.dart';
 import 'package:flutter_app/widgets/states/error_state.dart';
@@ -100,7 +102,9 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
       builder: (BuildContext dialogContext) {
         return AlertDialog(
           backgroundColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
           title: Text(
             "¿Desbloquear a @${user['name']}?",
             style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
@@ -112,19 +116,27 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext),
-              child: const Text("Cancelar", style: TextStyle(color: Colors.grey)),
+              child: const Text(
+                "Cancelar",
+                style: TextStyle(color: Colors.grey),
+              ),
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
                 backgroundColor: _tealAccent,
                 elevation: 0,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
               ),
               onPressed: () {
                 Navigator.pop(dialogContext);
                 _executeUnblockOptimistic(user, index);
               },
-              child: const Text("Desbloquear", style: TextStyle(color: Colors.white)),
+              child: const Text(
+                "Desbloquear",
+                style: TextStyle(color: Colors.white),
+              ),
             ),
           ],
         );
@@ -132,7 +144,10 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
     );
   }
 
-  Future<void> _executeUnblockOptimistic(Map<String, dynamic> user, int index) async {
+  Future<void> _executeUnblockOptimistic(
+    Map<String, dynamic> user,
+    int index,
+  ) async {
     setState(() {
       _blockedUsers.removeAt(index);
     });
@@ -141,7 +156,7 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
     if (!mounted) return;
 
     // Siempre será verdadero para no interrumpir tu prueba visual
-    bool httpSuccess = DateTime.now().second < 60; 
+    bool httpSuccess = DateTime.now().second < 60;
 
     if (httpSuccess) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -175,7 +190,11 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
         backgroundColor: _tealAccent,
         title: const Text(
           "Usuarios bloqueados",
-          style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+          ),
         ),
         iconTheme: const IconThemeData(color: Colors.white),
         elevation: 0,
@@ -183,7 +202,9 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
       ),
       body: Center(
         child: ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: isDesktop ? 650 : double.infinity),
+          constraints: BoxConstraints(
+            maxWidth: isDesktop ? 650 : double.infinity,
+          ),
           child: Container(
             margin: EdgeInsets.all(isDesktop ? 24.0 : 0),
             decoration: BoxDecoration(
@@ -194,7 +215,7 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
                       BoxShadow(
                         color: Colors.black.withValues(alpha: 0.15),
                         blurRadius: 20,
-                      )
+                      ),
                     ]
                   : [],
             ),
@@ -211,7 +232,10 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
                         const Expanded(
                           child: Text(
                             "Administra a quiénes has restringido. Los usuarios bloqueados no pueden ver tu perfil ni interactuar con tus publicaciones.",
-                            style: TextStyle(fontSize: 12, color: Colors.black54),
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.black54,
+                            ),
                           ),
                         ),
                       ],
@@ -250,7 +274,8 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
     return ListView.separated(
       controller: _scrollController,
       itemCount: _blockedUsers.length + (_isLoadingMore ? 1 : 0),
-      separatorBuilder: (context, index) => const Divider(height: 1, color: Colors.black12),
+      separatorBuilder: (context, index) =>
+          const Divider(height: 1, color: Colors.black12),
       itemBuilder: (context, index) {
         if (index == _blockedUsers.length) {
           return Padding(
@@ -282,7 +307,11 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
               children: [
                 Text(
                   user['name'],
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.black87),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                    color: Colors.black87,
+                  ),
                 ),
                 const SizedBox(height: 4),
                 Text(
@@ -296,11 +325,16 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
             style: OutlinedButton.styleFrom(
               foregroundColor: _tealAccent,
               side: BorderSide(color: _tealAccent, width: 1.5),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             ),
             onPressed: () => _confirmUnblock(user, index),
-            child: const Text("Desbloquear", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+            child: const Text(
+              "Desbloquear",
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+            ),
           ),
         ],
       ),

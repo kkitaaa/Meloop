@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../../../widgets/states/loading_state.dart';
 
 class CommentsScreen extends StatefulWidget {
@@ -53,7 +54,8 @@ class _CommentsScreenState extends State<CommentsScreen> {
         {
           "id": 1,
           "user": "Martín",
-          "text": "Totalmente de acuerdo, la producción de esa época era distinta.",
+          "text":
+              "Totalmente de acuerdo, la producción de esa época era distinta.",
           "time": "Hace 15 min",
           "likes": 5,
           "isLiked": false,
@@ -92,7 +94,7 @@ class _CommentsScreenState extends State<CommentsScreen> {
     setState(() {
       parent["isLoadingReplies"] = false;
       int newId = DateTime.now().millisecondsSinceEpoch;
-      
+
       parent["replies"].addAll([
         {
           "id": newId,
@@ -117,7 +119,7 @@ class _CommentsScreenState extends State<CommentsScreen> {
           "replies": <Map<String, dynamic>>[],
           "replyCount": 0,
           "isLoadingReplies": false,
-        }
+        },
       ]);
     });
   }
@@ -125,7 +127,10 @@ class _CommentsScreenState extends State<CommentsScreen> {
   // --- LÓGICA DE ÁRBOL Y OPTIMISTIC UI ---
 
   // Búsqueda recursiva para encontrar cualquier comentario sin importar su anidación
-  Map<String, dynamic>? _findCommentById(List<Map<String, dynamic>> list, int id) {
+  Map<String, dynamic>? _findCommentById(
+    List<Map<String, dynamic>> list,
+    int id,
+  ) {
     for (var comment in list) {
       if (comment["id"] == id) return comment;
       if (comment["replies"] != null) {
@@ -182,7 +187,10 @@ class _CommentsScreenState extends State<CommentsScreen> {
         comment["likes"] = currentLikes;
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Error de conexión."), backgroundColor: Colors.redAccent),
+        const SnackBar(
+          content: Text("Error de conexión."),
+          backgroundColor: Colors.redAccent,
+        ),
       );
     }
   }
@@ -220,7 +228,9 @@ class _CommentsScreenState extends State<CommentsScreen> {
       setState(() => _isSubmitting = false);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text("Error: El comentario incumple las normas de la comunidad."),
+          content: Text(
+            "Error: El comentario incumple las normas de la comunidad.",
+          ),
           backgroundColor: Colors.redAccent,
         ),
       );
@@ -272,13 +282,18 @@ class _CommentsScreenState extends State<CommentsScreen> {
       backgroundColor: _bgColor,
       appBar: AppBar(
         backgroundColor: _tealAccent,
-        title: const Text("Comentarios", style: TextStyle(color: Colors.white, fontSize: 16)),
+        title: const Text(
+          "Comentarios",
+          style: TextStyle(color: Colors.white, fontSize: 16),
+        ),
         iconTheme: const IconThemeData(color: Colors.white),
         elevation: 0,
       ),
       body: Center(
         child: ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: isDesktop ? 650 : double.infinity),
+          constraints: BoxConstraints(
+            maxWidth: isDesktop ? 650 : double.infinity,
+          ),
           child: Container(
             color: const Color(0xFFFDFDFD),
             child: Column(
@@ -291,8 +306,10 @@ class _CommentsScreenState extends State<CommentsScreen> {
                       : ListView.separated(
                           padding: const EdgeInsets.all(24.0),
                           itemCount: _comments.length,
-                          separatorBuilder: (context, index) => const Divider(height: 32),
-                          itemBuilder: (context, index) => _buildCommentNode(_comments[index], 0),
+                          separatorBuilder: (context, index) =>
+                              const Divider(height: 32),
+                          itemBuilder: (context, index) =>
+                              _buildCommentNode(_comments[index], 0),
                         ),
                 ),
                 _buildCommentInputBar(),
@@ -322,14 +339,21 @@ class _CommentsScreenState extends State<CommentsScreen> {
               const SizedBox(width: 12),
               Text(
                 widget.postData["user"] ?? "Usuario",
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
               ),
             ],
           ),
           const SizedBox(height: 12),
           Text(
             widget.postData["content"] ?? "",
-            style: const TextStyle(fontSize: 14, color: Colors.black87, height: 1.4),
+            style: const TextStyle(
+              fontSize: 14,
+              color: Colors.black87,
+              height: 1.4,
+            ),
           ),
           const SizedBox(height: 16),
           Row(
@@ -350,7 +374,9 @@ class _CommentsScreenState extends State<CommentsScreen> {
                       style: TextStyle(
                         color: isPostLiked ? Colors.red : Colors.grey,
                         fontSize: 11,
-                        fontWeight: isPostLiked ? FontWeight.bold : FontWeight.normal,
+                        fontWeight: isPostLiked
+                            ? FontWeight.bold
+                            : FontWeight.normal,
                       ),
                     ),
                   ],
@@ -359,7 +385,11 @@ class _CommentsScreenState extends State<CommentsScreen> {
               const SizedBox(width: 16),
               Row(
                 children: [
-                  const Icon(Icons.mode_comment_outlined, color: Colors.grey, size: 16),
+                  const Icon(
+                    Icons.mode_comment_outlined,
+                    color: Colors.grey,
+                    size: 16,
+                  ),
                   const SizedBox(width: 4),
                   Text(
                     "${widget.postData["comments"] ?? 0} Comentarios",
@@ -378,7 +408,7 @@ class _CommentsScreenState extends State<CommentsScreen> {
   Widget _buildCommentNode(Map<String, dynamic> comment, int depth) {
     final List<Map<String, dynamic>> replies = comment["replies"] ?? [];
     final int replyCount = comment["replyCount"] ?? 0;
-    
+
     // Sangría visual por nivel (máximo nivel visual recomendado: 3)
     final double leftPadding = depth * 32.0;
 
@@ -392,10 +422,9 @@ class _CommentsScreenState extends State<CommentsScreen> {
             padding: EdgeInsets.only(left: leftPadding),
             child: _buildSingleComment(comment),
           ),
-          
+
           // Renderiza respuestas ya cargadas de forma recursiva
-          for (var reply in replies) 
-            _buildCommentNode(reply, depth + 1),
+          for (var reply in replies) _buildCommentNode(reply, depth + 1),
 
           // Botón "Ver más respuestas" (Si hay respuestas en el servidor que no hemos cargado)
           if (replyCount > replies.length)
@@ -404,7 +433,11 @@ class _CommentsScreenState extends State<CommentsScreen> {
               child: InkWell(
                 onTap: () => _fetchReplies(comment["id"]),
                 child: comment["isLoadingReplies"] == true
-                    ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
                     : Text(
                         "Ver más respuestas (${replyCount - replies.length})",
                         style: TextStyle(
@@ -440,7 +473,10 @@ class _CommentsScreenState extends State<CommentsScreen> {
                 children: [
                   Text(
                     comment["user"],
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                    ),
                   ),
                   const SizedBox(width: 8),
                   Text(
@@ -461,7 +497,11 @@ class _CommentsScreenState extends State<CommentsScreen> {
                     onTap: () => _toggleCommentLike(comment["id"]),
                     borderRadius: BorderRadius.circular(4),
                     child: Padding(
-                      padding: const EdgeInsets.only(right: 8.0, top: 4.0, bottom: 4.0),
+                      padding: const EdgeInsets.only(
+                        right: 8.0,
+                        top: 4.0,
+                        bottom: 4.0,
+                      ),
                       child: Row(
                         children: [
                           Icon(
@@ -475,7 +515,9 @@ class _CommentsScreenState extends State<CommentsScreen> {
                             style: TextStyle(
                               fontSize: 11,
                               color: isLiked ? Colors.red : Colors.grey,
-                              fontWeight: isLiked ? FontWeight.bold : FontWeight.normal,
+                              fontWeight: isLiked
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
                             ),
                           ),
                         ],
@@ -487,7 +529,11 @@ class _CommentsScreenState extends State<CommentsScreen> {
                     onTap: () => _startReply(comment["id"], comment["user"]),
                     child: const Text(
                       "Responder",
-                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey),
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.grey,
+                      ),
                     ),
                   ),
                 ],
@@ -517,24 +563,38 @@ class _CommentsScreenState extends State<CommentsScreen> {
           children: [
             if (_replyingToUser != null)
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 8,
+                ),
                 color: Colors.grey[100],
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
                       "Respondiendo a @$_replyingToUser",
-                      style: TextStyle(fontSize: 12, color: _tealAccent, fontWeight: FontWeight.bold),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: _tealAccent,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                     InkWell(
                       onTap: _cancelReply,
-                      child: const Icon(Icons.close, size: 16, color: Colors.grey),
+                      child: const Icon(
+                        Icons.close,
+                        size: 16,
+                        color: Colors.grey,
+                      ),
                     ),
                   ],
                 ),
               ),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+              padding: const EdgeInsets.symmetric(
+                horizontal: 16.0,
+                vertical: 12.0,
+              ),
               child: Row(
                 children: [
                   Expanded(
@@ -544,7 +604,10 @@ class _CommentsScreenState extends State<CommentsScreen> {
                       decoration: InputDecoration(
                         hintText: "Escribe un comentario...",
                         hintStyle: const TextStyle(fontSize: 13),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
+                        ),
                         filled: true,
                         fillColor: Colors.grey[100],
                         border: OutlineInputBorder(

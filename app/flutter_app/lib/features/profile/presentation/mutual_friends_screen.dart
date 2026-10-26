@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+
 import 'dart:async';
+
 import 'package:flutter_app/widgets/states/loading_state.dart';
 import 'package:flutter_app/widgets/states/empty_state.dart';
 import 'package:flutter_app/widgets/states/error_state.dart';
@@ -26,7 +28,7 @@ class _MutualFriendsScreenState extends State<MutualFriendsScreen> {
 
   bool _isInitialLoading = true;
   bool _isLoadingMore = false;
-  
+
   // Estados de negocio
   bool _hasError = false;
   bool _is404 = false;
@@ -39,7 +41,8 @@ class _MutualFriendsScreenState extends State<MutualFriendsScreen> {
     _fetchMutualFriends();
 
     _scrollController.addListener(() {
-      if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200) {
+      if (_scrollController.position.pixels >=
+          _scrollController.position.maxScrollExtent - 200) {
         if (!_isLoadingMore && !_hasError && !_is404 && !_isHidden) {
           _fetchMoreFriends();
         }
@@ -64,7 +67,7 @@ class _MutualFriendsScreenState extends State<MutualFriendsScreen> {
     if (!mounted) return;
 
     // Simulación de estados para pruebas: cambia estos booleanos
-    bool simulate404 = false; 
+    bool simulate404 = false;
     bool simulateHidden = false;
 
     if (simulate404) {
@@ -104,11 +107,7 @@ class _MutualFriendsScreenState extends State<MutualFriendsScreen> {
   List<Map<String, dynamic>> _generateMockFriends(int page, int count) {
     return List.generate(count, (index) {
       int id = (page - 1) * count + index + 1;
-      return {
-        "id": id,
-        "name": "Amigo_Común_$id",
-        "avatarUrl": null,
-      };
+      return {"id": id, "name": "Amigo_Común_$id", "avatarUrl": null};
     });
   }
 
@@ -118,7 +117,10 @@ class _MutualFriendsScreenState extends State<MutualFriendsScreen> {
       backgroundColor: Colors.white,
       appBar: AppBar(
         backgroundColor: _tealAccent,
-        title: const Text("Amigos en común", style: TextStyle(color: Colors.white, fontSize: 16)),
+        title: const Text(
+          "Amigos en común",
+          style: TextStyle(color: Colors.white, fontSize: 16),
+        ),
         iconTheme: const IconThemeData(color: Colors.white),
         elevation: 0,
       ),
@@ -139,7 +141,11 @@ class _MutualFriendsScreenState extends State<MutualFriendsScreen> {
     }
 
     if (_hasError) {
-      return ErrorState(errorCode: 500, onRetry: _fetchMutualFriends, tealAccent: _tealAccent);
+      return ErrorState(
+        errorCode: 500,
+        onRetry: _fetchMutualFriends,
+        tealAccent: _tealAccent,
+      );
     }
 
     // Caso Lista Oculta
@@ -185,11 +191,16 @@ class _MutualFriendsScreenState extends State<MutualFriendsScreen> {
               backgroundColor: Colors.grey[200],
               child: const Icon(Icons.person, color: Colors.grey),
             ),
-            title: Text(friend['name'], style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+            title: Text(
+              friend['name'],
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+            ),
             onTap: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (context) => const ProfileScreen()), // Navegación al perfil
+                MaterialPageRoute(
+                  builder: (context) => const ProfileScreen(),
+                ), // Navegación al perfil
               );
             },
           ),
