@@ -2,6 +2,10 @@
 
 Bienvenido a la guía completa de configuración para el proyecto **Meloop**. Esta documentación te ayudará a configurar tu entorno de desarrollo desde cero.
 
+Para ver los comandos de ejecución y pruebas de **cada microservicio**, junto
+con sus dependencias, puertos y configuración de base de datos, consulta la
+[guía de microservicios](../guia-microservicios.md).
+
 ## 🗺️ Índice de Documentación
 
 Esta guía está dividida en los siguientes pasos, en orden recomendado:
