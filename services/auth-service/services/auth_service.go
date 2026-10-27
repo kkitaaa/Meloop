@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
@@ -22,6 +23,7 @@ var (
 	ErrUsernameExists     = errors.New("USERNAME_EXISTS")
 	ErrEmailExists        = errors.New("EMAIL_EXISTS")
 	ErrInvalidCredentials = errors.New("INVALID_CREDENTIALS")
+	ErrTooManyAttempts    = errors.New("TOO_MANY_ATTEMPTS")
 	ErrTokenNotFound      = errors.New("TOKEN_NOT_FOUND")
 	ErrTokenExpired       = errors.New("TOKEN_EXPIRED")
 	ErrTokenAlreadyUsed   = errors.New("TOKEN_ALREADY_USED")
@@ -53,6 +55,8 @@ type authService struct {
 	sessionRepo  repositories.SessionRepository
 	recoveryRepo repositories.PasswordRecoveryRepository
 	emailService EmailService
+	failedLogins map[string]int
+	failedMu     sync.Mutex
 }
 
 func NewAuthService(
@@ -68,8 +72,10 @@ func NewAuthService(
 		sessionRepo:  sessionRepo,
 		recoveryRepo: recoveryRepo,
 		emailService: emailService,
+		failedLogins: make(map[string]int),
 	}
 }
+
 
 var emailRegex = regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
 
@@ -102,6 +108,27 @@ func (s *authService) Register(ctx context.Context, req *models.RegisterRequest)
 			Field:   "password",
 			Issue:   "too_short",
 			Message: fmt.Sprintf("La contraseña debe tener al menos %d caracteres", s.config.PasswordMinLength),
+		}
+	}
+
+	// RN-08: Edad mínima de 13 años
+	if birthDateStr := req.GetBirthDate(); birthDateStr != "" {
+		parsedDate, err := time.Parse("2006-01-02", birthDateStr)
+		if err != nil {
+			return nil, &ValidationError{
+				Field:   "fecha_nacimiento",
+				Issue:   "invalid_format",
+				Message: "La fecha de nacimiento no tiene un formato válido (YYYY-MM-DD)",
+			}
+		}
+		now := time.Now().UTC()
+		thirteenthBirthday := parsedDate.AddDate(13, 0, 0)
+		if thirteenthBirthday.After(now) {
+			return nil, &ValidationError{
+				Field:   "fecha_nacimiento",
+				Issue:   "underage",
+				Message: "Debes tener al menos 13 años para registrarte (RN-08)",
+			}
 		}
 	}
 
@@ -172,6 +199,18 @@ func (s *authService) Login(ctx context.Context, req *models.LoginRequest) (*mod
 		return nil, &ValidationError{Field: "password", Issue: "required", Message: "La contraseña es obligatoria"}
 	}
 
+	emailKey := strings.ToLower(strings.TrimSpace(req.Email))
+
+	s.failedMu.Lock()
+	if s.failedLogins == nil {
+		s.failedLogins = make(map[string]int)
+	}
+	if s.failedLogins[emailKey] >= 5 {
+		s.failedMu.Unlock()
+		return nil, ErrTooManyAttempts
+	}
+	s.failedMu.Unlock()
+
 	usuario, err := s.repo.GetByEmail(ctx, req.Email)
 	if err != nil {
 		return nil, err
@@ -180,15 +219,26 @@ func (s *authService) Login(ctx context.Context, req *models.LoginRequest) (*mod
 	if usuario == nil {
 		// Run dummy comparison to prevent timing attacks
 		_ = bcrypt.CompareHashAndPassword([]byte("$2a$10$dummyhashplaceholderforsecurityreasonsinfo"), []byte(req.Password))
+		s.failedMu.Lock()
+		s.failedLogins[emailKey]++
+		s.failedMu.Unlock()
 		return nil, ErrInvalidCredentials
 	}
 
 	err = bcrypt.CompareHashAndPassword([]byte(usuario.ContrasenaHash), []byte(req.Password))
 	if err != nil {
+		s.failedMu.Lock()
+		s.failedLogins[emailKey]++
+		s.failedMu.Unlock()
 		return nil, ErrInvalidCredentials
 	}
 
+	s.failedMu.Lock()
+	delete(s.failedLogins, emailKey)
+	s.failedMu.Unlock()
+
 	token, err := generateSessionToken()
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate session token: %w", err)
 	}
@@ -378,6 +428,12 @@ func validatePasswordPolicy(password, fieldName string, minLength int, username,
 	}
 	return nil
 }
+
+// ValidatePasswordPolicy exporta la validación de políticas de contraseña según RN-19
+func ValidatePasswordPolicy(password, fieldName string, minLength int, username, email string) error {
+	return validatePasswordPolicy(password, fieldName, minLength, username, email)
+}
+
 
 func generateSecureToken(byteLength int) (string, error) {
 	b := make([]byte, byteLength)

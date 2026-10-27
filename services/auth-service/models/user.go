@@ -12,10 +12,23 @@ type Usuario struct {
 }
 
 type RegisterRequest struct {
-	Username string `json:"username"`
-	Email    string `json:"email"`
-	Password string `json:"password"`
+	Username        string  `json:"username"`
+	Email           string  `json:"email"`
+	Password        string  `json:"password"`
+	FechaNacimiento *string `json:"fecha_nacimiento,omitempty"`
+	BirthDate       *string `json:"birth_date,omitempty"`
 }
+
+func (r *RegisterRequest) GetBirthDate() string {
+	if r.FechaNacimiento != nil && *r.FechaNacimiento != "" {
+		return *r.FechaNacimiento
+	}
+	if r.BirthDate != nil && *r.BirthDate != "" {
+		return *r.BirthDate
+	}
+	return ""
+}
+
 
 type RegisterResponse struct {
 	ID       string `json:"id"`
