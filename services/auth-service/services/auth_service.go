@@ -76,7 +76,6 @@ func NewAuthService(
 	}
 }
 
-
 var emailRegex = regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
 
 func (s *authService) Register(ctx context.Context, req *models.RegisterRequest) (*models.RegisterResponse, error) {
@@ -433,7 +432,6 @@ func validatePasswordPolicy(password, fieldName string, minLength int, username,
 func ValidatePasswordPolicy(password, fieldName string, minLength int, username, email string) error {
 	return validatePasswordPolicy(password, fieldName, minLength, username, email)
 }
-
 
 func generateSecureToken(byteLength int) (string, error) {
 	b := make([]byte, byteLength)

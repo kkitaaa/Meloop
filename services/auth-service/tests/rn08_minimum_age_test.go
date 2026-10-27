@@ -61,7 +61,6 @@ func TestRN08_MinimumAge_ValidUser_Exactly13Years_CanRegister(t *testing.T) {
 	birthdateValid := now.AddDate(-13, 0, 0)
 	birthdateStr := birthdateValid.Format("2006-01-02")
 
-
 	payload := map[string]interface{}{
 		"username":         "newly_turned_13",
 		"email":            "turned13@meloop.com",

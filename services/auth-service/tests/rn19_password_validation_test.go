@@ -79,7 +79,6 @@ func TestRN19_ValidatePasswordPolicy_RejectedCases(t *testing.T) {
 		},
 	}
 
-
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			err := services.ValidatePasswordPolicy(tc.password, "password", minLength, username, email)
@@ -218,7 +217,6 @@ func TestRN19_HTTP_ResetPassword_AllPolicyCases(t *testing.T) {
 			isSuccess:    true,
 		},
 	}
-
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
