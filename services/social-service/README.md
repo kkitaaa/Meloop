@@ -30,3 +30,14 @@ Microservicio encargado de la gestión de relaciones sociales en Meloop:
   Retorna `candidate_ids` (conservados) y `excluded_ids` (bloqueados).
 
 Consulta la documentación completa en [`docs/centralized_block_exclusion.md`](../../docs/centralized_block_exclusion.md).
+
+## Pruebas y cobertura
+
+Desde la raíz del repositorio, ejecuta `make test-social` para correr `go test ./... -cover` en este servicio.
+La cobertura medida para la lógica de negocio en el paquete `services` es **90.5 %**, por encima del mínimo de 60 %.
+
+Las pruebas de integración de `tests/` requieren `TEST_DATABASE_URL` (base de datos cuyo nombre incluya `test`).
+Sin esa variable se omiten para evitar conectarse a datos no destinados a pruebas.
+
+La invalidación de caché de bloqueos (S-01) no aplica a la arquitectura actual: `social-service` no utiliza
+una caché Redis para bloqueos. Por ese motivo no se implementa ni se pudo verificar invalidación de claves.

@@ -101,6 +101,10 @@ func (ctrl *FriendshipController) GetFriendProfile(c *gin.Context) {
 	}
 	result, err := ctrl.service.GetFriendProfile(c, c.GetString(ContextUserIDKey), targetID)
 	if err != nil {
+		if errors.Is(err, services.ErrBlocked) {
+			httpresponse.NotFoundGin(c, "Usuario no encontrado")
+			return
+		}
 		ctrl.handleError(c, err)
 		return
 	}
