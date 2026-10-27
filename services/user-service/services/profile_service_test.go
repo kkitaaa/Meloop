@@ -11,9 +11,12 @@ import (
 )
 
 type mockProfileRepository struct {
-	getProfileFunc    func(ctx context.Context, userID string) (*models.ProfileResponse, error)
-	updateProfileFunc func(ctx context.Context, userID string, profile *models.Profile) (*models.ProfileResponse, error)
-	updatedRecord     *models.Profile
+	getProfileFunc         func(ctx context.Context, userID string) (*models.ProfileResponse, error)
+	updateProfileFunc      func(ctx context.Context, userID string, profile *models.Profile) (*models.ProfileResponse, error)
+	getFullProfileDataFunc func(ctx context.Context, userID string) (*models.UserProfileData, error)
+	isBlockedFunc          func(ctx context.Context, user1ID, user2ID string) (bool, error)
+	isFriendFunc           func(ctx context.Context, user1ID, user2ID string) (bool, error)
+	updatedRecord          *models.Profile
 }
 
 func (m *mockProfileRepository) GetProfile(ctx context.Context, userID string) (*models.ProfileResponse, error) {
@@ -50,6 +53,54 @@ func (m *mockProfileRepository) UpdateProfile(ctx context.Context, userID string
 		Colores:            profile.Colores,
 		InformacionMusical: profile.InformacionMusical,
 	}, nil
+}
+
+func (m *mockProfileRepository) GetFullProfileData(ctx context.Context, userID string) (*models.UserProfileData, error) {
+	if m.getFullProfileDataFunc != nil {
+		return m.getFullProfileDataFunc(ctx, userID)
+	}
+	lvl := 3
+	return &models.UserProfileData{
+		IDUsuario:   userID,
+		Username:    "usuario_test",
+		Experiencia: 500,
+		IDNivel:     &lvl,
+		NivelNumero: lvl,
+		Biografia:   "Bio de prueba",
+		FotoPerfil:  "profiles/u1/foto.png",
+		Banner:      "banners/u1/banner.png",
+		Tema:        "default",
+		Colores:     map[string]interface{}{"primario": "#1ABC9C"},
+		Insignias: []models.InsigniaDTO{
+			{IDRecompensa: "rew-ins-1", Tipo: "INSIGNIA", Equipada: true},
+		},
+		ElementosEquipados: []models.EquippedItemDTO{
+			{IDInventario: "inv-1", IDRecompensa: "rew-marco-gold", Tipo: "MARCO"},
+		},
+		InformacionMusical: &models.MusicalPreferences{
+			Generos:   []string{"rock", "indie"},
+			Artistas:  []string{"radiohead"},
+			Canciones: []string{"creep"},
+		},
+		Estadisticas: models.ProfileStatsDTO{
+			Publicaciones: 8,
+			Amigos:        4,
+		},
+	}, nil
+}
+
+func (m *mockProfileRepository) IsBlocked(ctx context.Context, user1ID, user2ID string) (bool, error) {
+	if m.isBlockedFunc != nil {
+		return m.isBlockedFunc(ctx, user1ID, user2ID)
+	}
+	return false, nil
+}
+
+func (m *mockProfileRepository) IsFriend(ctx context.Context, user1ID, user2ID string) (bool, error) {
+	if m.isFriendFunc != nil {
+		return m.isFriendFunc(ctx, user1ID, user2ID)
+	}
+	return false, nil
 }
 
 type mockMediaVerifier struct {
@@ -289,4 +340,370 @@ func TestProfileService_ConsistenciaAnteFallos_CU03(t *testing.T) {
 			t.Fatalf("FALLO DE CONSISTENCIA: se modificó la BD para un archivo inexistente")
 		}
 	})
+}
+
+// =========================================================================
+// Tests exhaustivos para Consulta de Perfiles (RF-06 / RN-09 / RF-55 / RNF-11)
+// =========================================================================
+
+func TestProfileService_GetOwnProfile_Success(t *testing.T) {
+	profileRepo := &mockProfileRepository{}
+	userRepo := &mockUserRepository{}
+	mediaVerifier := &mockMediaVerifier{}
+	privacyRepo := &mockPrivacyRepository{}
+
+	srv := services.NewProfileService(profileRepo, userRepo, mediaVerifier, privacyRepo)
+
+	profile, err := srv.GetOwnProfile(context.Background(), "usr-own")
+	if err != nil {
+		t.Fatalf("error inesperado al consultar perfil propio: %v", err)
+	}
+
+	if profile == nil {
+		t.Fatal("se esperaba perfil no nulo")
+	}
+	if profile.IDUsuario != "usr-own" {
+		t.Errorf("esperado IDUsuario 'usr-own', obtenido '%s'", profile.IDUsuario)
+	}
+	if profile.Username != "usuario_test" {
+		t.Errorf("esperado username 'usuario_test', obtenido '%s'", profile.Username)
+	}
+	if profile.Nivel == nil || *profile.Nivel != 3 {
+		t.Errorf("esperado nivel 3, obtenido %v", profile.Nivel)
+	}
+	if profile.Experiencia != 500 {
+		t.Errorf("esperada experiencia 500, obtenido %d", profile.Experiencia)
+	}
+	if len(profile.Insignias) != 1 || profile.Insignias[0].IDRecompensa != "rew-ins-1" {
+		t.Errorf("insignias incorrectas: %+v", profile.Insignias)
+	}
+	if len(profile.ElementosEquipados) != 1 || profile.ElementosEquipados[0].IDRecompensa != "rew-marco-gold" {
+		t.Errorf("elementos equipados incorrectos: %+v", profile.ElementosEquipados)
+	}
+	if profile.InformacionMusical == nil || len(profile.InformacionMusical.Generos) != 2 {
+		t.Errorf("información musical incorrecta: %+v", profile.InformacionMusical)
+	}
+	if profile.Estadisticas == nil || profile.Estadisticas.Publicaciones != 8 || profile.Estadisticas.Amigos != 4 {
+		t.Errorf("estadísticas incorrectas: %+v", profile.Estadisticas)
+	}
+}
+
+func TestProfileService_GetOwnProfile_UserNotFound(t *testing.T) {
+	profileRepo := &mockProfileRepository{
+		getFullProfileDataFunc: func(ctx context.Context, userID string) (*models.UserProfileData, error) {
+			return nil, nil // Usuario no encontrado en BD
+		},
+	}
+	userRepo := &mockUserRepository{}
+	mediaVerifier := &mockMediaVerifier{}
+
+	srv := services.NewProfileService(profileRepo, userRepo, mediaVerifier)
+
+	_, err := srv.GetOwnProfile(context.Background(), "usr-inexistente")
+	if !errors.Is(err, services.ErrUserNotFound) {
+		t.Fatalf("se esperaba ErrUserNotFound, obtenido: %v", err)
+	}
+}
+
+func TestProfileService_GetThirdPartyProfile_Public_Success(t *testing.T) {
+	profileRepo := &mockProfileRepository{}
+	userRepo := &mockUserRepository{}
+	mediaVerifier := &mockMediaVerifier{}
+	privacyRepo := &mockPrivacyRepository{
+		configs: map[string]*models.ConfiguracionPrivacidad{
+			"usr-target": {
+				IDUsuario:                "usr-target",
+				VisibilidadPerfil:        models.VisibilidadPublico,
+				VisibilidadPublicaciones: models.VisibilidadPublico,
+			},
+		},
+	}
+
+	srv := services.NewProfileService(profileRepo, userRepo, mediaVerifier, privacyRepo)
+
+	profile, err := srv.GetThirdPartyProfile(context.Background(), "usr-requester", "usr-target")
+	if err != nil {
+		t.Fatalf("error inesperado en perfil público: %v", err)
+	}
+
+	if profile.PerfilPrivado {
+		t.Error("un perfil público no debe marcarse como privado")
+	}
+	if profile.Biografia != "Bio de prueba" {
+		t.Errorf("biografía esperada 'Bio de prueba', obtenida '%s'", profile.Biografia)
+	}
+	if profile.InformacionMusical == nil || len(profile.InformacionMusical.Artistas) != 1 {
+		t.Errorf("información musical pública ausente o incorrecta")
+	}
+	if profile.Estadisticas == nil || profile.Estadisticas.Publicaciones != 8 {
+		t.Errorf("estadísticas públicas esperadas con publicaciones=8, obtenido %+v", profile.Estadisticas)
+	}
+}
+
+func TestProfileService_GetThirdPartyProfile_FriendsOnly_Friend_Success(t *testing.T) {
+	profileRepo := &mockProfileRepository{
+		isFriendFunc: func(ctx context.Context, user1ID, user2ID string) (bool, error) {
+			return true, nil // Son amigos aceptados
+		},
+	}
+	userRepo := &mockUserRepository{}
+	mediaVerifier := &mockMediaVerifier{}
+	privacyRepo := &mockPrivacyRepository{
+		configs: map[string]*models.ConfiguracionPrivacidad{
+			"usr-friend": {
+				IDUsuario:                "usr-friend",
+				VisibilidadPerfil:        models.VisibilidadAmigos,
+				VisibilidadPublicaciones: models.VisibilidadAmigos,
+			},
+		},
+	}
+
+	srv := services.NewProfileService(profileRepo, userRepo, mediaVerifier, privacyRepo)
+
+	profile, err := srv.GetThirdPartyProfile(context.Background(), "usr-requester", "usr-friend")
+	if err != nil {
+		t.Fatalf("error inesperado consultando perfil de amigo: %v", err)
+	}
+
+	if profile.PerfilPrivado {
+		t.Error("el perfil para un amigo no debe marcarse como privado")
+	}
+	if !profile.EsAmigo {
+		t.Error("se esperaba EsAmigo=true")
+	}
+	if profile.Biografia == "" {
+		t.Error("el amigo aceptado debe poder ver la biografía")
+	}
+	if profile.InformacionMusical == nil {
+		t.Error("el amigo aceptado debe poder ver la información musical")
+	}
+	if profile.Estadisticas == nil || profile.Estadisticas.Publicaciones != 8 {
+		t.Error("el amigo aceptado debe poder ver las estadísticas")
+	}
+}
+
+func TestProfileService_GetThirdPartyProfile_FriendsOnly_NotFriend_Restricted(t *testing.T) {
+	profileRepo := &mockProfileRepository{
+		isFriendFunc: func(ctx context.Context, user1ID, user2ID string) (bool, error) {
+			return false, nil // NO son amigos
+		},
+	}
+	userRepo := &mockUserRepository{}
+	mediaVerifier := &mockMediaVerifier{}
+	privacyRepo := &mockPrivacyRepository{
+		configs: map[string]*models.ConfiguracionPrivacidad{
+			"usr-not-friend": {
+				IDUsuario:                "usr-not-friend",
+				VisibilidadPerfil:        models.VisibilidadAmigos,
+				VisibilidadPublicaciones: models.VisibilidadAmigos,
+			},
+		},
+	}
+
+	srv := services.NewProfileService(profileRepo, userRepo, mediaVerifier, privacyRepo)
+
+	profile, err := srv.GetThirdPartyProfile(context.Background(), "usr-requester", "usr-not-friend")
+	if err != nil {
+		t.Fatalf("error inesperado consultando perfil solo amigos: %v", err)
+	}
+
+	if !profile.PerfilPrivado {
+		t.Error("debe marcarse como perfil privado para no amigos")
+	}
+	if profile.EsAmigo {
+		t.Error("se esperaba EsAmigo=false")
+	}
+	// Restricción de campos por privacidad (RF-55)
+	if profile.Biografia != "" {
+		t.Errorf("la biografía debió restringirse para no amigos, se obtuvo: %s", profile.Biografia)
+	}
+	if profile.InformacionMusical != nil {
+		t.Error("la información musical debió restringirse para no amigos")
+	}
+	if profile.Estadisticas != nil {
+		t.Error("las estadísticas debieron restringirse para no amigos")
+	}
+	if len(profile.Insignias) > 0 {
+		t.Error("las insignias debieron restringirse para no amigos")
+	}
+	if len(profile.ElementosEquipados) > 0 {
+		t.Error("los elementos equipados debieron restringirse para no amigos")
+	}
+	// Datos de identificación permitidos
+	if profile.Username != "usuario_test" || profile.FotoPerfil == "" {
+		t.Error("los datos públicos básicos de identificación deben estar presentes")
+	}
+}
+
+func TestProfileService_GetThirdPartyProfile_Private_Restricted(t *testing.T) {
+	profileRepo := &mockProfileRepository{}
+	userRepo := &mockUserRepository{}
+	mediaVerifier := &mockMediaVerifier{}
+	privacyRepo := &mockPrivacyRepository{
+		configs: map[string]*models.ConfiguracionPrivacidad{
+			"usr-private": {
+				IDUsuario:                "usr-private",
+				VisibilidadPerfil:        models.VisibilidadPrivado,
+				VisibilidadPublicaciones: models.VisibilidadPrivado,
+			},
+		},
+	}
+
+	srv := services.NewProfileService(profileRepo, userRepo, mediaVerifier, privacyRepo)
+
+	profile, err := srv.GetThirdPartyProfile(context.Background(), "usr-requester", "usr-private")
+	if err != nil {
+		t.Fatalf("error inesperado consultando perfil privado: %v", err)
+	}
+
+	if !profile.PerfilPrivado {
+		t.Error("debe marcarse como perfil privado")
+	}
+	if profile.Biografia != "" || profile.InformacionMusical != nil || profile.Estadisticas != nil {
+		t.Error("los campos sensibles de perfil privado deben estar omitidos para terceros")
+	}
+}
+
+func TestProfileService_GetThirdPartyProfile_PublicationsPrivate_StatsHidden(t *testing.T) {
+	profileRepo := &mockProfileRepository{}
+	userRepo := &mockUserRepository{}
+	mediaVerifier := &mockMediaVerifier{}
+	privacyRepo := &mockPrivacyRepository{
+		configs: map[string]*models.ConfiguracionPrivacidad{
+			"usr-target": {
+				IDUsuario:                "usr-target",
+				VisibilidadPerfil:        models.VisibilidadPublico,
+				VisibilidadPublicaciones: models.VisibilidadPrivado, // Publicaciones privadas
+			},
+		},
+	}
+
+	srv := services.NewProfileService(profileRepo, userRepo, mediaVerifier, privacyRepo)
+
+	profile, err := srv.GetThirdPartyProfile(context.Background(), "usr-requester", "usr-target")
+	if err != nil {
+		t.Fatalf("error inesperado: %v", err)
+	}
+
+	// El perfil es público pero las publicaciones son privadas
+	if profile.PerfilPrivado {
+		t.Error("el perfil es público, no debe ser privado")
+	}
+	if profile.Estadisticas == nil {
+		t.Fatal("las estadísticas de perfil deben estar presentes")
+	}
+	if profile.Estadisticas.Publicaciones != 0 {
+		t.Errorf("las publicaciones privadas deben tener contador 0 para terceros, obtenido: %d", profile.Estadisticas.Publicaciones)
+	}
+	if profile.Estadisticas.Amigos != 4 {
+		t.Errorf("los amigos públicos deben mantenerse, obtenido: %d", profile.Estadisticas.Amigos)
+	}
+}
+
+func TestProfileService_GetThirdPartyProfile_Blocked_RequesterBlockedOwner_RN09(t *testing.T) {
+	profileRepo := &mockProfileRepository{
+		isBlockedFunc: func(ctx context.Context, user1ID, user2ID string) (bool, error) {
+			// El solicitante bloqueó al titular
+			if user1ID == "usr-blocker" && user2ID == "usr-blocked" {
+				return true, nil
+			}
+			return false, nil
+		},
+	}
+	userRepo := &mockUserRepository{}
+	mediaVerifier := &mockMediaVerifier{}
+
+	srv := services.NewProfileService(profileRepo, userRepo, mediaVerifier)
+
+	_, err := srv.GetThirdPartyProfile(context.Background(), "usr-blocker", "usr-blocked")
+	if !errors.Is(err, services.ErrBlocked) {
+		t.Fatalf("se esperaba ErrBlocked cuando el solicitante bloqueó al titular, se obtuvo: %v", err)
+	}
+}
+
+func TestProfileService_GetThirdPartyProfile_Blocked_OwnerBlockedRequester_RN09(t *testing.T) {
+	profileRepo := &mockProfileRepository{
+		isBlockedFunc: func(ctx context.Context, user1ID, user2ID string) (bool, error) {
+			// El titular bloqueó al solicitante
+			if user1ID == "usr-requester" && user2ID == "usr-owner" {
+				return true, nil
+			}
+			return false, nil
+		},
+	}
+	userRepo := &mockUserRepository{}
+	mediaVerifier := &mockMediaVerifier{}
+
+	srv := services.NewProfileService(profileRepo, userRepo, mediaVerifier)
+
+	_, err := srv.GetThirdPartyProfile(context.Background(), "usr-requester", "usr-owner")
+	if !errors.Is(err, services.ErrBlocked) {
+		t.Fatalf("se esperaba ErrBlocked cuando el titular bloqueó al solicitante, se obtuvo: %v", err)
+	}
+}
+
+func TestProfileService_GetThirdPartyProfile_SelfID_DelegatesToOwn(t *testing.T) {
+	profileRepo := &mockProfileRepository{}
+	userRepo := &mockUserRepository{}
+	mediaVerifier := &mockMediaVerifier{}
+
+	srv := services.NewProfileService(profileRepo, userRepo, mediaVerifier)
+
+	profile, err := srv.GetThirdPartyProfile(context.Background(), "usr-own", "usr-own")
+	if err != nil {
+		t.Fatalf("error inesperado: %v", err)
+	}
+
+	if profile.IDUsuario != "usr-own" {
+		t.Errorf("esperado IDUsuario usr-own, obtenido %s", profile.IDUsuario)
+	}
+	if profile.Biografia != "Bio de prueba" {
+		t.Errorf("el titular debe ver su biografía propia completa")
+	}
+}
+
+func TestProfileService_OptionalFieldsEmpty_NoError(t *testing.T) {
+	profileRepo := &mockProfileRepository{
+		getFullProfileDataFunc: func(ctx context.Context, userID string) (*models.UserProfileData, error) {
+			// Simular usuario sin perfil previo, sin música, sin insignias, sin items equipados
+			return &models.UserProfileData{
+				IDUsuario:          userID,
+				Username:           "nuevo_usuario",
+				Experiencia:        0,
+				IDNivel:            nil,
+				NivelNumero:        1,
+				Biografia:          "",
+				FotoPerfil:         "",
+				Banner:             "",
+				Tema:               "default",
+				Colores:            map[string]interface{}{},
+				Insignias:          nil,
+				ElementosEquipados: nil,
+				InformacionMusical: nil,
+				Estadisticas:       models.ProfileStatsDTO{Publicaciones: 0, Amigos: 0},
+			}, nil
+		},
+	}
+	userRepo := &mockUserRepository{}
+	mediaVerifier := &mockMediaVerifier{}
+
+	srv := services.NewProfileService(profileRepo, userRepo, mediaVerifier)
+
+	// 1. Probar propio perfil
+	own, err := srv.GetOwnProfile(context.Background(), "usr-empty")
+	if err != nil {
+		t.Fatalf("error inesperado con campos opcionales vacíos en propio perfil: %v", err)
+	}
+	if own.Insignias == nil || own.ElementosEquipados == nil || own.InformacionMusical == nil {
+		t.Error("las listas y mapas opcionales no deben ser nulos")
+	}
+
+	// 2. Probar perfil de tercero
+	third, err := srv.GetThirdPartyProfile(context.Background(), "usr-requester", "usr-empty")
+	if err != nil {
+		t.Fatalf("error inesperado con campos opcionales vacíos en perfil tercero: %v", err)
+	}
+	if third.Insignias == nil || third.ElementosEquipados == nil || third.InformacionMusical == nil {
+		t.Error("las listas y mapas opcionales no deben ser nulos")
+	}
 }

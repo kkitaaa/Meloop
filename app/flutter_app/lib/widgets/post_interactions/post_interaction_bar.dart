@@ -87,7 +87,8 @@ class _PostInteractionBarState extends State<PostInteractionBar> {
   }
 
   void _showError(String message) {
-    ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.maybeOf(context)
+        ?.showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -117,11 +118,7 @@ class _PostInteractionBarState extends State<PostInteractionBar> {
             padding: const EdgeInsets.symmetric(vertical: 8),
             child: Row(
               children: [
-                const Icon(
-                  Icons.mode_comment_outlined,
-                  color: _teal,
-                  size: 20,
-                ),
+                const Icon(Icons.mode_comment_outlined, color: _teal, size: 20),
                 const SizedBox(width: 4),
                 Text(
                   '${widget.comments} Comentarios',
@@ -168,7 +165,8 @@ class _AnimatedInteractionButton extends StatefulWidget {
   final VoidCallback? onActivated;
 
   @override
-  State<_AnimatedInteractionButton> createState() => _AnimatedInteractionButtonState();
+  State<_AnimatedInteractionButton> createState() =>
+      _AnimatedInteractionButtonState();
 }
 
 class _AnimatedInteractionButtonState extends State<_AnimatedInteractionButton>
@@ -178,7 +176,10 @@ class _AnimatedInteractionButtonState extends State<_AnimatedInteractionButton>
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 420));
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 420),
+    );
   }
 
   @override
@@ -214,11 +215,7 @@ class _AnimatedInteractionButtonState extends State<_AnimatedInteractionButton>
               clipBehavior: Clip.none,
               alignment: Alignment.center,
               children: [
-                Icon(
-                  icon,
-                  color: color,
-                  size: 25,
-                ),
+                Icon(icon, color: color, size: 25),
                 if (widget.active)
                   IgnorePointer(
                     child: AnimatedBuilder(

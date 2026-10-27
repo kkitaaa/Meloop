@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strconv"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -40,6 +41,8 @@ type FriendshipRepository interface {
 	ValidateInteraction(ctx context.Context, user1ID, user2ID string) error
 	GetEligibleCandidates(ctx context.Context, userID string) ([]models.CandidateUser, error)
 	GetMutualFriendsCount(ctx context.Context, userID string, candidateIDs []string) (map[string]int, error)
+	ExcludeBlocked(ctx context.Context, userID string, candidateIDs []string) ([]string, error)
+	GetBlockedCandidateIDs(ctx context.Context, userID string, candidateIDs []string) ([]string, error)
 }
 
 type postgresFriendshipRepository struct {
@@ -592,4 +595,115 @@ func (r *postgresFriendshipRepository) GetMutualFriendsCount(ctx context.Context
 		result[candID] = count
 	}
 	return result, rows.Err()
+}
+
+func (r *postgresFriendshipRepository) findBlockedCandidateIDs(ctx context.Context, userID string, candidateIDs []string) (map[string]struct{}, error) {
+	if r.pool == nil {
+		return nil, errors.New("database connection pool is not initialized")
+	}
+
+	blockedMap := make(map[string]struct{})
+	userID = strings.TrimSpace(userID)
+	if userID == "" || len(candidateIDs) == 0 {
+		return blockedMap, nil
+	}
+
+	cleanCandidates := make([]string, 0, len(candidateIDs))
+	seenCandidates := make(map[string]struct{}, len(candidateIDs))
+	for _, id := range candidateIDs {
+		trimmed := strings.TrimSpace(id)
+		if trimmed != "" {
+			if _, exists := seenCandidates[trimmed]; !exists {
+				seenCandidates[trimmed] = struct{}{}
+				cleanCandidates = append(cleanCandidates, trimmed)
+			}
+		}
+	}
+
+	if len(cleanCandidates) == 0 {
+		return blockedMap, nil
+	}
+
+	query := `
+		SELECT DISTINCT
+			CASE 
+				WHEN id_usuario_bloqueador::text = $1 THEN id_usuario_bloqueado::text
+				ELSE id_usuario_bloqueador::text
+			END AS blocked_candidate_id
+		FROM bloqueo
+		WHERE (id_usuario_bloqueador::text = $1 AND id_usuario_bloqueado::text = ANY($2))
+		   OR (id_usuario_bloqueado::text = $1 AND id_usuario_bloqueador::text = ANY($2))`
+
+	rows, err := r.pool.Query(ctx, query, userID, cleanCandidates)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var blockedID string
+		if err := rows.Scan(&blockedID); err != nil {
+			return nil, err
+		}
+		blockedMap[blockedID] = struct{}{}
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return blockedMap, nil
+}
+
+// ExcludeBlocked filtra candidateIDs retornando aquellos que NO tienen una relación de bloqueo
+// bidireccional con userID. No altera el slice original candidateIDs.
+func (r *postgresFriendshipRepository) ExcludeBlocked(ctx context.Context, userID string, candidateIDs []string) ([]string, error) {
+	blockedMap, err := r.findBlockedCandidateIDs(ctx, userID, candidateIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]string, 0, len(candidateIDs))
+	seen := make(map[string]struct{}, len(candidateIDs))
+	for _, id := range candidateIDs {
+		trimmed := strings.TrimSpace(id)
+		if trimmed == "" {
+			continue
+		}
+		if _, isBlocked := blockedMap[trimmed]; isBlocked {
+			continue
+		}
+		if _, alreadyAdded := seen[trimmed]; !alreadyAdded {
+			seen[trimmed] = struct{}{}
+			result = append(result, trimmed)
+		}
+	}
+
+	return result, nil
+}
+
+// GetBlockedCandidateIDs identifica y retorna únicamente los IDs de los candidatos que tienen una relación
+// de bloqueo (en cualquiera de las dos direcciones) con el usuario de referencia. No altera el slice original.
+func (r *postgresFriendshipRepository) GetBlockedCandidateIDs(ctx context.Context, userID string, candidateIDs []string) ([]string, error) {
+	blockedMap, err := r.findBlockedCandidateIDs(ctx, userID, candidateIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]string, 0, len(blockedMap))
+	seen := make(map[string]struct{}, len(candidateIDs))
+	for _, id := range candidateIDs {
+		trimmed := strings.TrimSpace(id)
+		if trimmed == "" {
+			continue
+		}
+		if _, isBlocked := blockedMap[trimmed]; isBlocked {
+			if _, alreadyAdded := seen[trimmed]; !alreadyAdded {
+				seen[trimmed] = struct{}{}
+				result = append(result, trimmed)
+			}
+		}
+	}
+
+	return result, nil
 }

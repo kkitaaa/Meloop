@@ -9,12 +9,16 @@ import (
 )
 
 type ExperienceService struct {
-	repo *repositories.PostgresExperienceRepository
+	repo   repositories.ExperienceRepository
+	engine *GamificationEngine
 }
 
 // NewExperienceService inicializa la capa de servicio
-func NewExperienceService(repo *repositories.PostgresExperienceRepository) *ExperienceService {
-	return &ExperienceService{repo: repo}
+func NewExperienceService(repo repositories.ExperienceRepository, engine *GamificationEngine) *ExperienceService {
+	return &ExperienceService{
+		repo:   repo,
+		engine: engine,
+	}
 }
 
 // AddUserExperience maneja la lógica de negocio y define las reglas de tolerancia a fallos
@@ -25,39 +29,26 @@ func (s *ExperienceService) AddUserExperience(ctx context.Context, userID string
 	// Ejecutamos la suma atómica con la protección de reintentos
 	newXP, err := s.repo.AddExperienceWithRetry(ctx, userID, xpToAdd, maxRetries)
 	if err != nil {
-		// Aquí podrías emitir métricas o logs en un futuro
 		return 0, err
 	}
 
 	return newXP, nil
 }
-	repo   *repositories.ExperienceRepository
-	engine *GamificationEngine
-}
-
-func NewExperienceService(repo *repositories.ExperienceRepository, engine *GamificationEngine) *ExperienceService {
-	return &ExperienceService{
-		repo:   repo,
-		engine: engine,
-	}
-}
 
 // HandleInteractionEvent es el punto de entrada cuando llega un evento (ej. desde RabbitMQ)
 func (s *ExperienceService) HandleInteractionEvent(ctx context.Context, event InteractionEvent) error {
-	// 1. Pasar el evento por los filtros anti-abuso y calcular XP[cite: 8]
+	// 1. Pasar el evento por los filtros anti-abuso y calcular XP
 	xp, err := s.engine.ProcessEvent(event)
 	if err != nil {
-		// Logueamos el rechazo (rate limit o auto-interacción) pero no devolvemos error fatal
-		// para que el sistema de mensajería no reintente procesar un evento abusivo.
 		log.Printf("Evento descartado por filtros anti-abuso: %v", err)
 		return nil
 	}
 
-	// 2. Si pasa las validaciones, asignar la experiencia exacta al usuario[cite: 8]
+	// 2. Si pasa las validaciones, asignar la experiencia exacta al usuario
 	log.Printf("Evento válido. Asignando +%d XP al usuario %s", xp, event.ActorID)
 
-	// Aquí llamaríamos a la función atómica que construimos anteriormente
-	err = s.repo.AddExperience(ctx, event.ActorID, xp)
+	// Guardar experiencia atómicamente con reintentos
+	_, err = s.repo.AddExperienceWithRetry(ctx, event.ActorID, xp, 3)
 	if err != nil {
 		return fmt.Errorf("error al guardar experiencia en BD: %w", err)
 	}

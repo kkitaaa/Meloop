@@ -46,6 +46,8 @@ type FriendshipService interface {
 	BlockUser(ctx context.Context, blockerID, blockedID string) error
 	ValidateInteraction(ctx context.Context, user1ID, user2ID string) error
 	GetFriendSuggestions(ctx context.Context, userID string) ([]models.FriendSuggestion, error)
+	ExcludeBlocked(ctx context.Context, userID string, candidateIDs []string) ([]string, error)
+	GetBlockedCandidateIDs(ctx context.Context, userID string, candidateIDs []string) ([]string, error)
 }
 
 type friendshipService struct {
@@ -166,6 +168,78 @@ func (s *friendshipService) ValidateInteraction(ctx context.Context, user1ID, us
 	}
 	err := s.repo.ValidateInteraction(ctx, user1ID, user2ID)
 	return mapRepositoryError(err)
+}
+
+// ExcludeBlocked filtra candidateIDs retornando los candidatos sin relación de bloqueo
+// bidireccional con el usuario de referencia. No modifica el slice original y gestiona listas vacías.
+func (s *friendshipService) ExcludeBlocked(ctx context.Context, userID string, candidateIDs []string) ([]string, error) {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return nil, ErrInvalidUser
+	}
+	if len(candidateIDs) == 0 {
+		return []string{}, nil
+	}
+
+	result, err := s.repo.ExcludeBlocked(ctx, userID, candidateIDs)
+	if err != nil {
+		return nil, mapRepositoryError(err)
+	}
+	if result == nil {
+		return []string{}, nil
+	}
+	return result, nil
+}
+
+// GetBlockedCandidateIDs identifica y retorna los IDs de los candidatos que presentan una relación de bloqueo
+// (en cualquiera de las dos direcciones) con el usuario de referencia.
+func (s *friendshipService) GetBlockedCandidateIDs(ctx context.Context, userID string, candidateIDs []string) ([]string, error) {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return nil, ErrInvalidUser
+	}
+	if len(candidateIDs) == 0 {
+		return []string{}, nil
+	}
+
+	result, err := s.repo.GetBlockedCandidateIDs(ctx, userID, candidateIDs)
+	if err != nil {
+		return nil, mapRepositoryError(err)
+	}
+	if result == nil {
+		return []string{}, nil
+	}
+	return result, nil
+}
+
+// FilterBlockedCandidates es una función pura que filtra originalCandidates excluyendo
+// aquellos identificados en blockedIDs, garantizando la no mutación del slice original.
+func FilterBlockedCandidates(candidateIDs []string, blockedIDs []string) []string {
+	if len(candidateIDs) == 0 {
+		return []string{}
+	}
+	blockedSet := make(map[string]struct{}, len(blockedIDs))
+	for _, id := range blockedIDs {
+		trimmed := strings.TrimSpace(id)
+		if trimmed != "" {
+			blockedSet[trimmed] = struct{}{}
+		}
+	}
+	result := make([]string, 0, len(candidateIDs))
+	seen := make(map[string]struct{}, len(candidateIDs))
+	for _, id := range candidateIDs {
+		trimmed := strings.TrimSpace(id)
+		if trimmed == "" {
+			continue
+		}
+		if _, blocked := blockedSet[trimmed]; !blocked {
+			if _, alreadyAdded := seen[trimmed]; !alreadyAdded {
+				seen[trimmed] = struct{}{}
+				result = append(result, trimmed)
+			}
+		}
+	}
+	return result
 }
 
 func mapRepositoryError(err error) error {

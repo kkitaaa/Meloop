@@ -1,11 +1,11 @@
 package controllers
 
 import (
-	"net/http"
-	"strconv"
 	"github.com/gin-gonic/gin"
 	"github.com/meloop/post-service/models"
 	"github.com/meloop/post-service/services"
+	"net/http"
+	"strconv"
 )
 
 // CreatePost procesa la creación de un post con referencias musicales
