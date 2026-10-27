@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: meloop-config
+  namespace: meloop
+data:
+  PORT: "8080"
+  GIN_MODE: release
+  RECOMMENDATION_SERVICE_ADDRESS: ":8087"
+  RECOMMENDATION_SERVICE_URL: http://recommendation-service:8087
+  ML_SERVICE_URL: http://ml-service:8001
+  REDIS_URL: redis://redis:6379

@@ -521,7 +521,182 @@ go mod download
 go test ./...
 ```
 
-## 8. Pruebas y comprobaciones rápidas
+## 8. Kubernetes local con kind
+
+Esta configuración es un entorno local para probar el flujo de recomendaciones:
+API Gateway Go (`8080`) → `recommendation-service` (`8087`) → ML (`8001`), con
+Redis (`6379`) y un volumen persistente. El Ingress expone el Gateway. No
+despliega todos los microservicios de Compose ni crea PostgreSQL: la conexión
+`DATABASE_URL` de recomendaciones es opcional y debe apuntar a una base externa
+compatible si necesitas perfiles persistidos.
+
+### Requisitos y creación del clúster
+
+Instala Docker Desktop, `kubectl` y `kind`, e inicia Docker Desktop antes de
+continuar. Verifica que el daemon esté disponible:
+
+```powershell
+docker info
+kubectl version --client
+kind version
+```
+
+Desde la raíz del repositorio, crea el clúster. La configuración mapea los
+puertos HTTP/HTTPS del Ingress de kind a `localhost`:
+
+```powershell
+kind create cluster --name meloop --config kind\kind-config.yaml
+kubectl cluster-info --context kind-meloop
+kubectl get nodes
+```
+
+Si Docker Desktop no está iniciado, `docker info` o la creación del clúster
+fallarán. Espera a que Docker indique que está ejecutándose antes de reintentar.
+
+### Construcción y carga de imágenes
+
+Los Dockerfiles Go necesitan el contexto de la raíz del repositorio porque
+importan el módulo local `services/common`. El contexto del servicio ML es su
+propio directorio:
+
+```powershell
+docker build -t meloop-api-gateway:dev -f services\api-gateway\Dockerfile .
+docker build -t meloop-recommendation-service:dev -f services\recommendation-service\Dockerfile .
+docker build -t meloop-ml-service:dev .\ml-service
+kind load docker-image meloop-api-gateway:dev meloop-recommendation-service:dev meloop-ml-service:dev --name meloop
+```
+
+Si cambias el código y reconstruyes una imagen `:dev`, vuelve a ejecutar
+`kind load docker-image` y reinicia el Deployment correspondiente para que los
+Pods usen la imagen recién cargada:
+
+```powershell
+kubectl rollout restart deployment/backend -n meloop
+```
+
+Cambia `backend` por `recommendation-service` o `ml-service` según la imagen.
+
+### Ingress y despliegue
+
+Instala el controlador Ingress una vez por clúster y espera a que esté listo:
+
+```powershell
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.12.1/deploy/static/provider/kind/deploy.yaml
+kubectl wait --namespace ingress-nginx --for=condition=Ready pod --selector=app.kubernetes.io/component=controller --timeout=180s
+```
+
+El Namespace debe estar activo antes de crear los recursos que viven en él.
+Créalo primero y espera a que Kubernetes lo registre; luego aplica el resto de
+la carpeta desde la raíz:
+
+```powershell
+kubectl apply -f .\k8s\namespace.yaml
+kubectl wait --for=jsonpath='{.status.phase}'=Active namespace/meloop --timeout=60s
+kubectl apply -f .\k8s\
+kubectl get pods -n meloop -w
+```
+
+Cuando los Pods estén `Running` y listos (`READY`), sal del monitoreo con
+`Ctrl+C`. Comprueba los Deployments, Services, PVC y el Ingress:
+
+```powershell
+kubectl get deployments,services,pvc,ingress -n meloop
+kubectl rollout status deployment/backend -n meloop
+kubectl rollout status deployment/recommendation-service -n meloop
+kubectl rollout status deployment/ml-service -n meloop
+```
+
+El Secret `meloop-secrets` del manifiesto se crea vacío; no contiene credenciales.
+Para conectar recomendaciones a Postgres/Supabase, crea el Secret con una
+`DATABASE_URL` de desarrollo obtenida de tu gestor de secretos. No la guardes en
+un archivo versionado ni la compartas:
+
+```powershell
+$env:DATABASE_URL = "<URL_DE_CONEXION>"
+kubectl create secret generic meloop-secrets -n meloop --from-literal=DATABASE_URL="$env:DATABASE_URL" --dry-run=client -o yaml | kubectl apply -f -
+kubectl rollout restart deployment/recommendation-service -n meloop
+```
+
+No vuelvas a aplicar `secret.yaml` después de crear esa credencial: representa
+un Secret vacío.
+
+### Pruebas
+
+Para probar el backend sin Ingress, deja este comando ejecutándose en una
+terminal: >.<
+
+```powershell
+kubectl port-forward svc/backend 8080:8080 -n meloop
+```
+
+Desde otra terminal, prueba el Gateway y la ruta de recomendaciones:
+
+```powershell
+Invoke-RestMethod http://localhost:8080/health
+Invoke-RestMethod http://localhost:8080/recommendations/1/music
+```
+
+La ruta de recomendaciones verifica el camino hacia `recommendation-service` y
+ML. Sin `DATABASE_URL` o un perfil guardado, no habrá recomendaciones
+personalizadas; eso no significa necesariamente que los Pods estén caídos.
+
+Para probar directamente el servicio ML, deja abierto en una tercera terminal:
+
+```powershell
+kubectl port-forward svc/ml-service 8001:8001 -n meloop
+```
+
+Y consulta sus verificaciones desde otra terminal:
+
+```powershell
+Invoke-RestMethod http://localhost:8001/health
+Invoke-RestMethod http://localhost:8001/ready
+```
+
+Si el Ingress Controller está listo, puedes probarlo sin editar el archivo
+`hosts` de Windows enviando el encabezado `Host`:
+
+```powershell
+curl.exe -H "Host: meloop.local" http://127.0.0.1/health
+```
+
+Para que `http://meloop.local` funcione sin ese encabezado, agrega
+`127.0.0.1 meloop.local` al archivo
+`C:\Windows\System32\drivers\etc\hosts` desde un editor ejecutado como
+administrador.
+
+### Resiliencia y diagnóstico
+
+Elimina un Pod del backend usando el nombre mostrado por el primer comando y
+comprueba que el Deployment crea un reemplazo:
+
+```powershell
+kubectl get pods -n meloop -l app.kubernetes.io/name=backend
+kubectl delete pod <NOMBRE_DEL_POD> -n meloop
+kubectl get pods -n meloop -w
+```
+
+Para diagnosticar Pods que no inician o no pasan readiness:
+
+```powershell
+kubectl get pods -n meloop
+kubectl describe pod <NOMBRE_DEL_POD> -n meloop
+kubectl logs deployment/backend -n meloop
+kubectl logs deployment/recommendation-service -n meloop
+kubectl logs deployment/ml-service -n meloop
+kubectl get pvc -n meloop
+```
+
+El PVC de Redis debe quedar `Bound`. Para detener el clúster y eliminar los
+recursos locales:
+
+```powershell
+kind delete cluster --name meloop
+```
+
+Eliminar el clúster borra sus Pods y el volumen de Redis asociado.
+
+## 9. Pruebas y comprobaciones rápidas
 
 ### Go
 
@@ -565,7 +740,7 @@ npx supabase stop
 El comando `docker compose down` mantiene los volúmenes. Si ejecutaste solo
 infraestructura, también detiene Redis, RabbitMQ y MinIO.
 
-## 9. Puertos y servicios en Compose
+## 10. Puertos y servicios en Compose
 
 | Servicio | Puerto local | ¿Está en Compose raíz? | Tipo/nota |
 | --- | ---: | --- | --- |
