@@ -11,7 +11,31 @@ type Level struct {
 type Reward struct {
 	IDRecompensa string `json:"id_recompensa"`
 	Tipo         string `json:"tipo"`
+	Nombre       string `json:"nombre,omitempty"`
+	Descripcion  string `json:"descripcion,omitempty"`
 	IDNivel      int    `json:"id_nivel"`
+	Habilitada   bool   `json:"habilitada"`
+	Disponible   bool   `json:"disponible"`
+}
+
+// RewardCreateRequest representa la definición de una recompensa global.
+type RewardCreateRequest struct {
+	Tipo        string `json:"tipo" binding:"required"`
+	Nombre      string `json:"nombre,omitempty"`
+	Descripcion string `json:"descripcion,omitempty"`
+	IDNivel     int    `json:"id_nivel" binding:"required"`
+	Habilitada  bool   `json:"habilitada"`
+	Disponible  bool   `json:"disponible"`
+}
+
+// RewardUpdateRequest representa la actualización de una recompensa.
+type RewardUpdateRequest struct {
+	Tipo        string `json:"tipo,omitempty"`
+	Nombre      string `json:"nombre,omitempty"`
+	Descripcion string `json:"descripcion,omitempty"`
+	IDNivel     int    `json:"id_nivel,omitempty"`
+	Habilitada  *bool  `json:"habilitada,omitempty"`
+	Disponible  *bool  `json:"disponible,omitempty"`
 }
 
 // InventoryItem representa un registro de la tabla INVENTARIO

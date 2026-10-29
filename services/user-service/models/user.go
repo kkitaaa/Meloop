@@ -17,6 +17,28 @@ type AccountResponse struct {
 	Correo    string `json:"correo"`
 }
 
+// AdminUserSummary representa la vista de administración del perfil de un usuario
+// para moderación y gestión de permisos.
+type AdminUserSummary struct {
+	IDUsuario   string `json:"id_usuario"`
+	Username    string `json:"username"`
+	Correo      string `json:"correo"`
+	Rol         string `json:"rol"`
+	Suspendido  bool   `json:"suspendido"`
+	EsModerador bool   `json:"es_moderador"`
+	Motivo      string `json:"motivo,omitempty"`
+}
+
+// UserModerationRequest define la solicitud para suspender o reactivar un usuario.
+type UserModerationRequest struct {
+	Reason string `json:"reason,omitempty"`
+}
+
+// ModeratorPermissionRequest define la actualización del permiso de moderación.
+type ModeratorPermissionRequest struct {
+	Moderador bool `json:"moderador"`
+}
+
 // UpdateUsernameRequest contiene los datos para solicitar la actualización de username
 type UpdateUsernameRequest struct {
 	Username string `json:"username"`
