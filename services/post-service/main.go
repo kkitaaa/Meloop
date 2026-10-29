@@ -57,7 +57,7 @@ func main() {
 		logger.Info("event_published", "event", "post.liked")
 	}
 
-	// 6. Inyectar dependencias
+	// 6. Inyectar dependencias existentes
 	sqlDB, _ := db.DB()
 
 	likeRepo := repositories.NewPostgresLikeRepository(db)
@@ -72,9 +72,21 @@ func main() {
 	postService := services.NewPostService(postRepo)
 	postController := controllers.NewPostController(postService)
 
+	// 7. Inyectar dependencias del nuevo FEED PRINCIPAL
+	feedRepo := repositories.NewPostgresFeedRepository(db)
+	feedService := services.NewFeedService(feedRepo)
+	feedController := controllers.NewFeedController(feedService)
+
+	// 8. Configurar Rutas
 	router := gin.Default()
+	
+	// Rutas de módulos anteriores
 	routes.SetupRoutes(router, likeController, commentController, postController, minioClient)
 
+	// Nueva ruta del Feed (directo en el main para no modificar el archivo routes por ahora)
+	router.GET("/v1/feed", feedController.GetMainFeed)
+
+	// Nota: Tu puerto actual en este archivo es 8084
 	logger.Info("http_server_started", "port", "8084")
 	if err := router.Run(":8084"); err != nil {
 		log.Fatalf("Error al iniciar el servidor web: %v", err)
