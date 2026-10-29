@@ -22,7 +22,7 @@ func (s *FeedService) GetFeed(userID string, page, limit int) ([]models.FeedPost
 	if limit < 1 || limit > 50 {
 		limit = 10 // Máximo 50 posts por petición, por defecto 10
 	}
-	
+
 	offset := (page - 1) * limit
 	return s.repo.GetMainFeed(userID, limit, offset)
 }

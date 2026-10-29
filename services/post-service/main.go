@@ -79,7 +79,7 @@ func main() {
 
 	// 8. Configurar Rutas
 	router := gin.Default()
-	
+
 	// Rutas de módulos anteriores
 	routes.SetupRoutes(router, likeController, commentController, postController, minioClient)
 
