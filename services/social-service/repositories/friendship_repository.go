@@ -88,7 +88,7 @@ func (r *postgresFriendshipRepository) CreatePending(ctx context.Context, sender
 
 	var reception string
 	err = tx.QueryRow(ctx, `
-		SELECT COALESCE(recepcion_solicitudes_amistad, 'TODOS')
+		SELECT COALESCE(permitir_solicitudes_amistad, 'TODOS')
 		FROM configuracion_privacidad WHERE id_usuario = $1`, receiverID).Scan(&reception)
 	if errors.Is(err, pgx.ErrNoRows) {
 		reception = "TODOS"
@@ -99,23 +99,23 @@ func (r *postgresFriendshipRepository) CreatePending(ctx context.Context, sender
 		return nil, ErrBlocked
 	}
 
-	var request models.FriendRequest
+	var relationshipExists bool
 	err = tx.QueryRow(ctx, `
-		SELECT id_amistad, id_usuario_1::text, id_usuario_2::text, estado
-		FROM amistad
+		SELECT EXISTS (
+			SELECT 1
+			FROM amistad
 		WHERE ((id_usuario_1 = $1 AND id_usuario_2 = $2)
 		    OR (id_usuario_1 = $2 AND id_usuario_2 = $1))
 		  AND estado IN ('PENDIENTE', 'ACEPTADA')
-		LIMIT 1`, senderID, receiverID).Scan(
-		&request.ID, &request.SenderID, &request.ReceiverID, &request.Status,
-	)
-	if err == nil {
-		return nil, ErrRequestConflict
-	}
-	if !errors.Is(err, pgx.ErrNoRows) {
+		)`, senderID, receiverID).Scan(&relationshipExists)
+	if err != nil {
 		return nil, err
 	}
+	if relationshipExists {
+		return nil, ErrRequestConflict
+	}
 
+	var request models.FriendRequest
 	err = tx.QueryRow(ctx, `
 		INSERT INTO amistad (id_usuario_1, id_usuario_2, estado)
 		VALUES ($1, $2, 'PENDIENTE')

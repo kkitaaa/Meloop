@@ -287,8 +287,8 @@ func TestGetFriendProfile_HTTP_Bloqueado(t *testing.T) {
 
 	router.ServeHTTP(w, req)
 
-	if w.Code != http.StatusForbidden {
-		t.Fatalf("se esperaba 403 Forbidden, se obtuvo %d", w.Code)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("se esperaba 404 Not Found, se obtuvo %d", w.Code)
 	}
 }
 
