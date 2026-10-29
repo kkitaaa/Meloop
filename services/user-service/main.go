@@ -43,6 +43,7 @@ func main() {
 	profileSrv := services.NewProfileService(profileRepo, userRepo, mediaVerifier, privacyRepo)
 
 	accountCtrl := controllers.NewAccountController(userSrv)
+	adminCtrl := controllers.NewAdminController(userSrv)
 	privacyCtrl := controllers.NewPrivacyController(privacySrv)
 	notifCtrl := controllers.NewNotificationController(notifSrv)
 	inventoryCtrl := controllers.NewInventoryController(inventorySrv)
@@ -60,6 +61,15 @@ func main() {
 	protected := router.Group("/users")
 	protected.Use(controllers.AuthRequired())
 	{
+		adminRoutes := protected.Group("/admin")
+		adminRoutes.Use(controllers.AdminRequired())
+		{
+			adminRoutes.GET("/users", adminCtrl.ListUsers)
+			adminRoutes.PATCH("/users/:id/suspend", adminCtrl.SuspendUser)
+			adminRoutes.PATCH("/users/:id/reactivate", adminCtrl.ReactivateUser)
+			adminRoutes.PATCH("/users/:id/moderation", adminCtrl.UpdateModeratorRole)
+		}
+
 		// Gestión de inventario y equipamiento (RF-08 / RF-09 / RN-12)
 		protected.GET("/me/inventory", inventoryCtrl.GetInventory)
 		protected.PUT("/me/inventory/:id/equip", inventoryCtrl.EquipReward)

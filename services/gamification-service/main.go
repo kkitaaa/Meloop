@@ -8,10 +8,13 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/meloop/gamification-service/config"
+	"github.com/meloop/gamification-service/controllers"
 	"github.com/meloop/gamification-service/messaging"
 	"github.com/meloop/gamification-service/repositories"
+	"github.com/meloop/gamification-service/routes"
 	"github.com/meloop/gamification-service/services"
 	"github.com/meloop/services/common/logging"
 )
@@ -43,6 +46,16 @@ func run() error {
 	repo := repositories.NewGamificationRepository(pool)
 	publisher := messaging.NewPublisher(cfg.RabbitMQURL)
 	service := services.NewGamificationService(repo, publisher)
+	gamificationController := controllers.NewGamificationController(service)
+	adminController := controllers.NewAdminController(service)
+
+	router := gin.New()
+	routes.SetupRoutes(router, gamificationController, adminController)
+	go func() {
+		if err := router.Run(":" + cfg.Port); err != nil {
+			logger.Error("http_server_error", "error", err)
+		}
+	}()
 
 	logger.Info("service_started")
 	if err := messaging.StartConsumer(ctx, cfg.RabbitMQURL, service); err != nil && !errors.Is(err, context.Canceled) {
