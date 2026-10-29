@@ -8,10 +8,10 @@ type RewardInfo struct {
 
 // ProgressResponse es el DTO que enviaremos al cliente (RF-34)
 type ProgressResponse struct {
-	NivelActual        int          `json:"nivel_actual"`
-	ExperienciaActual  int          `json:"experiencia_actual"`
-	ExperienciaProximo int          `json:"experiencia_proximo"`
-	PorcentajeAvance   float64      `json:"porcentaje_avance"`
+	NivelActual          int          `json:"nivel_actual"`
+	ExperienciaActual    int          `json:"experiencia_actual"`
+	ExperienciaProximo   int          `json:"experiencia_proximo"`
+	PorcentajeAvance     float64      `json:"porcentaje_avance"`
 	RecompensasObtenidas []RewardInfo `json:"recompensas_obtenidas"`
 	ProximasRecompensas  []RewardInfo `json:"proximas_recompensas"`
 }
