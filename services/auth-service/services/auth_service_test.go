@@ -2,6 +2,8 @@ package services_test
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"strings"
 	"testing"
@@ -9,6 +11,7 @@ import (
 
 	"github.com/meloop/auth-service/config"
 	"github.com/meloop/auth-service/models"
+	"github.com/meloop/auth-service/repositories"
 	"github.com/meloop/auth-service/services"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -81,10 +84,11 @@ func (m *mockUserRepository) UpdatePassword(ctx context.Context, id string, pass
 }
 
 type mockSessionRepository struct {
-	sessions   map[string]*models.SessionUser
-	createFunc func(ctx context.Context, token string, user *models.SessionUser, ttl time.Duration) error
-	getFunc    func(ctx context.Context, token string) (*models.SessionUser, error)
-	deleteFunc func(ctx context.Context, token string) error
+	sessions           map[string]*models.SessionUser
+	createFunc         func(ctx context.Context, token string, user *models.SessionUser, ttl time.Duration) error
+	getFunc            func(ctx context.Context, token string) (*models.SessionUser, error)
+	deleteFunc         func(ctx context.Context, token string) error
+	deleteByUserIDFunc func(ctx context.Context, userID string) error
 }
 
 func (m *mockSessionRepository) Create(ctx context.Context, token string, user *models.SessionUser, ttl time.Duration) error {
@@ -110,11 +114,95 @@ func (m *mockSessionRepository) Delete(ctx context.Context, token string) error 
 	return nil
 }
 
+func (m *mockSessionRepository) DeleteByUserID(ctx context.Context, userID string) error {
+	if m.deleteByUserIDFunc != nil {
+		return m.deleteByUserIDFunc(ctx, userID)
+	}
+	for k, v := range m.sessions {
+		if v != nil && v.ID == userID {
+			delete(m.sessions, k)
+		}
+	}
+	return nil
+}
+
+type mockPasswordRecoveryRepository struct {
+	tokens              map[string]*models.PasswordRecoveryToken
+	createTokenFunc     func(ctx context.Context, token *models.PasswordRecoveryToken) error
+	getTokenByHashFunc  func(ctx context.Context, tokenHash string) (*models.PasswordRecoveryToken, error)
+	markTokenAsUsedFunc func(ctx context.Context, idRecuperacion string) error
+}
+
+func (m *mockPasswordRecoveryRepository) CreateToken(ctx context.Context, token *models.PasswordRecoveryToken) error {
+	if m.createTokenFunc != nil {
+		return m.createTokenFunc(ctx, token)
+	}
+	m.tokens[token.TokenHash] = token
+	return nil
+}
+
+func (m *mockPasswordRecoveryRepository) GetTokenByHash(ctx context.Context, tokenHash string) (*models.PasswordRecoveryToken, error) {
+	if m.getTokenByHashFunc != nil {
+		return m.getTokenByHashFunc(ctx, tokenHash)
+	}
+	t, ok := m.tokens[tokenHash]
+	if !ok {
+		return nil, nil
+	}
+	return t, nil
+}
+
+func (m *mockPasswordRecoveryRepository) MarkTokenAsUsed(ctx context.Context, idRecuperacion string) error {
+	if m.markTokenAsUsedFunc != nil {
+		return m.markTokenAsUsedFunc(ctx, idRecuperacion)
+	}
+	for _, t := range m.tokens {
+		if t.IDRecuperacion == idRecuperacion {
+			t.Usado = true
+			now := time.Now()
+			t.UsadoEn = &now
+			return nil
+		}
+	}
+	return nil
+}
+
+type mockEmailService struct {
+	sentEmails               []string
+	sentLinks                []string
+	sendPasswordRecoveryFunc func(ctx context.Context, toEmail string, recoveryLink string) error
+}
+
+func (m *mockEmailService) SendPasswordRecoveryEmail(ctx context.Context, toEmail string, recoveryLink string) error {
+	if m.sendPasswordRecoveryFunc != nil {
+		return m.sendPasswordRecoveryFunc(ctx, toEmail, recoveryLink)
+	}
+	m.sentEmails = append(m.sentEmails, toEmail)
+	m.sentLinks = append(m.sentLinks, recoveryLink)
+	return nil
+}
+
+func createTestAuthService(
+	cfg *config.Config,
+	repo repositories.UserRepository,
+	sessionRepo repositories.SessionRepository,
+	recoveryRepo repositories.PasswordRecoveryRepository,
+	emailService services.EmailService,
+) services.AuthService {
+	if recoveryRepo == nil {
+		recoveryRepo = &mockPasswordRecoveryRepository{tokens: make(map[string]*models.PasswordRecoveryToken)}
+	}
+	if emailService == nil {
+		emailService = &mockEmailService{}
+	}
+	return services.NewAuthService(cfg, repo, sessionRepo, recoveryRepo, emailService)
+}
+
 func TestRegister_Success(t *testing.T) {
 	cfg := &config.Config{PasswordMinLength: 8}
 	repo := &mockUserRepository{users: make(map[string]*models.Usuario)}
 	sessionRepo := &mockSessionRepository{sessions: make(map[string]*models.SessionUser)}
-	srv := services.NewAuthService(cfg, repo, sessionRepo)
+	srv := createTestAuthService(cfg, repo, sessionRepo, nil, nil)
 
 	req := &models.RegisterRequest{
 		Username: "validuser",
@@ -162,7 +250,7 @@ func TestRegister_ValidationErrors(t *testing.T) {
 	cfg := &config.Config{PasswordMinLength: 8}
 	repo := &mockUserRepository{users: make(map[string]*models.Usuario)}
 	sessionRepo := &mockSessionRepository{sessions: make(map[string]*models.SessionUser)}
-	srv := services.NewAuthService(cfg, repo, sessionRepo)
+	srv := createTestAuthService(cfg, repo, sessionRepo, nil, nil)
 
 	tests := []struct {
 		name          string
@@ -287,7 +375,7 @@ func TestRegister_DuplicateUsername(t *testing.T) {
 		},
 	}
 	sessionRepo := &mockSessionRepository{sessions: make(map[string]*models.SessionUser)}
-	srv := services.NewAuthService(cfg, repo, sessionRepo)
+	srv := createTestAuthService(cfg, repo, sessionRepo, nil, nil)
 
 	req := &models.RegisterRequest{
 		Username: "existinguser",
@@ -313,7 +401,7 @@ func TestRegister_DuplicateEmail(t *testing.T) {
 		},
 	}
 	sessionRepo := &mockSessionRepository{sessions: make(map[string]*models.SessionUser)}
-	srv := services.NewAuthService(cfg, repo, sessionRepo)
+	srv := createTestAuthService(cfg, repo, sessionRepo, nil, nil)
 
 	req := &models.RegisterRequest{
 		Username: "seconduser",
@@ -336,7 +424,7 @@ func TestRegister_PersistenceError(t *testing.T) {
 		},
 	}
 	sessionRepo := &mockSessionRepository{sessions: make(map[string]*models.SessionUser)}
-	srv := services.NewAuthService(cfg, repo, sessionRepo)
+	srv := createTestAuthService(cfg, repo, sessionRepo, nil, nil)
 
 	req := &models.RegisterRequest{
 		Username: "newuser",
@@ -354,7 +442,7 @@ func TestRegister_BCryptHashVerification(t *testing.T) {
 	cfg := &config.Config{PasswordMinLength: 8}
 	repo := &mockUserRepository{users: make(map[string]*models.Usuario)}
 	sessionRepo := &mockSessionRepository{sessions: make(map[string]*models.SessionUser)}
-	srv := services.NewAuthService(cfg, repo, sessionRepo)
+	srv := createTestAuthService(cfg, repo, sessionRepo, nil, nil)
 
 	rawPassword := "SuperSecretPassword2026!"
 	req := &models.RegisterRequest{
@@ -397,7 +485,7 @@ func TestRegister_DatabaseUniqueViolationRace(t *testing.T) {
 		},
 	}
 	sessionRepo := &mockSessionRepository{sessions: make(map[string]*models.SessionUser)}
-	srvUsername := services.NewAuthService(cfg, repoUsernameRace, sessionRepo)
+	srvUsername := createTestAuthService(cfg, repoUsernameRace, sessionRepo, nil, nil)
 	req1 := &models.RegisterRequest{
 		Username: "duplicateuser",
 		Email:    "new@example.com",
@@ -414,7 +502,7 @@ func TestRegister_DatabaseUniqueViolationRace(t *testing.T) {
 			return errors.New("ERROR: duplicate key value violates unique constraint \"usuario_correo_key\" (SQLSTATE 23505)")
 		},
 	}
-	srvEmail := services.NewAuthService(cfg, repoEmailRace, sessionRepo)
+	srvEmail := createTestAuthService(cfg, repoEmailRace, sessionRepo, nil, nil)
 	req2 := &models.RegisterRequest{
 		Username: "newuser2",
 		Email:    "duplicate@example.com",
@@ -442,7 +530,7 @@ func TestLogin_Success(t *testing.T) {
 		},
 	}
 	sessionRepo := &mockSessionRepository{sessions: make(map[string]*models.SessionUser)}
-	srv := services.NewAuthService(cfg, repo, sessionRepo)
+	srv := createTestAuthService(cfg, repo, sessionRepo, nil, nil)
 
 	req := &models.LoginRequest{
 		Email:    "alan@meloop.com",
@@ -490,7 +578,7 @@ func TestLogin_InvalidCredentials(t *testing.T) {
 		},
 	}
 	sessionRepo := &mockSessionRepository{sessions: make(map[string]*models.SessionUser)}
-	srv := services.NewAuthService(cfg, repo, sessionRepo)
+	srv := createTestAuthService(cfg, repo, sessionRepo, nil, nil)
 
 	// Case 1: Usuario inexistente (email no encontrado)
 	req1 := &models.LoginRequest{
@@ -526,7 +614,7 @@ func TestLogout_Success(t *testing.T) {
 			},
 		},
 	}
-	srv := services.NewAuthService(cfg, repo, sessionRepo)
+	srv := createTestAuthService(cfg, repo, sessionRepo, nil, nil)
 
 	err := srv.Logout(context.Background(), "valid-token-123")
 	if err != nil {
@@ -553,7 +641,7 @@ func TestValidateSession(t *testing.T) {
 			},
 		},
 	}
-	srv := services.NewAuthService(cfg, repo, sessionRepo)
+	srv := createTestAuthService(cfg, repo, sessionRepo, nil, nil)
 
 	// Case 1: Valid token
 	user, err := srv.ValidateSession(context.Background(), "valid-token-123")
@@ -595,7 +683,7 @@ func TestChangePassword_Exitoso(t *testing.T) {
 		users: map[string]*models.Usuario{"alan": user},
 	}
 	sessionRepo := &mockSessionRepository{sessions: make(map[string]*models.SessionUser)}
-	srv := services.NewAuthService(cfg, repo, sessionRepo)
+	srv := createTestAuthService(cfg, repo, sessionRepo, nil, nil)
 
 	req := &models.ChangePasswordRequest{
 		CurrentPassword: "password123",
@@ -627,7 +715,7 @@ func TestChangePassword_Validaciones(t *testing.T) {
 		users: map[string]*models.Usuario{"alan": user},
 	}
 	sessionRepo := &mockSessionRepository{sessions: make(map[string]*models.SessionUser)}
-	srv := services.NewAuthService(cfg, repo, sessionRepo)
+	srv := createTestAuthService(cfg, repo, sessionRepo, nil, nil)
 
 	casos := []struct {
 		nombre        string
@@ -715,7 +803,7 @@ func TestChangePassword_ContrasenaActualIncorrecta(t *testing.T) {
 		users: map[string]*models.Usuario{"alan": user},
 	}
 	sessionRepo := &mockSessionRepository{sessions: make(map[string]*models.SessionUser)}
-	srv := services.NewAuthService(cfg, repo, sessionRepo)
+	srv := createTestAuthService(cfg, repo, sessionRepo, nil, nil)
 
 	req := &models.ChangePasswordRequest{
 		CurrentPassword: "contrasena_erronea",
@@ -732,7 +820,7 @@ func TestChangePassword_UsuarioNoExiste(t *testing.T) {
 	cfg := &config.Config{PasswordMinLength: 8}
 	repo := &mockUserRepository{users: make(map[string]*models.Usuario)}
 	sessionRepo := &mockSessionRepository{sessions: make(map[string]*models.SessionUser)}
-	srv := services.NewAuthService(cfg, repo, sessionRepo)
+	srv := createTestAuthService(cfg, repo, sessionRepo, nil, nil)
 
 	req := &models.ChangePasswordRequest{
 		CurrentPassword: "password123",
@@ -742,5 +830,486 @@ func TestChangePassword_UsuarioNoExiste(t *testing.T) {
 	err := srv.ChangePassword(context.Background(), "user-inexistente", req)
 	if !errors.Is(err, services.ErrInvalidCredentials) {
 		t.Fatalf("se esperaba ErrInvalidCredentials cuando el usuario no existe, se obtuvo: %v", err)
+	}
+}
+
+// =============================================================================
+// PRUEBAS RF-04: Recuperación de acceso mediante correo
+// =============================================================================
+
+// 1. Solicitud con correo válido
+func TestRequestPasswordRecovery_ValidEmail(t *testing.T) {
+	cfg := &config.Config{
+		RecoveryTokenTTL: 30 * time.Minute,
+		RecoveryURLBase:  "http://localhost:8080/auth/password-recovery/reset?token=",
+	}
+	user := &models.Usuario{
+		IDUsuario: "user-uuid-recovery-1",
+		Username:  "alan",
+		Correo:    "alan@meloop.com",
+	}
+	repo := &mockUserRepository{
+		users: map[string]*models.Usuario{"alan": user},
+	}
+	sessionRepo := &mockSessionRepository{sessions: make(map[string]*models.SessionUser)}
+	recoveryRepo := &mockPasswordRecoveryRepository{tokens: make(map[string]*models.PasswordRecoveryToken)}
+	emailService := &mockEmailService{}
+
+	srv := createTestAuthService(cfg, repo, sessionRepo, recoveryRepo, emailService)
+
+	err := srv.RequestPasswordRecovery(context.Background(), &models.PasswordRecoveryRequest{
+		Email: "alan@meloop.com",
+	})
+	if err != nil {
+		t.Fatalf("expected no error for valid email recovery request, got: %v", err)
+	}
+
+	// Verificar que se envió el correo
+	if len(emailService.sentEmails) != 1 || emailService.sentEmails[0] != "alan@meloop.com" {
+		t.Fatalf("expected email to be sent to alan@meloop.com, got: %v", emailService.sentEmails)
+	}
+	if len(emailService.sentLinks) != 1 || !strings.Contains(emailService.sentLinks[0], "token=") {
+		t.Fatalf("expected recovery link in email, got: %v", emailService.sentLinks)
+	}
+
+	// Verificar que el token se haya persistido en hash
+	if len(recoveryRepo.tokens) != 1 {
+		t.Fatalf("expected 1 recovery token in repository, got: %d", len(recoveryRepo.tokens))
+	}
+	for hash, tokenRecord := range recoveryRepo.tokens {
+		if tokenRecord.IDUsuario != "user-uuid-recovery-1" {
+			t.Errorf("expected token for user-uuid-recovery-1, got: %s", tokenRecord.IDUsuario)
+		}
+		if tokenRecord.Usado {
+			t.Errorf("expected token not to be used yet")
+		}
+		if len(hash) != 64 {
+			t.Errorf("expected 64-char sha256 token hash, got length %d", len(hash))
+		}
+	}
+}
+
+// 2. Solicitud con correo inexistente sin revelar su existencia
+func TestRequestPasswordRecovery_NonExistentEmail_NoLeak(t *testing.T) {
+	cfg := &config.Config{
+		RecoveryTokenTTL: 30 * time.Minute,
+		RecoveryURLBase:  "http://localhost:8080/auth/password-recovery/reset?token=",
+	}
+	repo := &mockUserRepository{users: make(map[string]*models.Usuario)}
+	sessionRepo := &mockSessionRepository{sessions: make(map[string]*models.SessionUser)}
+	recoveryRepo := &mockPasswordRecoveryRepository{tokens: make(map[string]*models.PasswordRecoveryToken)}
+	emailService := &mockEmailService{}
+
+	srv := createTestAuthService(cfg, repo, sessionRepo, recoveryRepo, emailService)
+
+	// Correo inexistente no debe retornar error ni enviar correos ni persistir tokens
+	err := srv.RequestPasswordRecovery(context.Background(), &models.PasswordRecoveryRequest{
+		Email: "nonexistent@meloop.com",
+	})
+	if err != nil {
+		t.Fatalf("expected nil error for non-existent email (security no-leak requirement), got: %v", err)
+	}
+
+	if len(emailService.sentEmails) != 0 {
+		t.Errorf("expected no email to be sent for non-existent user, got %d", len(emailService.sentEmails))
+	}
+	if len(recoveryRepo.tokens) != 0 {
+		t.Errorf("expected no token saved for non-existent user, got %d", len(recoveryRepo.tokens))
+	}
+}
+
+// 3. Generación y hash de token seguro (expiración a 30 minutos)
+func TestRequestPasswordRecovery_TokenGenerationAndExpiration(t *testing.T) {
+	cfg := &config.Config{
+		RecoveryTokenTTL: 30 * time.Minute,
+		RecoveryURLBase:  "http://localhost:8080/auth/password-recovery/reset?token=",
+	}
+	user := &models.Usuario{
+		IDUsuario: "user-uuid-token-gen",
+		Username:  "tokengen",
+		Correo:    "tokengen@meloop.com",
+	}
+	repo := &mockUserRepository{
+		users: map[string]*models.Usuario{"tokengen": user},
+	}
+	sessionRepo := &mockSessionRepository{sessions: make(map[string]*models.SessionUser)}
+	recoveryRepo := &mockPasswordRecoveryRepository{tokens: make(map[string]*models.PasswordRecoveryToken)}
+	emailService := &mockEmailService{}
+
+	srv := createTestAuthService(cfg, repo, sessionRepo, recoveryRepo, emailService)
+
+	before := time.Now()
+	err := srv.RequestPasswordRecovery(context.Background(), &models.PasswordRecoveryRequest{
+		Email: "tokengen@meloop.com",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(emailService.sentLinks) != 1 {
+		t.Fatalf("expected 1 email link sent, got: %d", len(emailService.sentLinks))
+	}
+	rawToken := strings.TrimPrefix(emailService.sentLinks[0], cfg.RecoveryURLBase)
+	if len(rawToken) != 64 { // 32 bytes hex = 64 hex characters
+		t.Fatalf("expected 64-char hex raw token, got length %d (%s)", len(rawToken), rawToken)
+	}
+
+	for _, tokenRecord := range recoveryRepo.tokens {
+		expectedExpiration := before.Add(30 * time.Minute)
+		if tokenRecord.ExpiraEn.Before(expectedExpiration.Add(-2*time.Second)) || tokenRecord.ExpiraEn.After(expectedExpiration.Add(2*time.Second)) {
+			t.Errorf("expected token expiration around %v, got %v", expectedExpiration, tokenRecord.ExpiraEn)
+		}
+	}
+}
+
+// 4. Token válido procesado correctamente
+// 8. Cambio exitoso de contraseña
+func TestResetPassword_ValidToken_Success(t *testing.T) {
+	cfg := &config.Config{
+		PasswordMinLength: 8,
+		RecoveryTokenTTL:  30 * time.Minute,
+		RecoveryURLBase:   "http://localhost:8080/auth/password-recovery/reset?token=",
+	}
+	initialHash, _ := bcrypt.GenerateFromPassword([]byte("OldP@ssword123"), bcrypt.DefaultCost)
+	user := &models.Usuario{
+		IDUsuario:      "user-uuid-reset",
+		Username:       "alanuser",
+		Correo:         "alan@meloop.com",
+		ContrasenaHash: string(initialHash),
+	}
+	repo := &mockUserRepository{
+		users: map[string]*models.Usuario{"alanuser": user},
+	}
+	sessionRepo := &mockSessionRepository{
+		sessions: map[string]*models.SessionUser{
+			"active-session-1": {ID: "user-uuid-reset", Username: "alanuser", Email: "alan@meloop.com"},
+		},
+	}
+	recoveryRepo := &mockPasswordRecoveryRepository{tokens: make(map[string]*models.PasswordRecoveryToken)}
+	emailService := &mockEmailService{}
+
+	srv := createTestAuthService(cfg, repo, sessionRepo, recoveryRepo, emailService)
+
+	// 1. Solicitar recuperación
+	err := srv.RequestPasswordRecovery(context.Background(), &models.PasswordRecoveryRequest{
+		Email: "alan@meloop.com",
+	})
+	if err != nil {
+		t.Fatalf("error in RequestPasswordRecovery: %v", err)
+	}
+
+	rawToken := strings.TrimPrefix(emailService.sentLinks[0], cfg.RecoveryURLBase)
+
+	// 2. Restablecer con nueva contraseña válida
+	newPassword := "NuevaP@ssw0rd2026"
+	err = srv.ResetPassword(context.Background(), &models.ResetPasswordRequest{
+		Token:       rawToken,
+		NewPassword: newPassword,
+	})
+	if err != nil {
+		t.Fatalf("expected successful ResetPassword, got: %v", err)
+	}
+
+	// 3. Verificar que la contraseña fue actualizada en hash bcrypt
+	if user.ContrasenaHash == string(initialHash) {
+		t.Error("expected contrasena_hash to be updated")
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(user.ContrasenaHash), []byte(newPassword)); err != nil {
+		t.Errorf("bcrypt compare failed for new password: %v", err)
+	}
+
+	// 4. Verificar que las sesiones anteriores quedaron invalidadas
+	if len(sessionRepo.sessions) != 0 {
+		t.Errorf("expected active sessions to be invalidated, remaining: %d", len(sessionRepo.sessions))
+	}
+}
+
+// 5. Token expirado
+func TestResetPassword_ExpiredToken(t *testing.T) {
+	cfg := &config.Config{PasswordMinLength: 8, RecoveryTokenTTL: 30 * time.Minute}
+	user := &models.Usuario{
+		IDUsuario: "user-uuid-expired",
+		Username:  "expireduser",
+		Correo:    "expired@meloop.com",
+	}
+	repo := &mockUserRepository{
+		users: map[string]*models.Usuario{"expireduser": user},
+	}
+	sessionRepo := &mockSessionRepository{sessions: make(map[string]*models.SessionUser)}
+
+	rawToken := "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+	h := sha256.Sum256([]byte(rawToken))
+	tokenHash := hex.EncodeToString(h[:])
+
+	recoveryRepo := &mockPasswordRecoveryRepository{
+		tokens: map[string]*models.PasswordRecoveryToken{
+			tokenHash: {
+				IDRecuperacion: "rec-expired-1",
+				IDUsuario:      "user-uuid-expired",
+				TokenHash:      tokenHash,
+				ExpiraEn:       time.Now().Add(-10 * time.Minute), // Expiró hace 10 minutos
+				Usado:          false,
+			},
+		},
+	}
+	emailService := &mockEmailService{}
+
+	srv := createTestAuthService(cfg, repo, sessionRepo, recoveryRepo, emailService)
+
+	err := srv.ResetPassword(context.Background(), &models.ResetPasswordRequest{
+		Token:       rawToken,
+		NewPassword: "NewSecureP@ss123",
+	})
+	if !errors.Is(err, services.ErrTokenExpired) {
+		t.Fatalf("expected ErrTokenExpired, got: %v", err)
+	}
+}
+
+// 6. Token ya utilizado
+// 10. Invalidación del token después de utilizarlo
+// 12. Intento de reutilizar el enlace después de completar la recuperación
+func TestResetPassword_AlreadyUsedToken_ReusingFails(t *testing.T) {
+	cfg := &config.Config{
+		PasswordMinLength: 8,
+		RecoveryTokenTTL:  30 * time.Minute,
+		RecoveryURLBase:   "http://localhost:8080/auth/password-recovery/reset?token=",
+	}
+	user := &models.Usuario{
+		IDUsuario: "user-uuid-used",
+		Username:  "useduser",
+		Correo:    "used@meloop.com",
+	}
+	repo := &mockUserRepository{
+		users: map[string]*models.Usuario{"useduser": user},
+	}
+	sessionRepo := &mockSessionRepository{sessions: make(map[string]*models.SessionUser)}
+	recoveryRepo := &mockPasswordRecoveryRepository{tokens: make(map[string]*models.PasswordRecoveryToken)}
+	emailService := &mockEmailService{}
+
+	srv := createTestAuthService(cfg, repo, sessionRepo, recoveryRepo, emailService)
+
+	err := srv.RequestPasswordRecovery(context.Background(), &models.PasswordRecoveryRequest{
+		Email: "used@meloop.com",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	rawToken := strings.TrimPrefix(emailService.sentLinks[0], cfg.RecoveryURLBase)
+
+	// Primer uso: Debe ser exitoso
+	err = srv.ResetPassword(context.Background(), &models.ResetPasswordRequest{
+		Token:       rawToken,
+		NewPassword: "FirstResetP@ss123",
+	})
+	if err != nil {
+		t.Fatalf("expected first reset to succeed, got: %v", err)
+	}
+
+	// Segundo uso: Debe ser rechazado como token ya utilizado (RN-04)
+	err = srv.ResetPassword(context.Background(), &models.ResetPasswordRequest{
+		Token:       rawToken,
+		NewPassword: "SecondResetP@ss123",
+	})
+	if !errors.Is(err, services.ErrTokenAlreadyUsed) {
+		t.Fatalf("expected ErrTokenAlreadyUsed when reusing token, got: %v", err)
+	}
+}
+
+// 7. Token inválido o inexistente
+func TestResetPassword_InvalidToken(t *testing.T) {
+	cfg := &config.Config{PasswordMinLength: 8}
+	repo := &mockUserRepository{users: make(map[string]*models.Usuario)}
+	sessionRepo := &mockSessionRepository{sessions: make(map[string]*models.SessionUser)}
+	recoveryRepo := &mockPasswordRecoveryRepository{tokens: make(map[string]*models.PasswordRecoveryToken)}
+	emailService := &mockEmailService{}
+
+	srv := createTestAuthService(cfg, repo, sessionRepo, recoveryRepo, emailService)
+
+	err := srv.ResetPassword(context.Background(), &models.ResetPasswordRequest{
+		Token:       "token_que_no_existe_en_db",
+		NewPassword: "NewValidP@ss123",
+	})
+	if !errors.Is(err, services.ErrTokenNotFound) {
+		t.Fatalf("expected ErrTokenNotFound for invalid token, got: %v", err)
+	}
+}
+
+// 9. Contraseña que incumple RN-19 (Política de contraseñas)
+func TestResetPassword_RN19_PolicyViolations(t *testing.T) {
+	cfg := &config.Config{
+		PasswordMinLength: 8,
+		RecoveryTokenTTL:  30 * time.Minute,
+		RecoveryURLBase:   "http://localhost:8080/auth/password-recovery/reset?token=",
+	}
+	user := &models.Usuario{
+		IDUsuario: "user-uuid-rn19",
+		Username:  "alanpolo",
+		Correo:    "alanpolo@meloop.com",
+	}
+	repo := &mockUserRepository{
+		users: map[string]*models.Usuario{"alanpolo": user},
+	}
+	sessionRepo := &mockSessionRepository{sessions: make(map[string]*models.SessionUser)}
+	recoveryRepo := &mockPasswordRecoveryRepository{tokens: make(map[string]*models.PasswordRecoveryToken)}
+	emailService := &mockEmailService{}
+
+	srv := createTestAuthService(cfg, repo, sessionRepo, recoveryRepo, emailService)
+
+	_ = srv.RequestPasswordRecovery(context.Background(), &models.PasswordRecoveryRequest{
+		Email: "alanpolo@meloop.com",
+	})
+	rawToken := strings.TrimPrefix(emailService.sentLinks[0], cfg.RecoveryURLBase)
+
+	casosRN19 := []struct {
+		nombre        string
+		newPassword   string
+		expectedIssue string
+	}{
+		{
+			nombre:        "contraseña menor a 8 caracteres",
+			newPassword:   "Ab1!x",
+			expectedIssue: "too_short",
+		},
+		{
+			nombre:        "contraseña mayor a 72 caracteres",
+			newPassword:   strings.Repeat("A1b", 25), // 75 caracteres
+			expectedIssue: "too_long",
+		},
+		{
+			nombre:        "sin letras minúsculas",
+			newPassword:   "PASSWORD123!",
+			expectedIssue: "missing_lowercase",
+		},
+		{
+			nombre:        "sin letras mayúsculas",
+			newPassword:   "password123!",
+			expectedIssue: "missing_uppercase",
+		},
+		{
+			nombre:        "sin dígitos",
+			newPassword:   "PasswordWithoutDigits!",
+			expectedIssue: "missing_digit",
+		},
+	}
+
+	for _, c := range casosRN19 {
+		t.Run(c.nombre, func(t *testing.T) {
+			err := srv.ResetPassword(context.Background(), &models.ResetPasswordRequest{
+				Token:       rawToken,
+				NewPassword: c.newPassword,
+			})
+			if err == nil {
+				t.Fatalf("expected validation error for %s, got nil", c.nombre)
+			}
+			valErr, ok := err.(*services.ValidationError)
+			if !ok {
+				t.Fatalf("expected *ValidationError, got %T (%v)", err, err)
+			}
+			if valErr.Issue != c.expectedIssue {
+				t.Errorf("expected issue '%s', got '%s' (message: %s)", c.expectedIssue, valErr.Issue, valErr.Message)
+			}
+		})
+	}
+
+	// Probar específicamente coincidencia con username
+	userWithSpecialName := &models.Usuario{
+		IDUsuario: "user-uuid-special-name",
+		Username:  "AlanPolo123",
+		Correo:    "special@meloop.com",
+	}
+	repo.users["AlanPolo123"] = userWithSpecialName
+	_ = srv.RequestPasswordRecovery(context.Background(), &models.PasswordRecoveryRequest{
+		Email: "special@meloop.com",
+	})
+	specialToken := strings.TrimPrefix(emailService.sentLinks[len(emailService.sentLinks)-1], cfg.RecoveryURLBase)
+
+	err := srv.ResetPassword(context.Background(), &models.ResetPasswordRequest{
+		Token:       specialToken,
+		NewPassword: "AlanPolo123", // Cumple mayúsculas, minúsculas, dígitos, pero es igual al username
+	})
+	if err == nil {
+		t.Fatal("expected error when new_password matches username")
+	}
+	valErr, ok := err.(*services.ValidationError)
+	if !ok || valErr.Issue != "matches_username" {
+		t.Errorf("expected issue 'matches_username', got: %v", err)
+	}
+
+	// Probar específicamente coincidencia con correo
+	userWithEmailMatch := &models.Usuario{
+		IDUsuario: "user-uuid-email-match",
+		Username:  "SomeUser",
+		Correo:    "AlanPolo123@meloop.com",
+	}
+	repo.users["SomeUser"] = userWithEmailMatch
+	_ = srv.RequestPasswordRecovery(context.Background(), &models.PasswordRecoveryRequest{
+		Email: "AlanPolo123@meloop.com",
+	})
+	emailMatchToken := strings.TrimPrefix(emailService.sentLinks[len(emailService.sentLinks)-1], cfg.RecoveryURLBase)
+
+	err = srv.ResetPassword(context.Background(), &models.ResetPasswordRequest{
+		Token:       emailMatchToken,
+		NewPassword: "AlanPolo123@meloop.com", // Igual al correo
+	})
+	if err == nil {
+		t.Fatal("expected error when new_password matches email")
+	}
+	valErr, ok = err.(*services.ValidationError)
+	if !ok || valErr.Issue != "matches_email" {
+		t.Errorf("expected issue 'matches_email', got: %v", err)
+	}
+}
+
+// 11. Invalidación de sesiones anteriores
+func TestResetPassword_InvalidatesActiveSessions(t *testing.T) {
+	cfg := &config.Config{
+		PasswordMinLength: 8,
+		RecoveryTokenTTL:  30 * time.Minute,
+		RecoveryURLBase:   "http://localhost:8080/auth/password-recovery/reset?token=",
+	}
+	user := &models.Usuario{
+		IDUsuario: "user-uuid-multi-session",
+		Username:  "multisession",
+		Correo:    "multi@meloop.com",
+	}
+	repo := &mockUserRepository{
+		users: map[string]*models.Usuario{"multisession": user},
+	}
+	sessionRepo := &mockSessionRepository{
+		sessions: map[string]*models.SessionUser{
+			"session-token-1":    {ID: "user-uuid-multi-session", Username: "multisession", Email: "multi@meloop.com"},
+			"session-token-2":    {ID: "user-uuid-multi-session", Username: "multisession", Email: "multi@meloop.com"},
+			"other-user-session": {ID: "user-uuid-other", Username: "other", Email: "other@meloop.com"},
+		},
+	}
+	recoveryRepo := &mockPasswordRecoveryRepository{tokens: make(map[string]*models.PasswordRecoveryToken)}
+	emailService := &mockEmailService{}
+
+	srv := createTestAuthService(cfg, repo, sessionRepo, recoveryRepo, emailService)
+
+	_ = srv.RequestPasswordRecovery(context.Background(), &models.PasswordRecoveryRequest{
+		Email: "multi@meloop.com",
+	})
+	rawToken := strings.TrimPrefix(emailService.sentLinks[0], cfg.RecoveryURLBase)
+
+	err := srv.ResetPassword(context.Background(), &models.ResetPasswordRequest{
+		Token:       rawToken,
+		NewPassword: "NewValidP@ssword2026",
+	})
+	if err != nil {
+		t.Fatalf("expected reset to succeed, got: %v", err)
+	}
+
+	// Verificar que las sesiones del usuario afectado fueron eliminadas
+	if _, exists := sessionRepo.sessions["session-token-1"]; exists {
+		t.Error("expected session-token-1 to be deleted")
+	}
+	if _, exists := sessionRepo.sessions["session-token-2"]; exists {
+		t.Error("expected session-token-2 to be deleted")
+	}
+	// La sesión de otro usuario debe preservarse
+	if _, exists := sessionRepo.sessions["other-user-session"]; !exists {
+		t.Error("expected other-user-session to remain active")
 	}
 }

@@ -34,7 +34,7 @@ func (r *postgresPrivacyRepository) GetByUserID(ctx context.Context, userID stri
 	var conf models.ConfiguracionPrivacidad
 	query := `
 		SELECT id_privacidad, id_usuario::text, visibilidad_perfil, visibilidad_publicaciones,
-		       visibilidad_interacciones, recepcion_mensajes, recepcion_solicitudes_amistad
+		       visibilidad_interacciones, permitir_mensajes, permitir_solicitudes_amistad
 		FROM CONFIGURACION_PRIVACIDAD
 		WHERE id_usuario = $1
 	`
@@ -66,18 +66,19 @@ func (r *postgresPrivacyRepository) CreateDefault(ctx context.Context, userID st
 	var conf models.ConfiguracionPrivacidad
 	query := `
 		INSERT INTO CONFIGURACION_PRIVACIDAD (
+			id_privacidad,
 			id_usuario,
 			visibilidad_perfil,
 			visibilidad_publicaciones,
 			visibilidad_interacciones,
-			recepcion_mensajes,
-			recepcion_solicitudes_amistad
+			permitir_mensajes,
+			permitir_solicitudes_amistad
 		)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, $6)
 		ON CONFLICT (id_usuario) DO UPDATE
 		SET id_usuario = EXCLUDED.id_usuario
 		RETURNING id_privacidad, id_usuario::text, visibilidad_perfil, visibilidad_publicaciones,
-		          visibilidad_interacciones, recepcion_mensajes, recepcion_solicitudes_amistad
+		          visibilidad_interacciones, permitir_mensajes, permitir_solicitudes_amistad
 	`
 	err := r.pool.QueryRow(
 		ctx,
@@ -115,11 +116,11 @@ func (r *postgresPrivacyRepository) Update(ctx context.Context, config *models.C
 		SET visibilidad_perfil = $1,
 		    visibilidad_publicaciones = $2,
 		    visibilidad_interacciones = $3,
-		    recepcion_mensajes = $4,
-		    recepcion_solicitudes_amistad = $5
+		    permitir_mensajes = $4,
+		    permitir_solicitudes_amistad = $5
 		WHERE id_usuario = $6
 		RETURNING id_privacidad, id_usuario::text, visibilidad_perfil, visibilidad_publicaciones,
-		          visibilidad_interacciones, recepcion_mensajes, recepcion_solicitudes_amistad
+		          visibilidad_interacciones, permitir_mensajes, permitir_solicitudes_amistad
 	`
 	err := r.pool.QueryRow(
 		ctx,
@@ -144,16 +145,17 @@ func (r *postgresPrivacyRepository) Update(ctx context.Context, config *models.C
 			// Si no existía la fila para actualizar, se inserta con los valores especificados
 			insertQuery := `
 				INSERT INTO CONFIGURACION_PRIVACIDAD (
+					id_privacidad,
 					id_usuario,
 					visibilidad_perfil,
 					visibilidad_publicaciones,
 					visibilidad_interacciones,
-					recepcion_mensajes,
-					recepcion_solicitudes_amistad
+					permitir_mensajes,
+					permitir_solicitudes_amistad
 				)
-				VALUES ($1, $2, $3, $4, $5, $6)
+				VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, $6)
 				RETURNING id_privacidad, id_usuario::text, visibilidad_perfil, visibilidad_publicaciones,
-				          visibilidad_interacciones, recepcion_mensajes, recepcion_solicitudes_amistad
+				          visibilidad_interacciones, permitir_mensajes, permitir_solicitudes_amistad
 			`
 			insErr := r.pool.QueryRow(
 				ctx,

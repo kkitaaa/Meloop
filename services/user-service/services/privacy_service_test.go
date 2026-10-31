@@ -28,7 +28,7 @@ func (m *mockPrivacyRepository) GetByUserID(ctx context.Context, userID string) 
 
 func (m *mockPrivacyRepository) CreateDefault(ctx context.Context, userID string) (*models.ConfiguracionPrivacidad, error) {
 	cfg := &models.ConfiguracionPrivacidad{
-		IDPrivacidad:                1,
+		IDPrivacidad:                "1",
 		IDUsuario:                   userID,
 		VisibilidadPerfil:           models.VisibilidadPublico,
 		VisibilidadPublicaciones:    models.VisibilidadPublico,

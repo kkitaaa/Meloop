@@ -9,11 +9,58 @@ func SetupRoutes(router *gin.Engine, controller *controllers.FriendshipControlle
 	protected := router.Group("/friends")
 	protected.Use(controllers.AuthRequired())
 	{
+		// RF-10 / RF-11: Solicitudes de amistad
 		protected.POST("/requests", controller.Send)
 		protected.GET("/requests/received", controller.Received)
 		protected.GET("/requests/sent", controller.Sent)
 		protected.POST("/requests/:id/accept", controller.Accept)
 		protected.POST("/requests/:id/reject", controller.Reject)
 		protected.POST("/requests/:id/cancel", controller.Cancel)
+
+		// RF-12: Gestión de amigos
+		protected.GET("", controller.ListFriends)
+		protected.DELETE("/:id", controller.RemoveFriend)
+		protected.GET("/:id/profile", controller.GetFriendProfile)
+		protected.GET("/profile/:id", controller.GetFriendProfile)
+
+		// RF-13: Bloqueo de usuarios y validación de interacciones
+		protected.POST("/blocks", controller.BlockUser)
+		protected.POST("/block", controller.BlockUser)
+		protected.GET("/validate-interaction", controller.ValidateInteraction)
+		protected.POST("/validate-interaction", controller.ValidateInteraction)
+		protected.POST("/blocks/exclude", controller.ExcludeBlocked)
+
+		// RF-14: Sugerencias de amistad
+		protected.GET("/suggestions", controller.GetFriendSuggestions)
+		protected.GET("/recommendations", controller.GetFriendSuggestions)
+	}
+
+	// Endpoint interno para comunicación entre microservicios (no requiere sesión JWT de usuario final)
+	internal := router.Group("/internal")
+	{
+		internal.POST("/blocks/exclude", controller.ExcludeBlocked)
+	}
+
+	// Acceso directo a sugerencias de amistad
+	suggestions := router.Group("/suggestions")
+	suggestions.Use(controllers.AuthRequired())
+	{
+		suggestions.GET("", controller.GetFriendSuggestions)
+	}
+}
+
+// SetupSuggestionRoutes configura las rutas REST de sugerencias de amistad (RF-14).
+func SetupSuggestionRoutes(router *gin.Engine, controller *controllers.SuggestionController) {
+	friends := router.Group("/friends")
+	friends.Use(controllers.AuthRequired())
+	{
+		friends.GET("/suggestions", controller.GetFriendSuggestions)
+		friends.GET("/recommendations", controller.GetFriendSuggestions)
+	}
+
+	suggestions := router.Group("/suggestions")
+	suggestions.Use(controllers.AuthRequired())
+	{
+		suggestions.GET("", controller.GetFriendSuggestions)
 	}
 }

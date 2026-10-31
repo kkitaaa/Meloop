@@ -484,6 +484,9 @@ Coordinar y entregar recomendaciones personalizadas.
 * Comunicarse con `ml-service`.
 * Procesar y normalizar los resultados recibidos.
 * Entregar recomendaciones a la aplicación.
+* Para perfiles con menos de tres señales personales y sin un conjunto previo, recomendar canciones y artistas populares de publicaciones públicas y preferencias recientes.
+* Excluir de ese cálculo publicaciones y preferencias de usuarios bloqueados o con acciones de moderación que los marquen inactivos.
+* Reutilizar durante 24 horas en Redis el conjunto calculado por usuario y tipo; comparar las preferencias e interacciones actuales antes de servirlo, invalidándolo y recalculando ante cambios.
 * Diferenciar tipos de recomendación, principalmente:
 
   * música;

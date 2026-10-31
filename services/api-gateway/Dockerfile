@@ -1,33 +1,33 @@
-FROM golang:1.26-alpine AS builder
+FROM golang:1.27-alpine AS builder
 
 WORKDIR /app
 
-# Copiar archivos de módulos primero para cachear dependencias
-COPY services/common/go.mod services/common/go.sum* ./services/common/
-COPY services/api-gateway/go.mod services/api-gateway/go.sum* ./services/api-gateway/
+COPY services/common/go.mod services/common/go.sum ./services/common/
+COPY services/api-gateway/go.mod services/api-gateway/go.sum ./services/api-gateway/
 
-# Descargar dependencias externos
 WORKDIR /app/services/api-gateway
 RUN go mod download
 
-# Copiar el código fuente
 WORKDIR /app
 COPY services/common ./services/common
 COPY services/api-gateway ./services/api-gateway
 
-# Compilar el binario
 WORKDIR /app/services/api-gateway
-RUN go mod tidy
-RUN go build -o api-gateway .
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /api-gateway .
 
 FROM alpine:latest
 
-WORKDIR /app
+RUN apk add --no-cache ca-certificates \
+    && addgroup -S -g 10001 app \
+    && adduser -S -u 10001 -G app app
 
-COPY --from=builder /app/services/api-gateway/api-gateway .
+WORKDIR /app
+COPY --from=builder --chown=app:app /api-gateway ./api-gateway
 
 EXPOSE 8080
 
 ENV PORT=8080
+
+USER app
 
 CMD ["./api-gateway"]

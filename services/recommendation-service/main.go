@@ -1,7 +1,220 @@
 package main
 
-import "github.com/meloop/services/common/logging"
+import (
+	"context"
+	"encoding/json"
+	"log/slog"
+	"net/http"
+	"os"
+	"os/signal"
+	"strconv"
+	"strings"
+	"syscall"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/meloop/recommendation-service/messaging"
+	"github.com/meloop/recommendation-service/models"
+	"github.com/meloop/recommendation-service/repositories"
+	"github.com/meloop/recommendation-service/services"
+)
 
 func main() {
-	logging.New("recommendation-service").Info("service_started")
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	mlURL := getenv("ML_SERVICE_URL", "http://127.0.0.1:8001")
+	mlClient := services.NewMLClient(mlURL)
+	recommendationStore, err := services.NewRedisRecommendationStore(getenv("REDIS_URL", "redis://localhost:6379"))
+	if err != nil {
+		logger.Error("recommendation_backup_configuration_failed", "error", err)
+		os.Exit(1)
+	}
+	defer recommendationStore.Close()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	profileRepository, activityRepository, databasePool, err := openRepositories(ctx)
+	if err != nil {
+		logger.Error("recommendation_database_configuration_failed", "error", err)
+		os.Exit(1)
+	}
+	if databasePool != nil {
+		defer databasePool.Close()
+	}
+	recommendationService := services.NewRecommendationServiceWithRepositoryAndStore(mlClient, 30*time.Second, profileRepository, recommendationStore)
+	if activityRepository != nil {
+		processor := services.NewActivityProcessor(activityRepository, recommendationService)
+		go func() {
+			rabbitURL := getenv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/")
+			for ctx.Err() == nil {
+				err := messaging.Run(ctx, rabbitURL, processor)
+				if ctx.Err() != nil {
+					return
+				}
+				logger.Error("recommendation_event_consumer_stopped", "error", err)
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(5 * time.Second):
+				}
+			}
+		}()
+	} else {
+		logger.Warn("recommendation_event_consumer_disabled", "reason", "DATABASE_URL is not configured")
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/health", healthHandler)
+	mux.HandleFunc("/ready", readinessHandler(mlClient))
+	mux.HandleFunc("/recommendations/", recommendationHandler(recommendationService))
+	mux.HandleFunc("/interactions", interactionHandler(recommendationService))
+
+	address := getenv("RECOMMENDATION_SERVICE_ADDRESS", ":8087")
+	logger.Info("service_started", "address", address, "ml_service", mlURL)
+	if err := http.ListenAndServe(address, mux); err != nil {
+		logger.Error("service_stopped", "error", err)
+	}
+}
+
+func openRepositories(ctx context.Context) (repositories.UserProfileRepository, repositories.RecentActivityRepository, *pgxpool.Pool, error) {
+	databaseURL := os.Getenv("DATABASE_URL")
+	if databaseURL == "" {
+		return nil, nil, nil, nil
+	}
+	pool, err := pgxpool.New(ctx, databaseURL)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return repositories.NewUserProfileRepository(pool), repositories.NewRecentActivityRepository(pool), pool, nil
+}
+
+func healthHandler(writer http.ResponseWriter, request *http.Request) {
+	if request.Method != http.MethodGet {
+		http.Error(writer, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	writeJSON(writer, http.StatusOK, map[string]string{"status": "ok", "service": "recommendation-service"})
+}
+
+func readinessHandler(mlClient *services.MLClient) http.HandlerFunc {
+	return func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodGet {
+			http.Error(writer, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if err := mlClient.Ready(request.Context()); err != nil {
+			writeJSON(writer, http.StatusServiceUnavailable, map[string]string{
+				"status":     "not_ready",
+				"service":    "recommendation-service",
+				"dependency": "ml-service",
+			})
+			return
+		}
+		writeJSON(writer, http.StatusOK, map[string]string{
+			"status":  "ready",
+			"service": "recommendation-service",
+		})
+	}
+}
+
+func recommendationHandler(service *services.RecommendationService) http.HandlerFunc {
+	return func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodGet {
+			http.Error(writer, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		userID, recommendationType, err := parseRecommendationPath(request.URL.Path)
+		if err != nil || userID < 1 {
+			http.Error(writer, "invalid user id", http.StatusBadRequest)
+			return
+		}
+		response, cached, err := service.GetByType(request.Context(), userID, recommendationType, queryLimit(request))
+		if err != nil {
+			http.Error(writer, "recommendations unavailable", http.StatusBadGateway)
+			return
+		}
+		writer.Header().Set("X-Recommendations-Cache", cacheStatus(cached))
+		if response.Model == "popularity" {
+			writer.Header().Set("X-Recommendations-Source", "popular")
+		} else if response.FromBackup {
+			writer.Header().Set("X-Recommendations-Source", "backup")
+		} else if response.Model == "fallback" {
+			writer.Header().Set("X-Recommendations-Source", "fallback")
+		} else {
+			writer.Header().Set("X-Recommendations-Source", "ml")
+		}
+		writeJSON(writer, http.StatusOK, response)
+	}
+}
+
+func parseRecommendationPath(path string) (int, string, error) {
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(parts) == 2 && parts[0] == "recommendations" {
+		userID, err := strconv.Atoi(parts[1])
+		return userID, "all", err
+	}
+	if len(parts) == 3 && parts[0] == "recommendations" {
+		if parts[2] == "music" || parts[2] == "friends" {
+			userID, err := strconv.Atoi(parts[1])
+			return userID, parts[2], err
+		}
+		if parts[1] == "music" || parts[1] == "friends" {
+			userID, err := strconv.Atoi(parts[2])
+			return userID, parts[1], err
+		}
+	}
+	return 0, "", strconv.ErrSyntax
+}
+
+func interactionHandler(service *services.RecommendationService) http.HandlerFunc {
+	return func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodPost {
+			http.Error(writer, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var event struct {
+			UserID      int                `json:"user_id"`
+			Limit       int                `json:"limit"`
+			Interaction models.Interaction `json:"interaction"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&event); err != nil || event.UserID < 1 {
+			http.Error(writer, "invalid interaction payload", http.StatusBadRequest)
+			return
+		}
+		if event.Limit == 0 {
+			event.Limit = 10
+		}
+		response, err := service.RecordInteraction(request.Context(), event.UserID, event.Interaction, event.Limit)
+		if err != nil {
+			http.Error(writer, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSON(writer, http.StatusOK, response)
+	}
+}
+
+func queryLimit(request *http.Request) int {
+	limit, err := strconv.Atoi(request.URL.Query().Get("limit"))
+	if err != nil || limit < 1 || limit > 50 {
+		return 10
+	}
+	return limit
+}
+
+func cacheStatus(cached bool) string {
+	if cached {
+		return "HIT"
+	}
+	return "MISS"
+}
+
+func writeJSON(writer http.ResponseWriter, status int, value any) {
+	writer.Header().Set("Content-Type", "application/json")
+	writer.WriteHeader(status)
+	_ = json.NewEncoder(writer).Encode(value)
+}
+
+func getenv(key, fallback string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return fallback
 }

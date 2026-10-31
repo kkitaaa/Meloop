@@ -38,7 +38,9 @@ func main() {
 
 	sessionRepo := repositories.NewSessionRepository(rdbClient)
 	userRepo := repositories.NewUserRepository(dbPool)
-	authSrv := services.NewAuthService(cfg, userRepo, sessionRepo)
+	recoveryRepo := repositories.NewPasswordRecoveryRepository(dbPool)
+	emailService := services.NewEmailService(cfg)
+	authSrv := services.NewAuthService(cfg, userRepo, sessionRepo, recoveryRepo, emailService)
 	authCtrl := controllers.NewAuthController(authSrv)
 
 	router := gin.New()
@@ -47,6 +49,10 @@ func main() {
 
 	router.POST("/auth/login", authCtrl.Login)
 	router.POST("/auth/register", authCtrl.Register)
+	router.POST("/auth/password-recovery", authCtrl.RequestPasswordRecovery)
+	router.POST("/auth/password-recovery/reset", authCtrl.ResetPassword)
+	router.POST("/v1/auth/password-recovery", authCtrl.RequestPasswordRecovery)
+	router.POST("/v1/auth/password-recovery/reset", authCtrl.ResetPassword)
 
 	// Rutas protegidas
 	protected := router.Group("")

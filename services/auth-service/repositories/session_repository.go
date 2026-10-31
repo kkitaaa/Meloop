@@ -15,6 +15,7 @@ type SessionRepository interface {
 	Create(ctx context.Context, token string, user *models.SessionUser, ttl time.Duration) error
 	Get(ctx context.Context, token string) (*models.SessionUser, error)
 	Delete(ctx context.Context, token string) error
+	DeleteByUserID(ctx context.Context, userID string) error
 }
 
 type redisSessionRepository struct {
@@ -35,7 +36,15 @@ func (r *redisSessionRepository) Create(ctx context.Context, token string, user 
 		return err
 	}
 	key := "session:" + token
-	return r.client.Set(ctx, key, string(data), ttl).Err()
+	pipe := r.client.TxPipeline()
+	pipe.Set(ctx, key, string(data), ttl)
+	if user != nil && user.ID != "" {
+		userSessionsKey := "user_sessions:" + user.ID
+		pipe.SAdd(ctx, userSessionsKey, token)
+		pipe.Expire(ctx, userSessionsKey, ttl)
+	}
+	_, err = pipe.Exec(ctx)
+	return err
 }
 
 func (r *redisSessionRepository) Get(ctx context.Context, token string) (*models.SessionUser, error) {
@@ -63,5 +72,34 @@ func (r *redisSessionRepository) Delete(ctx context.Context, token string) error
 		return errors.New("redis client is not initialized")
 	}
 	key := "session:" + token
+	val, err := r.client.Get(ctx, key).Result()
+	if err == nil {
+		var user models.SessionUser
+		if err := json.Unmarshal([]byte(val), &user); err == nil && user.ID != "" {
+			_ = r.client.SRem(ctx, "user_sessions:"+user.ID, token).Err()
+		}
+	}
 	return r.client.Del(ctx, key).Err()
+}
+
+func (r *redisSessionRepository) DeleteByUserID(ctx context.Context, userID string) error {
+	if r.client == nil {
+		return errors.New("redis client is not initialized")
+	}
+	if userID == "" {
+		return nil
+	}
+	userSessionsKey := "user_sessions:" + userID
+	tokens, err := r.client.SMembers(ctx, userSessionsKey).Result()
+	if err != nil && err != redis.Nil {
+		return err
+	}
+
+	pipe := r.client.Pipeline()
+	for _, token := range tokens {
+		pipe.Del(ctx, "session:"+token)
+	}
+	pipe.Del(ctx, userSessionsKey)
+	_, err = pipe.Exec(ctx)
+	return err
 }
