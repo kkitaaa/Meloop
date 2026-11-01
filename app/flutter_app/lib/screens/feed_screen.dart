@@ -53,7 +53,7 @@ class _FeedScreenState extends State<FeedScreen> {
     _scrollController.addListener(() {
       if (_scrollController.hasClients &&
           _scrollController.position.pixels >=
-          _scrollController.position.maxScrollExtent - 200) {
+              _scrollController.position.maxScrollExtent - 200) {
         if (!_isInitialLoading && !_isLoadingMore && _hasMore && !_hasError) {
           _fetchMorePosts();
         }
@@ -135,7 +135,11 @@ class _FeedScreenState extends State<FeedScreen> {
       if (!mounted || requestGeneration != _requestGeneration) return;
       setState(() => _isLoadingMore = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('No se pudieron cargar más publicaciones: ${error.message}')),
+        SnackBar(
+          content: Text(
+            'No se pudieron cargar más publicaciones: ${error.message}',
+          ),
+        ),
       );
     }
   }
@@ -704,7 +708,7 @@ class _FeedScreenState extends State<FeedScreen> {
                     : const Text(
                         "Cargar más blogs",
                         style: TextStyle(color: Colors.white, fontSize: 12),
-                ),
+                      ),
               ),
           ],
         ),

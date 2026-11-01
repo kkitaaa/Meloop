@@ -83,10 +83,7 @@ void main() {
         }),
       );
 
-      final response = await client.getFeedPage(
-        category: 'friends',
-        page: 2,
-      );
+      final response = await client.getFeedPage(category: 'friends', page: 2);
 
       expect(response.data?.items.single.id, 6);
       expect(response.data?.hasMore, isFalse);

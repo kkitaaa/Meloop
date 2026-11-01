@@ -41,7 +41,9 @@ class FeedPost {
         (json['song'] != null && json['song'] is! String) ||
         (json['artist'] != null && json['artist'] is! String) ||
         (json['image_url'] != null && json['image_url'] is! String)) {
-      throw const FormatException('Una publicación del feed tiene datos inválidos.');
+      throw const FormatException(
+        'Una publicación del feed tiene datos inválidos.',
+      );
     }
 
     return FeedPost(
@@ -95,7 +97,9 @@ class FeedPage {
         json['page'] is! int ||
         json['pageSize'] is! int ||
         json['hasMore'] is! bool) {
-      throw const FormatException('La respuesta del feed tiene datos inválidos.');
+      throw const FormatException(
+        'La respuesta del feed tiene datos inválidos.',
+      );
     }
 
     return FeedPage(
