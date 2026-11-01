@@ -1,7 +1,6 @@
 package main
 
 import (
-	"database/sql"
 	"log"
 	"os"
 
@@ -52,11 +51,29 @@ func main() {
 	commentController := controllers.NewCommentController(commentService)
 
 	// 5. Inyectar dependencias de Publicaciones (Post)
-	postRepo := repositories.NewPostgresPostRepository(db)
-	postController := controllers.NewPostController(postRepo, minioClient)
+	// Extraemos la conexión base de SQL desde GORM para inyectarla en tu SQLPostRepository
+	sqlDB, err := db.DB()
+	if err != nil {
+		log.Fatalf("Error crítico al obtener la conexión SQL: %v", err)
+	}
+
+	postRepo := repositories.NewPostRepository(sqlDB)
+	postService := services.NewPostService(postRepo)
+	postController := controllers.NewPostController(postService)
 
 	// 6. Inicializar el servidor web con Gin
 	router := gin.Default()
+
+	// --- MIDDLEWARE DE PRUEBAS ---
+	// Extrae el ID del usuario desde el header para simular que pasó por el API Gateway
+	router.Use(func(c *gin.Context) {
+		userID := c.GetHeader("X-User-ID")
+		if userID != "" {
+			c.Set("userID", userID)
+		}
+		c.Next()
+	})
+	// ------------------------------
 
 	// 7. Configurar rutas
 	routes.SetupRoutes(router, commentController, postController, minioClient)

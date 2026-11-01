@@ -20,15 +20,22 @@ func SetupRoutes(
 
 	api := router.Group("/api/v1/posts")
 	{
-		// Endpoint principal para registrar la publicación completa
+		// 1. Creación de publicaciones
 		api.POST("", postController.CreatePost)
-
-		// Subida independiente de archivos
 		api.POST("/media", controllers.UploadFile(minioClient))
 
-		// Comentarios y respuestas
-		api.POST("/:postId/comments", commentController.CreateComment)
-		api.GET("/:postId/comments", commentController.GetComments)
-		api.POST("/:postId/comments/:commentId/replies", commentController.CreateReply)
+		// 2. Búsquedas y filtros (deben ir antes de /:id para no confundirse)
+		api.GET("/search", postController.Search)
+		api.GET("/author/:authorId", postController.GetPostsByAuthor)
+
+		// 3. Operaciones sobre una publicación específica (CRUD)
+		api.GET("/:id", postController.GetPostByID)
+		api.PUT("/:id", postController.UpdatePost)
+		api.DELETE("/:id", postController.DeletePost)
+
+		// 4. Comentarios y respuestas (Usamos :id en vez de :postId para evitar colisión)
+		api.POST("/:id/comments", commentController.CreateComment)
+		api.GET("/:id/comments", commentController.GetComments)
+		api.POST("/:id/comments/:commentId/replies", commentController.CreateReply)
 	}
 }

@@ -4,17 +4,29 @@ import (
 	"context"
 	"errors"
 
-	// Cambia esto si el nombre del módulo en tu go.mod es distinto
-
 	"github.com/meloop/post-service/repositories"
 )
 
 type PostService struct {
-	repo *repositories.PostRepository
+	repo *repositories.SQLPostRepository // <- Cambiado a SQLPostRepository
 }
 
-func NewPostService(repo *repositories.PostRepository) *PostService {
+func NewPostService(repo *repositories.SQLPostRepository) *PostService {
 	return &PostService{repo: repo}
+}
+
+// CreatePost valida y envía la nueva publicación al repositorio
+func (s *PostService) CreatePost(ctx context.Context, authorID string, content string, mediaURLs []string) (*repositories.Post, error) {
+	if content == "" {
+		return nil, errors.New("el contenido de la publicación no puede estar vacío")
+	}
+
+	var url *string
+	if len(mediaURLs) > 0 && mediaURLs[0] != "" {
+		url = &mediaURLs[0]
+	}
+
+	return s.repo.CreatePost(ctx, authorID, content, url)
 }
 
 // EditPost valida los datos antes de enviarlos a la base de datos (RF-17)
