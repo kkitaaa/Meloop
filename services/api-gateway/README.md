@@ -9,6 +9,8 @@ solicitudes al microservicio correspondiente.
 | Acceso | Gateway | Destino | Variable de entorno |
 | --- | --- | --- | --- |
 | Pública | `GET /health` | Respuesta local del gateway | Ninguna |
+| Pública | `GET /api/demo` | Respuesta JSON de prueba del gateway | Ninguna |
+| Pública | `POST /api/demo` | Valida y devuelve el mensaje recibido | Ninguna |
 | Pública | `ANY /test` y `ANY /test/*any` | `test-service`, quitando `/test` | `TEST_SERVICE_URL` |
 | Privada | `ANY /users` y `ANY /users/*any` | `user-service`, conservando `/users` | `USER_SERVICE_URL` |
 | Pública | `ANY /auth` y `ANY /auth/*any` | `auth-service`, conservando `/auth` | `AUTH_SERVICE_URL` |
@@ -33,3 +35,25 @@ Invoke-WebRequest -Uri http://localhost:8080/users -Method Get
 En Docker Compose, el gateway usa los nombres de servicio de la red interna.
 La prueba automatizada del proxy cubre reenvío de método, ruta, query y body,
 además del error `502 Bad Gateway` cuando el destino no está disponible.
+
+## Prueba de integración Flutter
+
+Inicia el gateway local con `go run .` desde este directorio y abre la pantalla
+**Probar conexión con API** desde el icono de nube del feed Flutter. La pantalla
+consume `GET /api/demo` al abrirse y envía el texto ingresado mediante
+`POST /api/demo`. Ambas respuestas usan el envelope JSON compartido en
+`services/common/httpresponse`.
+
+Verifica el gateway con `go test ./...`. Para probar la comunicación de Flutter
+contra el gateway en ejecución, ejecuta desde `app/flutter_app`:
+
+```powershell
+flutter test integration_test/api_gateway_test.dart -d windows
+flutter test integration_test/api_gateway_test.dart -d <id-del-emulador>
+```
+
+La configuración del cliente está en `app/flutter_app/lib/config/api_config.dart`.
+Usa `localhost:8080` en desktop/simulador iOS, `10.0.2.2:8080` en emuladores
+Android, o `--dart-define=API_BASE_URL=http://<ip-del-equipo>:8080` para un
+dispositivo físico. El manifiesto de depuración Android habilita HTTP local;
+usa HTTPS en producción.

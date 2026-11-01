@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'dart:async';
 
 import 'friends_screen.dart';
+import 'api_test_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
 import '../../widgets/post_card.dart';
 import '../../widgets/states/loading_state.dart';
@@ -202,6 +203,25 @@ class _FeedScreenState extends State<FeedScreen> {
           ],
           Row(
             children: [
+              IconButton(
+                tooltip: 'Probar conexión con API',
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                icon: const Icon(
+                  Icons.cloud_outlined,
+                  color: Colors.white,
+                  size: 20,
+                ),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const ApiTestScreen(),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(width: 16),
               // Botón de Ajustes para ir a la pantalla de bloqueados
               IconButton(
                 padding: EdgeInsets.zero,

@@ -7,6 +7,8 @@ import (
 
 func SetupRoutes(router *gin.Engine) {
 	router.GET("/health", controllers.Health)
+	router.GET("/api/demo", controllers.DemoGet)
+	router.POST("/api/demo", controllers.DemoPost)
 
 	// Enrutar dinámicamente peticiones bajo /test/* al microservicio de pruebas (recortando prefijo /test)
 	router.Any("/test", controllers.ProxyToService("TEST_SERVICE_URL", "http://localhost:8081", "/test"))
