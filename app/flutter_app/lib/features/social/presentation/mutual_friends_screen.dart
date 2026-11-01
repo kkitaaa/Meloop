@@ -78,9 +78,7 @@ class _MutualFriendsScreenState extends State<MutualFriendsScreen> {
     });
 
     try {
-      final response = await _apiClient.getMutualFriends(
-        widget.targetUserId,
-      );
+      final response = await _apiClient.getMutualFriends(widget.targetUserId);
       if (!mounted) return;
       final page = response.data;
       if (page == null) {
