@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter_app/config/api_config.dart';
 import 'package:flutter_app/models/api_response.dart';
 import 'package:flutter_app/models/demo_data.dart';
+import 'package:flutter_app/models/feed_data.dart';
 import 'package:http/http.dart' as http;
 
 class ApiException implements Exception {
@@ -57,6 +58,21 @@ class ApiClient {
 
   Future<ApiResponse<DemoPostData>> postDemo(String message) =>
       post('/api/demo', {'message': message}, DemoPostData.fromJson);
+
+  Future<ApiResponse<FeedPage>> getFeedPage({
+    required String category,
+    required int page,
+    int pageSize = 5,
+  }) {
+    final query = Uri(
+      queryParameters: {
+        'category': category,
+        'page': '$page',
+        'pageSize': '$pageSize',
+      },
+    ).query;
+    return get('/api/feed?$query', FeedPage.fromJson);
+  }
 
   Map<String, String> get _headers => const {
     'Accept': 'application/json',

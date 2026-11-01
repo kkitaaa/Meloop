@@ -57,6 +57,41 @@ void main() {
       expect(response.data?.receivedMessage, 'Hola');
     });
 
+    test('requests the selected feed page from the gateway', () async {
+      final client = ApiClient(
+        httpClient: MockClient((request) async {
+          expect(request.method, 'GET');
+          expect(request.url.path, '/api/feed');
+          expect(request.url.queryParameters, {
+            'category': 'friends',
+            'page': '2',
+            'pageSize': '5',
+          });
+          return _jsonResponse(
+            statusCode: 200,
+            body: {
+              'success': true,
+              'data': {
+                'items': [_feedPost(6)],
+                'page': 2,
+                'pageSize': 5,
+                'hasMore': false,
+              },
+              'error': null,
+            },
+          );
+        }),
+      );
+
+      final response = await client.getFeedPage(
+        category: 'friends',
+        page: 2,
+      );
+
+      expect(response.data?.items.single.id, 6);
+      expect(response.data?.hasMore, isFalse);
+    });
+
     test('surfaces the backend message and HTTP status', () async {
       final client = ApiClient(
         httpClient: MockClient(
@@ -89,6 +124,20 @@ void main() {
     });
   });
 }
+
+Map<String, Object?> _feedPost(int id) => {
+  'id': id,
+  'user': 'Usuario_$id',
+  'time': 'Hace 5 minutos',
+  'content': 'Contenido de prueba',
+  'song': 'Canción de prueba',
+  'artist': 'Artista de prueba',
+  'likes': 10,
+  'comments': 1,
+  'isAuthor': false,
+  'isEdited': false,
+  'within24Hours': true,
+};
 
 http.Response _jsonResponse({
   required int statusCode,

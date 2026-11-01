@@ -28,9 +28,17 @@ main.dart: Inicializa el MaterialApp de Meloop.
 
 La pantalla **Probar conexión con API** (icono de nube en el feed) ejecuta
 `GET /api/demo` al abrirse y permite enviar un mensaje con `POST /api/demo`.
+El feed también consume `GET /api/feed` con categoría y paginación (`page`,
+`pageSize`). Los filtros recientes, amigos y sugeridos consultan categorías
+distintas; el scroll infinito y el botón «Cargar más blogs» solicitan la página
+siguiente y respetan `hasMore`.
 El cliente HTTP y la URL base están centralizados en `lib/services/api_client.dart`
 y `lib/config/api_config.dart`. Las respuestas siguen el envelope
 `{ "success": true, "data": ..., "error": null }`.
+
+Los elementos del feed son datos de demostración servidos por el API Gateway.
+El post-service todavía no implementa una API HTTP ni persistencia para
+publicaciones, por lo que estos datos no representan publicaciones reales.
 
 ### Conexión local
 
@@ -61,6 +69,7 @@ Prueba los endpoints directamente:
 Invoke-RestMethod http://localhost:8080/api/demo
 Invoke-RestMethod -Uri http://localhost:8080/api/demo -Method Post `
   -ContentType 'application/json' -Body '{"message":"Hola desde Flutter"}'
+Invoke-RestMethod "http://localhost:8080/api/feed?category=recent&page=1&pageSize=5"
 ```
 
 ### Validación automatizada

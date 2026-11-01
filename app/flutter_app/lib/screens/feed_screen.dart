@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../services/api_client.dart';
 import 'friends_screen.dart';
 import 'api_test_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
@@ -13,38 +14,47 @@ import '../../widgets/states/error_state.dart';
 import '../features/profile/presentation/blocked_users_screen.dart';
 
 class FeedScreen extends StatefulWidget {
-  const FeedScreen({super.key});
+  final ApiClient? apiClient;
+
+  const FeedScreen({super.key, this.apiClient});
 
   @override
   State<FeedScreen> createState() => _FeedScreenState();
 }
 
 class _FeedScreenState extends State<FeedScreen> {
+  static const int _pageSize = 5;
+
   final Color _bgColor = const Color(0xFF0D5C5E);
   final Color _tealAccent = const Color(0xFF1ABC9C);
 
-  // --- Lógica de Paginación y Estado Dinámico ---
+  late final ApiClient _apiClient;
+  late final bool _ownsApiClient;
   final ScrollController _scrollController = ScrollController();
   final List<Map<String, dynamic>> _posts = [];
 
   bool _isInitialLoading = true;
   bool _isLoadingMore = false;
+  bool _hasMore = true;
+  String _selectedCategory = 'recent';
+  int _requestGeneration = 0;
   int _currentPage = 1;
-
-  // Nuevas variables para manejo de errores
   bool _hasError = false;
-  int _errorCode = 200;
+  String? _feedError;
+  int _errorCode = 0;
 
   @override
   void initState() {
     super.initState();
-    _fetchInitialPosts();
+    _apiClient = widget.apiClient ?? ApiClient();
+    _ownsApiClient = widget.apiClient == null;
 
-    // Listener para el scroll infinito
+    _fetchInitialPosts();
     _scrollController.addListener(() {
-      if (_scrollController.position.pixels >=
+      if (_scrollController.hasClients &&
+          _scrollController.position.pixels >=
           _scrollController.position.maxScrollExtent - 200) {
-        if (!_isLoadingMore && !_hasError) {
+        if (!_isInitialLoading && !_isLoadingMore && _hasMore && !_hasError) {
           _fetchMorePosts();
         }
       }
@@ -54,73 +64,80 @@ class _FeedScreenState extends State<FeedScreen> {
   @override
   void dispose() {
     _scrollController.dispose();
+    if (_ownsApiClient) _apiClient.close();
     super.dispose();
   }
 
-  // Simulación de petición HTTP inicial al API Gateway
-  Future<void> _fetchInitialPosts() async {
+  Future<void> _fetchInitialPosts({String? category}) async {
+    if (category != null) _selectedCategory = category;
+    final requestGeneration = ++_requestGeneration;
     setState(() {
       _isInitialLoading = true;
-      _hasError = false; // Reseteamos el error al reintentar
+      _isLoadingMore = false;
+      _hasError = false;
+      _feedError = null;
+      _hasMore = true;
     });
 
-    await Future.delayed(const Duration(seconds: 2)); // Simula latencia de red
-
-    if (!mounted) return;
-
-    // Puedes cambiar esto a `true` para probar la pantalla de error visualmente
-    bool simulateError = DateTime.now().second % 2 == 0;
-
-    if (simulateError) {
+    try {
+      final response = await _apiClient.getFeedPage(
+        category: _selectedCategory,
+        page: 1,
+        pageSize: _pageSize,
+      );
+      final page = response.data;
+      if (page == null) {
+        throw const ApiException(message: 'El API no devolvió publicaciones.');
+      }
+      if (!mounted || requestGeneration != _requestGeneration) return;
+      setState(() {
+        _posts
+          ..clear()
+          ..addAll(page.items.map((post) => post.toPostCardData()));
+        _isInitialLoading = false;
+        _currentPage = page.page;
+        _hasMore = page.hasMore;
+      });
+    } on ApiException catch (error) {
+      if (!mounted || requestGeneration != _requestGeneration) return;
       setState(() {
         _isInitialLoading = false;
-        _hasError = false; // Cambia a true para simular un error visualmente de nuevo si quieres
-        _errorCode = 500; // Simulando un error de servidor
+        _hasError = true;
+        _errorCode = error.statusCode ?? 0;
+        _feedError = error.message;
       });
-      return;
     }
-
-    setState(() {
-      _posts.clear(); // Limpiamos si es un refresh
-      _posts.addAll(_generateMockPosts(1, 5));
-      _isInitialLoading = false;
-    });
   }
 
-  // Simulación de petición HTTP para paginación (Scroll Infinito)
   Future<void> _fetchMorePosts() async {
+    if (_isLoadingMore || !_hasMore || _isInitialLoading) return;
+    final requestGeneration = _requestGeneration;
     setState(() => _isLoadingMore = true);
 
-    await Future.delayed(const Duration(seconds: 2)); // Simula latencia de red
-
-    if (!mounted) return;
-
-    setState(() {
-      _currentPage++;
-      _posts.addAll(_generateMockPosts(_currentPage, 3));
-      _isLoadingMore = false;
-    });
-  }
-
-  // Generador de datos simulados para la lista dinámica
-  List<Map<String, dynamic>> _generateMockPosts(int page, int count) {
-    return List.generate(count, (index) {
-      int id = (page - 1) * count + index + 1;
-      return {
-        "id": id,
-        "user": "Usuario_0$id",
-        "time": "Hace ${id * 5} minutos",
-        "content":
-            "Esta es la publicación dinámica número $id cargada desde el servidor simulado. Probando el scroll infinito y la paginación.",
-        "song": "Canción $id",
-        "artist": "Artista Generado",
-        "likes": 10 * id,
-        "comments": id,
-        "isAuthor": id % 2 == 0, // Simulación: Si es par, eres el autor
-        "isEdited": false,
-        "within24Hours": true,
-      };
-    });
+    try {
+      final response = await _apiClient.getFeedPage(
+        category: _selectedCategory,
+        page: _currentPage + 1,
+        pageSize: _pageSize,
+      );
+      final page = response.data;
+      if (page == null) {
+        throw const ApiException(message: 'El API no devolvió publicaciones.');
+      }
+      if (!mounted || requestGeneration != _requestGeneration) return;
+      setState(() {
+        _posts.addAll(page.items.map((post) => post.toPostCardData()));
+        _currentPage = page.page;
+        _hasMore = page.hasMore;
+        _isLoadingMore = false;
+      });
+    } on ApiException catch (error) {
+      if (!mounted || requestGeneration != _requestGeneration) return;
+      setState(() => _isLoadingMore = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No se pudieron cargar más publicaciones: ${error.message}')),
+      );
+    }
   }
 
   Future<void> _createPost() async {
@@ -568,10 +585,13 @@ class _FeedScreenState extends State<FeedScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 32.0, vertical: 24.0),
         child: Column(
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              runSpacing: 12,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                Row(
+                Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     const Text(
                       "Ultimos Blogs:",
@@ -581,9 +601,9 @@ class _FeedScreenState extends State<FeedScreen> {
                       ),
                     ),
                     const SizedBox(width: 16),
-                    _filterChip("recientes", isActive: true),
-                    _filterChip("tendencias", isActive: false),
-                    _filterChip("amigos", isActive: false),
+                    _filterChip("recientes", category: 'recent'),
+                    _filterChip("amigos", category: 'friends'),
+                    _filterChip("sugeridos", category: 'suggested'),
                   ],
                 ),
                 OutlinedButton.icon(
@@ -622,6 +642,7 @@ class _FeedScreenState extends State<FeedScreen> {
                       onRetry:
                           _fetchInitialPosts, // Botón para volver a intentar
                       tealAccent: _tealAccent,
+                      message: _feedError,
                     )
                   : _posts.isEmpty
                   ? const EmptyState(
@@ -658,7 +679,10 @@ class _FeedScreenState extends State<FeedScreen> {
                     ),
             ),
 
-            if (!_isInitialLoading && !_hasError && _posts.isNotEmpty)
+            if (!_isInitialLoading &&
+                !_hasError &&
+                _posts.isNotEmpty &&
+                _hasMore)
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _tealAccent,
@@ -667,10 +691,19 @@ class _FeedScreenState extends State<FeedScreen> {
                   ),
                   elevation: 0,
                 ),
-                onPressed: _fetchMorePosts, // Conectado al botón manual
-                child: const Text(
-                  "Cargar más blogs",
-                  style: TextStyle(color: Colors.white, fontSize: 12),
+                onPressed: _isLoadingMore ? null : _fetchMorePosts,
+                child: _isLoadingMore
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2,
+                        ),
+                      )
+                    : const Text(
+                        "Cargar más blogs",
+                        style: TextStyle(color: Colors.white, fontSize: 12),
                 ),
               ),
           ],
@@ -679,23 +712,35 @@ class _FeedScreenState extends State<FeedScreen> {
     );
   }
 
-  Widget _filterChip(String label, {required bool isActive}) {
-    return Container(
-      margin: const EdgeInsets.only(right: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      decoration: BoxDecoration(
-        color: isActive ? Colors.white : Colors.grey[200],
-        border: isActive
-            ? Border.all(color: _tealAccent, width: 1)
-            : Border.all(color: Colors.transparent),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: isActive ? _tealAccent : Colors.grey[600],
-          fontSize: 10,
-          fontWeight: FontWeight.bold,
+  Widget _filterChip(String label, {required String category}) {
+    final isActive = _selectedCategory == category;
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: isActive || _isInitialLoading
+              ? null
+              : () => _fetchInitialPosts(category: category),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: isActive ? Colors.white : Colors.grey[200],
+              border: isActive
+                  ? Border.all(color: _tealAccent, width: 1)
+                  : Border.all(color: Colors.transparent),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              label,
+              style: TextStyle(
+                color: isActive ? _tealAccent : Colors.grey[600],
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
         ),
       ),
     );

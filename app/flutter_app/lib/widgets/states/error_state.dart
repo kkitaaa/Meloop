@@ -4,12 +4,14 @@ class ErrorState extends StatelessWidget {
   final int errorCode;
   final VoidCallback onRetry;
   final Color tealAccent;
+  final String? message;
 
   const ErrorState({
     super.key,
     required this.errorCode,
     required this.onRetry,
     required this.tealAccent,
+    this.message,
   });
 
   String _translateErrorCode(int code) {
@@ -52,7 +54,7 @@ class ErrorState extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              _translateErrorCode(errorCode),
+              message ?? _translateErrorCode(errorCode),
               textAlign: TextAlign.center,
               style: const TextStyle(fontSize: 13, color: Colors.grey),
             ),
