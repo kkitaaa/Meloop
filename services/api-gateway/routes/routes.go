@@ -38,6 +38,8 @@ func SetupRoutes(router *gin.Engine) {
 	// Enrutar peticiones versionadas v1
 	router.Any("/v1/users", controllers.ProxyToService("USER_SERVICE_URL", "http://localhost:8082", ""))
 	router.Any("/v1/users/*any", controllers.ProxyToService("USER_SERVICE_URL", "http://localhost:8082", ""))
+	router.Any("/v1/social", controllers.ProxyToService("SOCIAL_SERVICE_URL", "http://localhost:8086", "/v1/social"))
+	router.Any("/v1/social/*any", controllers.ProxyToService("SOCIAL_SERVICE_URL", "http://localhost:8086", "/v1/social"))
 	router.Any("/v1/media", controllers.ProxyToService("MEDIA_SERVICE_URL", "http://localhost:8085", ""))
 	router.Any("/v1/media/*any", controllers.ProxyToService("MEDIA_SERVICE_URL", "http://localhost:8085", ""))
 }

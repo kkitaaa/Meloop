@@ -42,6 +42,12 @@ func SetupRoutes(router *gin.Engine, controller *controllers.FriendshipControlle
 	}
 }
 
+func SetupMutualFriendsRoutes(router *gin.Engine, controller *controllers.MutualFriendsController) {
+	users := router.Group("/users")
+	users.Use(controllers.AuthRequired())
+	users.GET("/:id/mutual-friends", controller.List)
+}
+
 // SetupSuggestionRoutes configura las rutas REST de sugerencias de amistad (RF-14).
 func SetupSuggestionRoutes(router *gin.Engine, controller *controllers.SuggestionController) {
 	friends := router.Group("/friends")

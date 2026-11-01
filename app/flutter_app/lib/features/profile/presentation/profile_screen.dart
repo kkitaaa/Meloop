@@ -2,13 +2,15 @@ import 'package:flutter/material.dart';
 
 import 'dart:async';
 
+import '../../social/presentation/mutual_friends_row.dart';
 import '../../../screens/friends_screen.dart';
 import '../../../widgets/post_card.dart';
 
 class ProfileScreen extends StatefulWidget {
   final String? username;
+  final String? userId;
 
-  const ProfileScreen({super.key, this.username});
+  const ProfileScreen({super.key, this.username, this.userId});
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
@@ -423,6 +425,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         _buildStatsAndActionsRow(),
+                        if (_profileStatus == 'public' &&
+                            widget.userId != null &&
+                            widget.userId!.isNotEmpty)
+                          MutualFriendsRow(targetUserId: widget.userId!),
                         const SizedBox(height: 16),
                         Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -469,6 +475,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
             _buildLevelCard(),
             const SizedBox(height: 16),
             _buildStatsAndActionsRow(isMobile: true),
+            if (_profileStatus == 'public' &&
+                widget.userId != null &&
+                widget.userId!.isNotEmpty)
+              MutualFriendsRow(targetUserId: widget.userId!),
             const SizedBox(height: 16),
             _buildAboutMe(),
             const SizedBox(height: 16),

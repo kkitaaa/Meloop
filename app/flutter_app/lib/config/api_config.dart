@@ -4,6 +4,7 @@ class ApiConfig {
   ApiConfig._();
 
   static const _configuredBaseUrl = String.fromEnvironment('API_BASE_URL');
+  static const currentUserId = String.fromEnvironment('CURRENT_USER_ID');
 
   static String get baseUrl {
     final configuredUrl = _configuredBaseUrl.trim();

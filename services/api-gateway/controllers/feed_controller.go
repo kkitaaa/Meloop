@@ -18,6 +18,7 @@ const (
 type feedPost struct {
 	ID            int    `json:"id"`
 	User          string `json:"user"`
+	UserID        string `json:"user_id,omitempty"`
 	Time          string `json:"time"`
 	Content       string `json:"content"`
 	Song          string `json:"song"`

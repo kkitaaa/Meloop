@@ -89,6 +89,53 @@ void main() {
       expect(response.data?.hasMore, isFalse);
     });
 
+    test('requests mutual friends using the cursor API', () async {
+      final client = ApiClient(
+        httpClient: MockClient((request) async {
+          expect(request.method, 'GET');
+          expect(
+            request.url.path,
+            '/v1/social/users/target-user/mutual-friends',
+          );
+          expect(request.url.queryParameters, {
+            'limit': '2',
+            'cursor': 'cursor-1',
+          });
+          return _jsonResponse(
+            statusCode: 200,
+            body: {
+              'success': true,
+              'data': {
+                'items': [
+                  {
+                    'id_usuario': 'friend-1',
+                    'username': 'Ana',
+                    'avatar_url': 'https://example.test/ana.png',
+                  },
+                ],
+                'totalCount': 3,
+                'hidden': false,
+                'nextCursor': 'cursor-2',
+                'hasMore': true,
+              },
+              'error': null,
+            },
+          );
+        }),
+      );
+
+      final response = await client.getMutualFriends(
+        'target-user',
+        cursor: 'cursor-1',
+        limit: 2,
+      );
+
+      expect(response.data?.items.single.id, 'friend-1');
+      expect(response.data?.totalCount, 3);
+      expect(response.data?.nextCursor, 'cursor-2');
+      expect(response.data?.hasMore, isTrue);
+    });
+
     test('surfaces the backend message and HTTP status', () async {
       final client = ApiClient(
         httpClient: MockClient(

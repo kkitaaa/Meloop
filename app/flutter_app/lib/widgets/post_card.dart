@@ -5,11 +5,14 @@ import 'package:flutter/material.dart';
 import '../../features/comments/presentation/comments_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
 import '../features/posts/presentation/post_editor_dialog.dart';
+import 'post_audio_controls.dart';
+import '../services/post_audio_playback.dart';
 
 class PostCard extends StatefulWidget {
   final Map<String, dynamic> postData;
   final Color tealAccent;
   final Color textColor;
+  final PostAudioPlaybackController? audioPlaybackController;
   final VoidCallback?
   onDelete; // Callback para eliminar de la vista sin recargar
 
@@ -17,6 +20,7 @@ class PostCard extends StatefulWidget {
     super.key,
     required this.postData,
     required this.tealAccent,
+    this.audioPlaybackController,
     this.textColor = Colors.black87,
     this.onDelete,
   });
@@ -110,6 +114,8 @@ class _PostCardState extends State<PostCard> {
   @override
   Widget build(BuildContext context) {
     final String user = widget.postData["user"] ?? "Usuario";
+    final Object? authorIdData = widget.postData["user_id"];
+    final String? authorId = authorIdData is String ? authorIdData : null;
     final String time = widget.postData["time"] ?? "Hace un momento";
     final String content = widget.postData["content"] ?? "";
     final String? imageUrl = widget.postData["image_url"];
@@ -124,11 +130,33 @@ class _PostCardState extends State<PostCard> {
         : null;
     final String? audioTitle = widget.postData["song"];
     final String? artistName = widget.postData["artist"];
+    final Object? audioBytesData = widget.postData["audio_bytes"];
+    final Uint8List? audioBytes = audioBytesData is Uint8List
+        ? audioBytesData
+        : null;
+    final String? audioUrl = widget.postData["audio_url"] is String
+        ? widget.postData["audio_url"] as String
+        : null;
+    final String audioName = widget.postData["audio_name"] is String
+        ? widget.postData["audio_name"] as String
+        : '';
+    final bool hasAudioAttachment =
+        (audioBytes?.isNotEmpty ?? false) || (audioUrl?.isNotEmpty ?? false);
+    final String? audioDisplayTitle = audioTitle?.isNotEmpty == true
+        ? audioTitle
+        : audioName.isNotEmpty
+        ? audioName
+        : hasAudioAttachment
+        ? "Audio adjunto"
+        : null;
     final int likes = widget.postData["likes"] ?? 0;
     final int comments = widget.postData["comments"] ?? 0;
 
     // --- Variables de lógica de negocio (Roles y Permisos) ---
-    final int postId = widget.postData["id"] ?? 0;
+    final Object? postIdData = widget.postData["id"];
+    final int postId = postIdData is int
+        ? postIdData
+        : identityHashCode(widget.postData);
     final bool isAuthor = widget.postData["isAuthor"] ?? (postId % 2 == 0);
     final bool isEdited = widget.postData["isEdited"] ?? false;
     final bool within24Hours = widget.postData["within24Hours"] ?? true;
@@ -148,7 +176,8 @@ class _PostCardState extends State<PostCard> {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (context) => ProfileScreen(username: user),
+                          builder: (context) =>
+                              ProfileScreen(username: user, userId: authorId),
                         ),
                       );
                     },
@@ -167,8 +196,10 @@ class _PostCardState extends State<PostCard> {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (context) =>
-                                  ProfileScreen(username: user),
+                              builder: (context) => ProfileScreen(
+                                username: user,
+                                userId: authorId,
+                              ),
                             ),
                           );
                         },
@@ -225,6 +256,7 @@ class _PostCardState extends State<PostCard> {
                         widget.postData["image_url"] = result.imageUrl;
                         widget.postData["audio_bytes"] = result.audioBytes;
                         widget.postData["audio_name"] = result.audioName;
+                        widget.postData["audio_url"] = null;
                         widget.postData["song"] = result.songTitle;
                         widget.postData["artist"] = result.artistName;
                         widget.postData["isEdited"] =
@@ -340,80 +372,16 @@ class _PostCardState extends State<PostCard> {
             const SizedBox(height: 12),
           ],
 
-          if (audioTitle != null && audioTitle.isNotEmpty) ...[
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: widget.tealAccent,
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 36,
-                    height: 36,
-                    color: Colors.black87,
-                    child: const Icon(
-                      Icons.play_arrow,
-                      color: Colors.white,
-                      size: 20,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          audioTitle,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        Text(
-                          artistName ?? "Artista desconocido",
-                          style: const TextStyle(
-                            color: Colors.white70,
-                            fontSize: 10,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.graphic_eq,
-                          color: widget.tealAccent,
-                          size: 12,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          "Escuchar",
-                          style: TextStyle(
-                            color: widget.tealAccent,
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
+          if (audioDisplayTitle != null && audioDisplayTitle.isNotEmpty) ...[
+            PostAudioControls(
+              postId: postId.toString(),
+              title: audioDisplayTitle,
+              artist: artistName ?? "Artista desconocido",
+              audioBytes: audioBytes,
+              audioUrl: audioUrl,
+              fileName: audioName,
+              accentColor: widget.tealAccent,
+              playbackController: widget.audioPlaybackController,
             ),
             const SizedBox(height: 12),
           ],

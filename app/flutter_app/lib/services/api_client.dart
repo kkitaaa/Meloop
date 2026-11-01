@@ -5,6 +5,7 @@ import 'package:flutter_app/config/api_config.dart';
 import 'package:flutter_app/models/api_response.dart';
 import 'package:flutter_app/models/demo_data.dart';
 import 'package:flutter_app/models/feed_data.dart';
+import 'package:flutter_app/models/mutual_friends.dart';
 import 'package:http/http.dart' as http;
 
 class ApiException implements Exception {
@@ -74,10 +75,33 @@ class ApiClient {
     return get('/api/feed?$query', FeedPage.fromJson);
   }
 
-  Map<String, String> get _headers => const {
-    'Accept': 'application/json',
-    'Content-Type': 'application/json',
-  };
+  Future<ApiResponse<MutualFriendsPage>> getMutualFriends(
+    String targetUserId, {
+    String? cursor,
+    int limit = 20,
+  }) {
+    final queryParameters = <String, String>{'limit': '$limit'};
+    if (cursor != null && cursor.isNotEmpty) {
+      queryParameters['cursor'] = cursor;
+    }
+    final query = Uri(queryParameters: queryParameters).query;
+    return get(
+      '/v1/social/users/${Uri.encodeComponent(targetUserId)}/mutual-friends?$query',
+      MutualFriendsPage.fromJson,
+    );
+  }
+
+  Map<String, String> get _headers {
+    final headers = <String, String>{
+      'Accept': 'application/json',
+      'Content-Type': 'application/json',
+    };
+    final userId = ApiConfig.currentUserId.trim();
+    if (userId.isNotEmpty) {
+      headers['X-User-ID'] = userId;
+    }
+    return headers;
+  }
 
   Uri _uriFor(String path) {
     final normalizedPath = path.startsWith('/') ? path.substring(1) : path;
