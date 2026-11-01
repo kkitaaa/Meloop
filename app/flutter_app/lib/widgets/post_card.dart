@@ -1,8 +1,10 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 
 import '../../features/comments/presentation/comments_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
-import '../features/profile/presentation/post_editor_dialog.dart';
+import '../features/posts/presentation/post_editor_dialog.dart';
 
 class PostCard extends StatefulWidget {
   final Map<String, dynamic> postData;
@@ -111,6 +113,15 @@ class _PostCardState extends State<PostCard> {
     final String time = widget.postData["time"] ?? "Hace un momento";
     final String content = widget.postData["content"] ?? "";
     final String? imageUrl = widget.postData["image_url"];
+    final Object? imageBytesData = widget.postData["image_bytes"];
+    final Uint8List? imageBytes = imageBytesData is Uint8List
+        ? imageBytesData
+        : null;
+    final ImageProvider? imageProvider = imageBytes != null
+        ? MemoryImage(imageBytes)
+        : imageUrl != null && imageUrl.isNotEmpty
+        ? NetworkImage(imageUrl)
+        : null;
     final String? audioTitle = widget.postData["song"];
     final String? artistName = widget.postData["artist"];
     final int likes = widget.postData["likes"] ?? 0;
@@ -196,19 +207,26 @@ class _PostCardState extends State<PostCard> {
                 onSelected: (value) async {
                   if (value == 'edit') {
                     // Esperamos el resultado del modal de edición
-                    final String? updatedText = await showDialog<String>(
-                      context: context,
-                      builder: (context) => PostEditorDialog(
-                        postData: widget.postData,
-                        tealAccent: widget.tealAccent,
-                      ),
-                    );
+                    final PostEditorResult? result =
+                        await showDialog<PostEditorResult>(
+                          context: context,
+                          builder: (context) => PostEditorDialog(
+                            postData: widget.postData,
+                            tealAccent: widget.tealAccent,
+                          ),
+                        );
 
                     // Si recibimos un texto nuevo, actualizamos la tarjeta
-                    if (updatedText != null &&
-                        updatedText != widget.postData["content"]) {
+                    if (result != null) {
                       setState(() {
-                        widget.postData["content"] = updatedText;
+                        widget.postData["content"] = result.content;
+                        widget.postData["image_bytes"] = result.imageBytes;
+                        widget.postData["image_name"] = result.imageName;
+                        widget.postData["image_url"] = result.imageUrl;
+                        widget.postData["audio_bytes"] = result.audioBytes;
+                        widget.postData["audio_name"] = result.audioName;
+                        widget.postData["song"] = result.songTitle;
+                        widget.postData["artist"] = result.artistName;
                         widget.postData["isEdited"] =
                             true; // Mostramos la etiqueta (editado)
                       });
@@ -302,11 +320,11 @@ class _PostCardState extends State<PostCard> {
           ),
           const SizedBox(height: 12),
 
-          if (imageUrl != null && imageUrl.isNotEmpty) ...[
+          if (imageProvider != null) ...[
             ClipRRect(
               borderRadius: BorderRadius.circular(8),
-              child: Image.network(
-                imageUrl,
+              child: Image(
+                image: imageProvider,
                 height: 200,
                 width: double.infinity,
                 fit: BoxFit.cover,

@@ -1,10 +1,11 @@
-import 'package:flutter/material.dart';
-
 import 'dart:async';
+
+import 'package:flutter/material.dart';
 
 import 'friends_screen.dart';
 import 'api_test_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
+import '../features/posts/presentation/post_editor_dialog.dart';
 import '../../widgets/post_card.dart';
 import '../../widgets/states/loading_state.dart';
 import '../../widgets/states/empty_state.dart';
@@ -119,6 +120,34 @@ class _FeedScreenState extends State<FeedScreen> {
         "isEdited": false,
         "within24Hours": true,
       };
+    });
+  }
+
+  Future<void> _createPost() async {
+    final result = await showDialog<PostEditorResult>(
+      context: context,
+      builder: (context) => PostEditorDialog(tealAccent: _tealAccent),
+    );
+    if (!mounted || result == null) return;
+
+    setState(() {
+      _posts.insert(0, {
+        "id": DateTime.now().microsecondsSinceEpoch,
+        "user": "Tú",
+        "time": "Hace un momento",
+        "content": result.content,
+        "image_bytes": result.imageBytes,
+        "image_name": result.imageName,
+        "song": result.songTitle,
+        "artist": result.artistName,
+        "audio_bytes": result.audioBytes,
+        "audio_name": result.audioName,
+        "likes": 0,
+        "comments": 0,
+        "isAuthor": true,
+        "isEdited": false,
+        "within24Hours": true,
+      });
     });
   }
 
@@ -568,7 +597,7 @@ class _FeedScreenState extends State<FeedScreen> {
                       vertical: 12,
                     ),
                   ),
-                  onPressed: () {},
+                  onPressed: _createPost,
                   icon: Icon(Icons.edit, color: _tealAccent, size: 14),
                   label: Text(
                     "escribir blog",
@@ -602,6 +631,7 @@ class _FeedScreenState extends State<FeedScreen> {
                     )
                   : ListView.builder(
                       controller: _scrollController,
+                      padding: const EdgeInsets.only(right: 16),
                       itemCount: _posts.length + (_isLoadingMore ? 1 : 0),
                       itemBuilder: (context, index) {
                         if (index == _posts.length) {
