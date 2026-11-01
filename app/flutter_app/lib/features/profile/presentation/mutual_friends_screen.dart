@@ -5,7 +5,7 @@ import 'dart:async';
 import 'package:flutter_app/widgets/states/loading_state.dart';
 import 'package:flutter_app/widgets/states/empty_state.dart';
 import 'package:flutter_app/widgets/states/error_state.dart';
-import 'package:flutter_app/features/profile/presentation/profile_screen.dart'; // Ajusta según tu ruta
+import 'package:flutter_app/features/profile/presentation/profile_screen.dart';
 
 class MutualFriendsScreen extends StatefulWidget {
   final int targetUserId;
@@ -24,12 +24,12 @@ class MutualFriendsScreen extends StatefulWidget {
 class _MutualFriendsScreenState extends State<MutualFriendsScreen> {
   final Color _tealAccent = const Color(0xFF1ABC9C);
   final ScrollController _scrollController = ScrollController();
-  final List<Map<String, dynamic>> _friends = [];
+
+  final List _friends = [];
 
   bool _isInitialLoading = true;
   bool _isLoadingMore = false;
 
-  // Estados de negocio
   bool _hasError = false;
   bool _is404 = false;
   bool _isHidden = false;
@@ -63,12 +63,11 @@ class _MutualFriendsScreenState extends State<MutualFriendsScreen> {
       _is404 = false;
     });
 
-    await Future.delayed(const Duration(seconds: 1)); // Simula latencia
+    await Future.delayed(const Duration(seconds: 1));
     if (!mounted) return;
 
-    // Simulación de estados para pruebas: cambia estos booleanos
-    bool simulate404 = false;
-    bool simulateHidden = false;
+    bool simulate404 = DateTime.now().second > 60;
+    bool simulateHidden = DateTime.now().second > 60;
 
     if (simulate404) {
       setState(() {
@@ -104,7 +103,7 @@ class _MutualFriendsScreenState extends State<MutualFriendsScreen> {
     });
   }
 
-  List<Map<String, dynamic>> _generateMockFriends(int page, int count) {
+  List _generateMockFriends(int page, int count) {
     return List.generate(count, (index) {
       int id = (page - 1) * count + index + 1;
       return {"id": id, "name": "Amigo_Común_$id", "avatarUrl": null};
@@ -131,7 +130,6 @@ class _MutualFriendsScreenState extends State<MutualFriendsScreen> {
   Widget _buildBody() {
     if (_isInitialLoading) return const LoadingState();
 
-    // Caso 404 (Bloqueo o cuenta eliminada)
     if (_is404) {
       return const EmptyState(
         title: "Perfil no disponible",
@@ -148,7 +146,6 @@ class _MutualFriendsScreenState extends State<MutualFriendsScreen> {
       );
     }
 
-    // Caso Lista Oculta
     if (_isHidden) {
       return Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -183,9 +180,10 @@ class _MutualFriendsScreenState extends State<MutualFriendsScreen> {
           );
         }
 
-        final friend = _friends[index];
+        final friend = _friends[index] as Map<String, dynamic>;
         return Semantics(
           label: "Ver perfil de ${friend['name']}",
+          button: true,
           child: ListTile(
             leading: CircleAvatar(
               backgroundColor: Colors.grey[200],
@@ -199,8 +197,9 @@ class _MutualFriendsScreenState extends State<MutualFriendsScreen> {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => const ProfileScreen(),
-                ), // Navegación al perfil
+                  builder: (context) =>
+                      const ProfileScreen(username: "Amigo_Común"),
+                ),
               );
             },
           ),

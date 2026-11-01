@@ -5,7 +5,7 @@ import 'mutual_friends_screen.dart';
 class MutualFriendsRow extends StatelessWidget {
   final int targetUserId;
   final int mutualFriendsCount;
-  final List<String> previewAvatars; // URLs o assets de hasta 3 avatares
+  final List<String> previewAvatars;
 
   const MutualFriendsRow({
     super.key,
@@ -18,12 +18,11 @@ class MutualFriendsRow extends StatelessWidget {
   Widget build(BuildContext context) {
     if (mutualFriendsCount == 0) return const SizedBox.shrink();
 
-    // Tomamos máximo 3 avatares para la superposición
     final displayAvatars = previewAvatars.take(3).toList();
 
     return Semantics(
       button: true,
-      label: "Ver los $mutualFriendsCount amigos en común",
+      label: "Ver la lista de $mutualFriendsCount amigos en común",
       child: InkWell(
         onTap: () {
           Navigator.push(
@@ -50,20 +49,22 @@ class MutualFriendsRow extends StatelessWidget {
                     displayAvatars.length,
                     (index) => Positioned(
                       left: index * 16.0,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 2),
-                        ),
-                        child: CircleAvatar(
-                          radius: 10,
-                          backgroundColor: Colors.grey[300],
-                          // Si falla la red, mostramos el ícono
-                          onBackgroundImageError: (_, __) {},
-                          child: const Icon(
-                            Icons.person,
-                            size: 12,
-                            color: Colors.white,
+                      child: Semantics(
+                        label: "Avatar de amigo en común ${index + 1}",
+                        image: true,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.white, width: 2),
+                          ),
+                          child: CircleAvatar(
+                            radius: 10,
+                            backgroundColor: Colors.grey[300],
+                            child: const Icon(
+                              Icons.person,
+                              size: 12,
+                              color: Colors.white,
+                            ),
                           ),
                         ),
                       ),
