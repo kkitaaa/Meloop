@@ -8,6 +8,7 @@ import 'api_test_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
 import '../features/posts/presentation/post_editor_dialog.dart';
 import '../../widgets/post_card.dart';
+import '../../widgets/rumi_xp_notice.dart';
 import '../../widgets/states/loading_state.dart';
 import '../../widgets/states/empty_state.dart';
 import '../../widgets/states/error_state.dart';
@@ -147,20 +148,35 @@ class _FeedScreenState extends State<FeedScreen> {
   Future<void> _createPost() async {
     final result = await showDialog<PostEditorResult>(
       context: context,
-      builder: (context) => PostEditorDialog(tealAccent: _tealAccent),
+      builder: (context) =>
+          PostEditorDialog(tealAccent: _tealAccent, apiClient: _apiClient),
     );
     if (!mounted || result == null) return;
 
+    final post = result.publishedPost ?? const <String, dynamic>{};
+    final serverImages = post['images'];
+    final firstServerImage = serverImages is List && serverImages.isNotEmpty
+        ? serverImages.first
+        : null;
+    final firstServerImageUrl = firstServerImage is String
+        ? firstServerImage
+        : firstServerImage is Map<String, dynamic>
+        ? firstServerImage['url'] as String?
+        : null;
     setState(() {
       _posts.insert(0, {
-        "id": DateTime.now().microsecondsSinceEpoch,
-        "user": "Tú",
+        "id": post['id'] ?? DateTime.now().microsecondsSinceEpoch,
+        "user": post['user'] ?? post['username'] ?? "Tú",
+        "user_id": post['user_id'],
         "time": "Hace un momento",
-        "content": result.content,
+        "content": post['content'] ?? result.content,
         "image_bytes": result.imageBytes,
         "image_name": result.imageName,
-        "song": result.songTitle,
-        "artist": result.artistName,
+        "image_url": post['image_url'] ?? firstServerImageUrl,
+        "images": serverImages ?? result.images,
+        "song": post['song_title'] ?? result.songTitle,
+        "artist": post['artist_name'] ?? result.artistName,
+        "audio_url": post['audio_url'],
         "audio_bytes": result.audioBytes,
         "audio_name": result.audioName,
         "likes": 0,
@@ -170,6 +186,10 @@ class _FeedScreenState extends State<FeedScreen> {
         "within24Hours": true,
       });
     });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: RumiXpNotice(xpAwarded: result.xpAwarded)),
+    );
   }
 
   @override

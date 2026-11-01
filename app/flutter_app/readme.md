@@ -40,6 +40,29 @@ Los elementos del feed son datos de demostración servidos por el API Gateway.
 El post-service todavía no implementa una API HTTP ni persistencia para
 publicaciones, por lo que estos datos no representan publicaciones reales.
 
+### Crear publicaciones
+
+El editor valida hasta cuatro imágenes JPG/PNG/WEBP de 5 MB cada una, un audio
+de hasta 15 MB y un texto de hasta 2000 caracteres. Envía `POST /v1/posts` como
+`multipart/form-data`: `content`, campos repetidos `images`, `audio` opcional y
+`song_id`/`song_title`/`artist_name` cuando se eligió una canción. Muestra el
+progreso de subida, permite cancelarla y mantiene el borrador ante errores.
+`MUSIC_NOT_FOUND`, `MUSIC_UNAVAILABLE` y `POSTING_RESTRICTED` se traducen a
+mensajes para el usuario.
+
+La pantalla de selección consulta
+`GET /v1/music/search?q=<texto>` y espera el envelope estándar con
+`data.items`, donde cada elemento incluye `id`, `title`, `artist` y
+opcionalmente `artwork_url`. La publicación exitosa espera `data.post` (o el
+objeto de publicación en `data`) y opcionalmente `data.xp_awarded`.
+
+**Dependencia del backend:** en este repositorio el API Gateway todavía no
+enruta `/v1/posts` ni `/v1/music`; el `post-service` no implementa HTTP ni
+persistencia y el `music-service` tampoco expone búsqueda. Por eso el cliente
+está cableado al contrato esperado, pero publicar y buscar canciones requieren
+que P-01, MU-07 y VS-03 expongan esos endpoints. La aplicación mostrará el error
+de conexión del Gateway y conservará el borrador mientras no estén disponibles.
+
 ### Conexión local
 
 Inicia el gateway desde la raíz del repositorio:
