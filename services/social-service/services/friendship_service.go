@@ -37,9 +37,9 @@ type FriendshipService interface {
 	SendRequest(ctx context.Context, senderID, receiverID string) (*models.FriendRequest, error)
 	ReceivedRequests(ctx context.Context, userID string) ([]models.FriendRequest, error)
 	SentRequests(ctx context.Context, userID string) ([]models.FriendRequest, error)
-	AcceptRequest(ctx context.Context, requestID int, receiverID string) (*models.FriendRequest, error)
-	RejectRequest(ctx context.Context, requestID int, receiverID string) (*models.FriendRequest, error)
-	CancelRequest(ctx context.Context, requestID int, senderID string) (*models.FriendRequest, error)
+	AcceptRequest(ctx context.Context, requestID string, receiverID string) (*models.FriendRequest, error)
+	RejectRequest(ctx context.Context, requestID string, receiverID string) (*models.FriendRequest, error)
+	CancelRequest(ctx context.Context, requestID string, senderID string) (*models.FriendRequest, error)
 	ListFriends(ctx context.Context, userID string) ([]models.Friend, error)
 	RemoveFriend(ctx context.Context, userID, targetID string) error
 	GetFriendProfile(ctx context.Context, userID, friendID string) (*models.FriendProfile, error)
@@ -91,7 +91,7 @@ func (s *friendshipService) SentRequests(ctx context.Context, userID string) ([]
 	return s.repo.ListSent(ctx, userID)
 }
 
-func (s *friendshipService) AcceptRequest(ctx context.Context, requestID int, receiverID string) (*models.FriendRequest, error) {
+func (s *friendshipService) AcceptRequest(ctx context.Context, requestID string, receiverID string) (*models.FriendRequest, error) {
 	request, err := s.repo.Accept(ctx, requestID, receiverID)
 	if err != nil {
 		return nil, mapRepositoryError(err)
@@ -102,12 +102,12 @@ func (s *friendshipService) AcceptRequest(ctx context.Context, requestID int, re
 	return request, nil
 }
 
-func (s *friendshipService) RejectRequest(ctx context.Context, requestID int, receiverID string) (*models.FriendRequest, error) {
+func (s *friendshipService) RejectRequest(ctx context.Context, requestID string, receiverID string) (*models.FriendRequest, error) {
 	request, err := s.repo.Reject(ctx, requestID, receiverID)
 	return request, mapRepositoryError(err)
 }
 
-func (s *friendshipService) CancelRequest(ctx context.Context, requestID int, senderID string) (*models.FriendRequest, error) {
+func (s *friendshipService) CancelRequest(ctx context.Context, requestID string, senderID string) (*models.FriendRequest, error) {
 	request, err := s.repo.Cancel(ctx, requestID, senderID)
 	return request, mapRepositoryError(err)
 }
