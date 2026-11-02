@@ -5,6 +5,7 @@ import 'features/notifications/presentation/notification_scope.dart';
 import 'features/notifications/state/notification_controller.dart';
 import 'features/notifications/state/notification_repository.dart';
 import 'screens/auth_screen.dart';
+import 'widgets/app_background.dart';
 
 void main() {
   runApp(const MeloopApp());
@@ -42,13 +43,22 @@ class _MeloopAppState extends State<MeloopApp> {
     return MaterialApp(
       title: 'Meloop',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(primaryColor: const Color(0xFF11B49F)),
+      theme: ThemeData(
+        primaryColor: const Color(0xFF11B49F),
+        scaffoldBackgroundColor: Colors.transparent,
+      ),
       home: const AuthScreen(),
       builder: (context, child) => NotificationScope(
         controller: _notificationController,
-        child: NotificationFeedbackOverlay(
-          controller: _notificationController,
-          child: child ?? const SizedBox.shrink(),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            const AppBackground(),
+            NotificationFeedbackOverlay(
+              controller: _notificationController,
+              child: child ?? const SizedBox.shrink(),
+            ),
+          ],
         ),
       ),
     );

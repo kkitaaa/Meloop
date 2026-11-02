@@ -3,10 +3,29 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/foundation.dart';
 
 import '../core/navigation/responsive_navigation_shell.dart';
+import '../features/moderation/data/moderation_models.dart';
+import '../features/moderation/presentation/moderation_queue_screen.dart';
 import 'feed_screen.dart';
 
-class AuthScreen extends StatelessWidget {
-  const AuthScreen({super.key});
+class AuthScreen extends StatefulWidget {
+  const AuthScreen({super.key, this.userRole = ModerationRole.user});
+
+  final ModerationRole userRole;
+
+  @override
+  State<AuthScreen> createState() => _AuthScreenState();
+}
+
+class _AuthScreenState extends State<AuthScreen> {
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -30,13 +49,10 @@ class AuthScreen extends StatelessWidget {
               alignment: isDesktop ? Alignment.centerLeft : Alignment.center,
             ),
           ),
-
-          // Capa de oscurecimiento suave solo para móvil
           if (!isDesktop)
             Positioned.fill(
               child: Container(color: Colors.black.withValues(alpha: 0.15)),
             ),
-
           SafeArea(
             child: Center(
               child: SingleChildScrollView(
@@ -131,6 +147,7 @@ class AuthScreen extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         TextField(
+          controller: _emailController,
           keyboardType: TextInputType
               .emailAddress, // Muestra el teclado con el "@" en celular
           decoration: InputDecoration(
@@ -153,6 +170,7 @@ class AuthScreen extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         TextField(
+          controller: _passwordController,
           obscureText: true,
           decoration: InputDecoration(
             filled: true,
@@ -180,13 +198,24 @@ class AuthScreen extends StatelessWidget {
               ),
             ),
             onPressed: () {
+              final isAdminDemoLogin =
+                  _emailController.text.trim().toLowerCase() ==
+                      'admin@admin.com' &&
+                  _passwordController.text == 'ADMIN';
+              final userRole = isAdminDemoLogin
+                  ? ModerationRole.admin
+                  : widget.userRole;
+              final Widget destination;
+              if (isAdminDemoLogin) {
+                destination = ModerationQueueScreen(role: userRole);
+              } else if (isAndroidMobile) {
+                destination = ResponsiveNavigationShell(userRole: userRole);
+              } else {
+                destination = FeedScreen(userRole: userRole);
+              }
               Navigator.pushReplacement(
                 context,
-                MaterialPageRoute(
-                  builder: (context) => isAndroidMobile
-                      ? const ResponsiveNavigationShell()
-                      : const FeedScreen(),
-                ),
+                MaterialPageRoute(builder: (context) => destination),
               );
             },
             child: const Text(

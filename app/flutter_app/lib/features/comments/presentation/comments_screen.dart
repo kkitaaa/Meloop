@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../../moderation/data/moderation_models.dart';
+import '../../moderation/presentation/report_sheet.dart';
+
 class CommentsScreen extends StatefulWidget {
   final Map<String, dynamic> postData;
 
@@ -10,7 +13,6 @@ class CommentsScreen extends StatefulWidget {
 }
 
 class _CommentsScreenState extends State<CommentsScreen> {
-  final Color _bgColor = const Color(0xFF0D5C5E);
   final Color _tealAccent = const Color(0xFF1ABC9C);
 
   final TextEditingController _commentController = TextEditingController();
@@ -26,6 +28,7 @@ class _CommentsScreenState extends State<CommentsScreen> {
       "text": "Totalmente de acuerdo, la producción de esa época era distinta.",
       "time": "Hace 15 min",
       "likes": 5,
+      "isAuthor": false,
     },
     {
       "id": 2,
@@ -33,6 +36,7 @@ class _CommentsScreenState extends State<CommentsScreen> {
       "text": "Yo prefiero el sonido de ahora, más limpio.",
       "time": "Hace 5 min",
       "likes": 2,
+      "isAuthor": false,
     },
   ];
 
@@ -84,6 +88,7 @@ class _CommentsScreenState extends State<CommentsScreen> {
         "text": _replyingToUser != null ? "@$_replyingToUser $text" : text,
         "time": "Ahora",
         "likes": 0,
+        "isAuthor": true,
       });
       _commentController.clear();
       _replyingToUser = null;
@@ -97,7 +102,7 @@ class _CommentsScreenState extends State<CommentsScreen> {
     final bool isDesktop = screenWidth > 900;
 
     return Scaffold(
-      backgroundColor: _bgColor,
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
         backgroundColor: _tealAccent,
         title: const Text(
@@ -190,18 +195,50 @@ class _CommentsScreenState extends State<CommentsScreen> {
             children: [
               Row(
                 children: [
-                  Text(
-                    comment["user"],
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13,
+                  Expanded(
+                    child: Wrap(
+                      spacing: 8,
+                      children: [
+                        Text(
+                          comment["user"],
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                        ),
+                        Text(
+                          comment["time"],
+                          style: const TextStyle(
+                            fontSize: 10,
+                            color: Colors.grey,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  Text(
-                    comment["time"],
-                    style: const TextStyle(fontSize: 10, color: Colors.grey),
-                  ),
+                  if (!(comment["isAuthor"] as bool? ?? false))
+                    PopupMenuButton<String>(
+                      tooltip: 'Opciones del comentario',
+                      icon: const Icon(Icons.more_horiz, size: 20),
+                      onSelected: (value) {
+                        if (value == 'report') {
+                          showReportSheet(
+                            context,
+                            targetType: ModerationTargetType.comment,
+                            targetId:
+                                comment['id']?.toString() ??
+                                identityHashCode(comment).toString(),
+                            targetUsername: comment['user'] as String?,
+                          );
+                        }
+                      },
+                      itemBuilder: (context) => const [
+                        PopupMenuItem(
+                          value: 'report',
+                          child: Text('Reportar comentario'),
+                        ),
+                      ],
+                    ),
                 ],
               ),
               const SizedBox(height: 4),

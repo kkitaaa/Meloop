@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../features/comments/presentation/comments_screen.dart';
+import '../../features/moderation/data/moderation_models.dart';
+import '../../features/moderation/presentation/report_sheet.dart';
 import '../../features/profile/presentation/profile_screen.dart';
 import '../features/profile/presentation/post_editor_dialog.dart';
 import 'post_interactions/post_interaction_bar.dart';
@@ -31,7 +33,7 @@ class PostCard extends StatelessWidget {
     // --- Variables de lógica de negocio (RN-11, RF-17) ---
     // En producción esto viene del backend (JSON)
     final bool isAuthor =
-        postData["isAuthor"] ?? true; // Simulado a true para probar
+        (postData["isAuthor"] as bool?) ?? user == 'MiUsuario';
     final bool isEdited = postData["isEdited"] ?? false;
     final bool within24Hours = postData["within24Hours"] ?? true;
 
@@ -95,46 +97,54 @@ class PostCard extends StatelessWidget {
                 ],
               ),
 
-              // Menú de opciones (Visible solo para el autor)
-              if (isAuthor)
-                PopupMenuButton<String>(
-                  icon: const Icon(
-                    Icons.more_horiz,
-                    color: Colors.grey,
-                    size: 20,
-                  ),
-                  color: Colors.white,
-                  onSelected: (value) async {
-                    if (value == 'edit') {
-                      // Abre el modal reutilizable en modo "Edición"
-                      await showDialog(
-                        context: context,
-                        builder: (context) => PostEditorDialog(
-                          postData: postData,
-                          tealAccent: tealAccent,
+              PopupMenuButton<String>(
+                icon: const Icon(
+                  Icons.more_horiz,
+                  color: Colors.grey,
+                  size: 20,
+                ),
+                color: Colors.white,
+                onSelected: (value) async {
+                  if (value == 'edit') {
+                    // Abre el modal reutilizable en modo "Edición"
+                    await showDialog(
+                      context: context,
+                      builder: (context) => PostEditorDialog(
+                        postData: postData,
+                        tealAccent: tealAccent,
+                      ),
+                    );
+                  } else if (value == 'report') {
+                    await showReportSheet(
+                      context,
+                      targetType: ModerationTargetType.post,
+                      targetId:
+                          postData['id']?.toString() ??
+                          identityHashCode(postData).toString(),
+                      targetUsername: user,
+                    );
+                  }
+                },
+                itemBuilder: (context) {
+                  return [
+                    if (isAuthor && within24Hours)
+                      const PopupMenuItem(
+                        value: 'edit',
+                        child: Text(
+                          "Editar publicación",
+                          style: TextStyle(fontSize: 13),
                         ),
-                      );
-                    }
-                  },
-                  itemBuilder: (context) {
-                    return [
-                      if (within24Hours)
-                        const PopupMenuItem(
-                          value: 'edit',
-                          child: Text(
-                            "Editar publicación",
-                            style: TextStyle(fontSize: 13),
-                          ),
-                        )
-                      else
-                        const PopupMenuItem(
-                          value: 'expired',
-                          enabled: false,
-                          child: Text(
-                            "Tiempo de edición agotado",
-                            style: TextStyle(fontSize: 13, color: Colors.grey),
-                          ),
+                      )
+                    else if (isAuthor)
+                      const PopupMenuItem(
+                        value: 'expired',
+                        enabled: false,
+                        child: Text(
+                          "Tiempo de edición agotado",
+                          style: TextStyle(fontSize: 13, color: Colors.grey),
                         ),
+                      ),
+                    if (isAuthor)
                       const PopupMenuItem(
                         value: 'delete',
                         child: Text(
@@ -145,11 +155,14 @@ class PostCard extends StatelessWidget {
                           ),
                         ),
                       ),
-                    ];
-                  },
-                )
-              else
-                const Icon(Icons.more_horiz, color: Colors.grey, size: 20),
+                    if (!isAuthor)
+                      const PopupMenuItem(
+                        value: 'report',
+                        child: Text('Reportar publicación'),
+                      ),
+                  ];
+                },
+              ),
             ],
           ),
           const SizedBox(height: 12),

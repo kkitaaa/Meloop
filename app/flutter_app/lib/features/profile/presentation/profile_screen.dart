@@ -1,25 +1,39 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 
 import 'dart:async';
 
 import '../../../screens/friends_screen.dart';
+import '../../../core/navigation/artists_and_songs_screen.dart';
 import '../../comments/presentation/comments_screen.dart';
+import '../../moderation/data/moderation_models.dart';
+import '../../moderation/presentation/report_sheet.dart';
 import '../../../widgets/post_card.dart';
 import '../../../widgets/level_progress/level_progress.dart';
+import '../../../widgets/mobile_app_header.dart';
+import '../../../widgets/desktop_app_header.dart';
 import '../../gamification/presentation/gamification_demo_controller.dart';
 
 class ProfileScreen extends StatefulWidget {
   final String? username;
+  final String? userId;
   final bool openInventory;
 
-  const ProfileScreen({super.key, this.username, this.openInventory = false});
+  const ProfileScreen({
+    super.key,
+    this.username,
+    this.userId,
+    this.openInventory = false,
+  });
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-  final Color _bgColor = const Color(0xFF0D5C5E);
+  bool get _isOwnProfile =>
+      widget.username == null || widget.username == 'MiUsuario';
+
   final Color _tealAccent = const Color(0xFF1ABC9C);
 
   final ScrollController _scrollController = ScrollController();
@@ -111,7 +125,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   void _ensureRgbReward() {
     if (!GamificationDemoController.instance.rgbFrameUnlocked ||
-        _inventory.any((item) => item['id'] == 'frame-rgb')) return;
+        _inventory.any((item) => item['id'] == 'frame-rgb'))
+      return;
     setState(() {
       _inventory.add({
         'id': 'frame-rgb',
@@ -292,7 +307,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final bool isDesktop = screenWidth > 900;
 
     return Scaffold(
-      backgroundColor: _bgColor,
+      backgroundColor: Colors.transparent,
       body: Column(
         children: [
           _buildTopBar(isDesktop, context),
@@ -305,100 +320,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildTopBar(bool isDesktop, BuildContext context) {
-    return Container(
-      height: 55,
-      color: _tealAccent,
-      padding: const EdgeInsets.symmetric(horizontal: 24),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Image.asset(
-            'assets/imagenes/meloop.png',
-            height: 24,
-            fit: BoxFit.contain,
-          ),
-          if (isDesktop) ...[
-            Row(
-              children: [
-                _navLink(
-                  'Inicio',
-                  isActive: false,
-                  onTap: () => Navigator.pop(context),
-                ),
-                _navLink(
-                  'Amigos',
-                  isActive: false,
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const FriendsScreen(),
-                      ),
-                    );
-                  },
-                ),
-                _navLink('Artistas y canciones', isActive: false, onTap: () {}),
-              ],
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Row(
-                children: const [
-                  Icon(Icons.play_circle_fill, color: Colors.white, size: 18),
-                  SizedBox(width: 8),
-                  Text(
-                    "Playing... DJ Gouz",
-                    style: TextStyle(color: Colors.white, fontSize: 12),
-                  ),
-                  SizedBox(width: 8),
-                  Icon(Icons.graphic_eq, color: Colors.white, size: 16),
-                ],
-              ),
-            ),
-          ],
-          Row(
-            children: const [
-              Icon(Icons.notifications, color: Colors.white, size: 20),
-              SizedBox(width: 16),
-              CircleAvatar(
-                radius: 14,
-                backgroundColor: Colors.white,
-                child: Icon(Icons.person, color: Color(0xFF1ABC9C), size: 18),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
+    if (!isDesktop && defaultTargetPlatform == TargetPlatform.android) {
+      return const MobileAppHeader();
+    }
 
-  Widget _navLink(
-    String text, {
-    required bool isActive,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 4.0),
-        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 6.0),
-        decoration: BoxDecoration(
-          color: isActive ? Colors.white : Colors.transparent,
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Text(
-          text,
-          style: TextStyle(
-            color: isActive ? _tealAccent : Colors.white,
-            fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-            fontSize: 12,
-          ),
-        ),
+    return DesktopAppHeader(
+      activeSection: DesktopNavigationSection.none,
+      onHomeTap: () => navigateToDesktopHome(context),
+      onFriendsTap: () =>
+          navigateToDesktopSection(context, (_) => const FriendsScreen()),
+      onArtistsTap: () => navigateToDesktopSection(
+        context,
+        (_) => const ArtistsAndSongsScreen(),
       ),
     );
   }
@@ -578,8 +511,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Widget _buildLegacyLevelCard() {
     final game = GamificationDemoController.instance;
-    final percentage =
-        (game.xp / GamificationDemoController.xpNeeded * 100).round();
+    final percentage = (game.xp / GamificationDemoController.xpNeeded * 100)
+        .round();
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -634,7 +567,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     if (isMobile) {
       return Column(
-        children: [statsRow, const SizedBox(height: 12), _editProfileBtn()],
+        children: [statsRow, const SizedBox(height: 12), _profileActions()],
       );
     }
 
@@ -642,7 +575,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Expanded(child: statsRow),
-        _editProfileBtn(),
+        _profileActions(),
       ],
     );
   }
@@ -684,6 +617,28 @@ class _ProfileScreenState extends State<ProfileScreen> {
           fontWeight: FontWeight.bold,
         ),
       ),
+    );
+  }
+
+  Widget _profileActions() {
+    if (_isOwnProfile) return _editProfileBtn();
+
+    return PopupMenuButton<String>(
+      tooltip: 'Opciones del perfil',
+      icon: const Icon(Icons.more_horiz),
+      onSelected: (value) {
+        if (value == 'report') {
+          showReportSheet(
+            context,
+            targetType: ModerationTargetType.user,
+            targetId: widget.userId ?? widget.username!,
+            targetUsername: widget.username,
+          );
+        }
+      },
+      itemBuilder: (context) => const [
+        PopupMenuItem(value: 'report', child: Text('Reportar perfil')),
+      ],
     );
   }
 

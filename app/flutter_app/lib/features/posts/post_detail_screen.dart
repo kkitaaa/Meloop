@@ -14,7 +14,6 @@ class PostDetailScreen extends StatefulWidget {
 }
 
 class _PostDetailScreenState extends State<PostDetailScreen> {
-  final Color _bgColor = const Color(0xFF0D5C5E);
   final Color _tealAccent = const Color(0xFF1ABC9C);
 
   bool _isLoading = true;
@@ -72,7 +71,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final bool isDesktop = screenWidth > 900;
 
     return Scaffold(
-      backgroundColor: _bgColor,
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
         backgroundColor: _tealAccent,
         title: const Text(

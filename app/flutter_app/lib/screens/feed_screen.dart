@@ -1,19 +1,27 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 
 import 'dart:async';
 
 import 'friends_screen.dart';
 import '../../features/comments/presentation/comments_screen.dart';
+import '../features/moderation/data/moderation_models.dart';
+import '../features/moderation/presentation/moderation_queue_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
 import '../features/profile/presentation/post_editor_dialog.dart';
+import '../core/navigation/artists_and_songs_screen.dart';
 import '../widgets/post_card.dart';
 import '../widgets/desktop_chat.dart';
+import '../widgets/desktop_app_header.dart';
 import '../widgets/notifications_menu.dart';
+import '../widgets/mobile_app_header.dart';
 import '../widgets/level_progress/level_progress.dart';
 import '../features/gamification/presentation/gamification_demo_controller.dart';
 
 class FeedScreen extends StatefulWidget {
-  const FeedScreen({super.key});
+  const FeedScreen({super.key, this.userRole = ModerationRole.user});
+
+  final ModerationRole userRole;
 
   @override
   State<FeedScreen> createState() => _FeedScreenState();
@@ -317,65 +325,6 @@ class _CompactLevelUpBannerState extends State<_CompactLevelUpBanner>
   }
 }
 
-class _FullScreenConfetti extends StatefulWidget {
-  const _FullScreenConfetti();
-  @override
-  State<_FullScreenConfetti> createState() => _FullScreenConfettiState();
-}
-
-class _FullScreenConfettiState extends State<_FullScreenConfetti>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1250),
-    )..repeat();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) => IgnorePointer(
-    child: LayoutBuilder(
-      builder: (context, size) => AnimatedBuilder(
-        animation: _controller,
-        builder: (_, __) => Stack(
-          children: List.generate(10, (i) {
-            const colors = [
-              Colors.amber,
-              Color(0xFFFF6262),
-              Color(0xFF00AF92),
-              Colors.purple,
-              Colors.orange,
-            ];
-            final x = ((i * .173) % 1);
-            final fall = (_controller.value + i * .19) % 1;
-            return Positioned(
-              left: x * size.maxWidth,
-              top: -18 + fall * (size.maxHeight + 36),
-              child: Transform.rotate(
-                angle: fall * 10,
-                child: Icon(
-                  i.isEven ? Icons.square : Icons.circle,
-                  color: colors[i % colors.length],
-                  size: 10,
-                ),
-              ),
-            );
-          }),
-        ),
-      ),
-    ),
-  );
-}
-
 class _RewardLevelUpBanner extends StatefulWidget {
   const _RewardLevelUpBanner({
     required this.reward,
@@ -521,8 +470,68 @@ class _RewardLevelUpBannerState extends State<_RewardLevelUpBanner>
   );
 }
 
+class _FullScreenConfetti extends StatefulWidget {
+  const _FullScreenConfetti();
+
+  @override
+  State<_FullScreenConfetti> createState() => _FullScreenConfettiState();
+}
+
+class _FullScreenConfettiState extends State<_FullScreenConfetti>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1250),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => IgnorePointer(
+    child: LayoutBuilder(
+      builder: (context, size) => AnimatedBuilder(
+        animation: _controller,
+        builder: (_, __) => Stack(
+          children: List.generate(10, (i) {
+            const colors = [
+              Colors.amber,
+              Color(0xFFFF6262),
+              Color(0xFF00AF92),
+              Colors.purple,
+              Colors.orange,
+            ];
+            final x = ((i * .173) % 1);
+            final fall = (_controller.value + i * .19) % 1;
+            return Positioned(
+              left: x * size.maxWidth,
+              top: -18 + fall * (size.maxHeight + 36),
+              child: Transform.rotate(
+                angle: fall * 10,
+                child: Icon(
+                  i.isEven ? Icons.square : Icons.circle,
+                  color: colors[i % colors.length],
+                  size: 10,
+                ),
+              ),
+            );
+          }),
+        ),
+      ),
+    ),
+  );
+}
+
 class _FeedScreenState extends State<FeedScreen> {
-  final Color _bgColor = const Color(0xFF0D5C5E);
   final Color _tealAccent = const Color(0xFF1ABC9C);
 
   final ScrollController _scrollController = ScrollController();
@@ -558,6 +567,15 @@ class _FeedScreenState extends State<FeedScreen> {
   void _onGamificationChanged() {
     final reward = GamificationDemoController.instance.takePendingLevelUp();
     if (reward != null && mounted) setState(() => _levelUpReward = reward);
+  }
+
+  void _openModerationQueue() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ModerationQueueScreen(role: widget.userRole),
+      ),
+    );
   }
 
   Future<void> _fetchInitialPosts() async {
@@ -608,7 +626,7 @@ class _FeedScreenState extends State<FeedScreen> {
     final bool isDesktop = screenWidth > 900;
 
     return Scaffold(
-      backgroundColor: _bgColor,
+      backgroundColor: Colors.transparent,
       body: Stack(
         children: [
           Column(
@@ -625,7 +643,8 @@ class _FeedScreenState extends State<FeedScreen> {
             const Positioned.fill(child: _FullScreenConfetti()),
           if (_levelUpReward != null)
             Positioned(
-              top: 18,
+              top:
+                  MediaQuery.viewPaddingOf(context).top + (isDesktop ? 98 : 18),
               left: 0,
               right: 0,
               child: _RewardLevelUpBanner(
@@ -649,6 +668,14 @@ class _FeedScreenState extends State<FeedScreen> {
 
   Widget _buildTopBar(bool isDesktop) {
     if (!isDesktop) {
+      if (defaultTargetPlatform == TargetPlatform.android) {
+        return MobileAppHeader(
+          onModerationTap: widget.userRole == ModerationRole.user
+              ? null
+              : _openModerationQueue,
+        );
+      }
+
       return Container(
         height: 55,
         color: _tealAccent,
@@ -689,7 +716,21 @@ class _FeedScreenState extends State<FeedScreen> {
                     ),
                   ),
                 ),
-                const NotificationsMenu(),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (widget.userRole != ModerationRole.user)
+                      IconButton(
+                        tooltip: 'Cola de moderación',
+                        onPressed: _openModerationQueue,
+                        icon: const Icon(
+                          Icons.shield_outlined,
+                          color: Colors.white,
+                        ),
+                      ),
+                    const NotificationsMenu(),
+                  ],
+                ),
               ],
             ),
           ],
@@ -697,112 +738,22 @@ class _FeedScreenState extends State<FeedScreen> {
       );
     }
 
-    return Container(
-      height: 55,
-      color: _tealAccent,
-      padding: const EdgeInsets.symmetric(horizontal: 24),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Image.asset(
-            'assets/imagenes/meloop.png',
-            height: 24,
-            fit: BoxFit.contain,
-          ),
-          if (isDesktop) ...[
-            Row(
-              children: [
-                _navLink('Inicio', isActive: true),
-                _navLink(
-                  'Amigos',
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const FriendsScreen(),
-                      ),
-                    );
-                  },
-                ),
-                _navLink(
-                  'Perfil',
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const ProfileScreen(),
-                      ),
-                    );
-                  },
-                ),
-              ],
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Row(
-                children: const [
-                  Icon(Icons.play_circle_fill, color: Colors.white, size: 18),
-                  SizedBox(width: 8),
-                  Text(
-                    "Playing... DJ Gouz",
-                    style: TextStyle(color: Colors.white, fontSize: 12),
-                  ),
-                  SizedBox(width: 8),
-                  Icon(Icons.graphic_eq, color: Colors.white, size: 16),
-                ],
-              ),
-            ),
-          ],
-          Row(
-            children: [
-              const NotificationsMenu(),
-              const SizedBox(width: 16),
-              InkWell(
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const ProfileScreen(),
-                    ),
-                  );
-                },
-                child: const CircleAvatar(
-                  radius: 14,
-                  backgroundColor: Colors.white,
-                  child: Icon(Icons.person, color: Color(0xFF1ABC9C), size: 18),
-                ),
-              ),
-            ],
-          ),
-        ],
+    return DesktopAppHeader(
+      activeSection: DesktopNavigationSection.home,
+      onHomeTap: () {},
+      onFriendsTap: () =>
+          navigateToDesktopSection(context, (_) => const FriendsScreen()),
+      onArtistsTap: () => navigateToDesktopSection(
+        context,
+        (_) => const ArtistsAndSongsScreen(),
       ),
-    );
-  }
-
-  Widget _navLink(String text, {bool isActive = false, VoidCallback? onTap}) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 4.0),
-        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 6.0),
-        decoration: BoxDecoration(
-          color: isActive ? Colors.white : Colors.transparent,
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Text(
-          text,
-          style: TextStyle(
-            color: isActive ? _tealAccent : Colors.white,
-            fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-            fontSize: 12,
-          ),
-        ),
+      onProfileTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const ProfileScreen()),
       ),
+      onModerationTap: widget.userRole == ModerationRole.user
+          ? null
+          : _openModerationQueue,
     );
   }
 

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../features/moderation/data/moderation_models.dart';
+import '../../features/profile/presentation/profile_screen.dart';
 import '../../features/profile/presentation/post_editor_dialog.dart';
 import '../../screens/feed_screen.dart';
 import '../../screens/friends_screen.dart';
@@ -8,7 +10,12 @@ import '../../widgets/desktop_chat.dart';
 import 'artists_and_songs_screen.dart';
 
 class ResponsiveNavigationShell extends StatefulWidget {
-  const ResponsiveNavigationShell({super.key});
+  const ResponsiveNavigationShell({
+    super.key,
+    this.userRole = ModerationRole.user,
+  });
+
+  final ModerationRole userRole;
 
   @override
   State<ResponsiveNavigationShell> createState() =>
@@ -21,7 +28,7 @@ class _ResponsiveNavigationShellState extends State<ResponsiveNavigationShell> {
   bool _isChatConversationOpen = false;
 
   late final List<Widget> _screens = [
-    FeedScreen(),
+    FeedScreen(userRole: widget.userRole),
     FriendsScreen(),
     ArtistsAndSongsScreen(),
     DesktopChat(
@@ -32,6 +39,7 @@ class _ResponsiveNavigationShellState extends State<ResponsiveNavigationShell> {
         }
       },
     ),
+    const ProfileScreen(),
   ];
 
   Future<void> _createBlog() async {
@@ -45,11 +53,11 @@ class _ResponsiveNavigationShellState extends State<ResponsiveNavigationShell> {
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: const SystemUiOverlayStyle(
-        statusBarColor: Color(0xFF0D5C5E),
+        statusBarColor: Color(0xFF248686),
         statusBarIconBrightness: Brightness.light,
       ),
       child: Scaffold(
-        backgroundColor: const Color(0xFF0D5C5E),
+        backgroundColor: Colors.transparent,
         extendBody: true,
         body: SafeArea(
           bottom: false,
@@ -112,6 +120,7 @@ class _ResponsiveNavigationShellState extends State<ResponsiveNavigationShell> {
       (icon: Icons.people_outline, label: 'Amigos'),
       (icon: Icons.graphic_eq, label: 'Artistas y canciones'),
       (icon: Icons.send_outlined, label: 'Chat'),
+      (icon: Icons.person_outline, label: 'Perfil'),
     ];
 
     return Container(
@@ -151,7 +160,19 @@ class _ResponsiveNavigationShellState extends State<ResponsiveNavigationShell> {
                         : Colors.transparent,
                     borderRadius: BorderRadius.circular(26),
                   ),
-                  child: Icon(item.icon, color: Colors.white, size: 23),
+                  child: Center(
+                    child: index == 4
+                        ? const CircleAvatar(
+                            radius: 15,
+                            backgroundColor: Colors.white,
+                            child: Icon(
+                              Icons.person,
+                              color: Color(0xFF1ABC9C),
+                              size: 19,
+                            ),
+                          )
+                        : Icon(item.icon, color: Colors.white, size: 23),
+                  ),
                 ),
               ),
             ),

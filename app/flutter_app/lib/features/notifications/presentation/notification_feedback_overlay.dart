@@ -20,7 +20,9 @@ class NotificationFeedbackOverlay extends StatelessWidget {
       child: child,
       builder: (context, child) {
         final notification = controller.activeBanner;
-        final top = MediaQuery.viewPaddingOf(context).top + 56;
+        final mediaQuery = MediaQuery.of(context);
+        final isDesktop = mediaQuery.size.width > 900;
+        final top = mediaQuery.viewPadding.top + (isDesktop ? 98.0 : 56.0);
         return Stack(
           children: [
             ?child,

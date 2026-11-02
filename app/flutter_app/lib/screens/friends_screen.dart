@@ -1,4 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+
+import '../core/navigation/artists_and_songs_screen.dart';
+import '../features/profile/presentation/profile_screen.dart';
+import '../widgets/desktop_app_header.dart';
+import '../widgets/mobile_app_header.dart';
 
 class FriendsScreen extends StatefulWidget {
   const FriendsScreen({super.key});
@@ -8,7 +14,6 @@ class FriendsScreen extends StatefulWidget {
 }
 
 class _FriendsScreenState extends State<FriendsScreen> {
-  final Color bgColor = const Color(0xFF0D5C5E);
   final Color tealAccent = const Color(0xFF1ABC9C);
 
   // Estado local para simular la respuesta del API Gateway
@@ -96,7 +101,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
     final bool isDesktop = screenWidth > 900;
 
     return Scaffold(
-      backgroundColor: bgColor,
+      backgroundColor: Colors.transparent,
       body: Column(
         children: [
           _buildTopBar(isDesktop, context),
@@ -109,89 +114,20 @@ class _FriendsScreenState extends State<FriendsScreen> {
   }
 
   Widget _buildTopBar(bool isDesktop, BuildContext context) {
-    return Container(
-      height: 55,
-      color: tealAccent,
-      padding: const EdgeInsets.symmetric(horizontal: 24),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Image.asset(
-            'assets/imagenes/meloop.png',
-            height: 24,
-            fit: BoxFit.contain,
-          ),
-          if (isDesktop) ...[
-            Row(
-              children: [
-                _navLink(
-                  'Inicio',
-                  isActive: false,
-                  onTap: () => Navigator.pop(context),
-                ),
-                _navLink('Amigos', isActive: true, onTap: () {}),
-                _navLink('Artistas y canciones', isActive: false, onTap: () {}),
-              ],
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Row(
-                children: const [
-                  Icon(Icons.play_circle_fill, color: Colors.white, size: 18),
-                  SizedBox(width: 8),
-                  Text(
-                    "Playing... DJ Gouz",
-                    style: TextStyle(color: Colors.white, fontSize: 12),
-                  ),
-                  SizedBox(width: 8),
-                  Icon(Icons.graphic_eq, color: Colors.white, size: 16),
-                ],
-              ),
-            ),
-          ],
-          Row(
-            children: const [
-              Icon(Icons.notifications, color: Colors.white, size: 20),
-              SizedBox(width: 16),
-              CircleAvatar(
-                radius: 14,
-                backgroundColor: Colors.white,
-                child: Icon(Icons.person, color: Color(0xFF1ABC9C), size: 18),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
+    if (!isDesktop && defaultTargetPlatform == TargetPlatform.android) {
+      return const MobileAppHeader();
+    }
 
-  Widget _navLink(
-    String text, {
-    required bool isActive,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 4.0),
-        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 6.0),
-        decoration: BoxDecoration(
-          color: isActive ? Colors.white : Colors.transparent,
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Text(
-          text,
-          style: TextStyle(
-            color: isActive ? tealAccent : Colors.white,
-            fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-            fontSize: 12,
-          ),
-        ),
+    return DesktopAppHeader(
+      activeSection: DesktopNavigationSection.friends,
+      onHomeTap: () => navigateToDesktopHome(context),
+      onFriendsTap: () {},
+      onArtistsTap: () => navigateToDesktopSection(
+        context,
+        (_) => const ArtistsAndSongsScreen(),
       ),
+      onProfileTap: () =>
+          navigateToDesktopSection(context, (_) => const ProfileScreen()),
     );
   }
 

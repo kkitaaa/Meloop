@@ -1,4 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+
+import '../../features/profile/presentation/profile_screen.dart';
+import '../../screens/friends_screen.dart';
+import '../../widgets/desktop_app_header.dart';
+import '../../widgets/mobile_app_header.dart';
 
 class ArtistsAndSongsScreen extends StatefulWidget {
   const ArtistsAndSongsScreen({super.key});
@@ -25,6 +31,10 @@ class _ArtistsAndSongsScreenState extends State<ArtistsAndSongsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final isDesktop = screenWidth > 900;
+    final isAndroidMobile =
+        !isDesktop && defaultTargetPlatform == TargetPlatform.android;
     final results = _catalog
         .where(
           (item) => item.title.toLowerCase().contains(_query.toLowerCase()),
@@ -32,23 +42,40 @@ class _ArtistsAndSongsScreenState extends State<ArtistsAndSongsScreen> {
         .toList();
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0D5C5E),
+      backgroundColor: Colors.transparent,
       body: Column(
         children: [
-          Container(
-            height: 55,
-            color: _accentColor,
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            alignment: Alignment.centerLeft,
-            child: const Text(
-              'Artistas y canciones',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
+          if (isAndroidMobile)
+            const MobileAppHeader()
+          else if (isDesktop)
+            DesktopAppHeader(
+              activeSection: DesktopNavigationSection.artists,
+              onHomeTap: () => navigateToDesktopHome(context),
+              onFriendsTap: () => navigateToDesktopSection(
+                context,
+                (_) => const FriendsScreen(),
+              ),
+              onArtistsTap: () {},
+              onProfileTap: () => navigateToDesktopSection(
+                context,
+                (_) => const ProfileScreen(),
+              ),
+            )
+          else
+            Container(
+              height: 55,
+              color: _accentColor,
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              alignment: Alignment.centerLeft,
+              child: const Text(
+                'Artistas y canciones',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
-          ),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
