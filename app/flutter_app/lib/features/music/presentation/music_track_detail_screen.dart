@@ -37,10 +37,18 @@ class MusicTrackDetailScreen extends StatelessWidget {
                 style: Theme.of(context).textTheme.headlineSmall,
               ),
               const SizedBox(height: 8),
-              Text(
-                track.artist,
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
+              if (track.artist.isNotEmpty)
+                Text(
+                  track.artist,
+                  style: Theme.of(context).textTheme.titleMedium,
+                )
+              else
+                Text(switch (track.type) {
+                  'artist' => 'Artista',
+                  'album' => 'Álbum',
+                  'genre' => 'Género',
+                  _ => 'Canción',
+                }, style: Theme.of(context).textTheme.titleMedium),
             ],
           ),
         ),

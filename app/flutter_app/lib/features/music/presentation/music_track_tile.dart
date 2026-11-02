@@ -28,8 +28,8 @@ class MusicTrackTile extends StatelessWidget {
         leading: ClipRRect(
           borderRadius: BorderRadius.circular(11),
           child: SizedBox(
-            height: 48,
-            width: 48,
+            height: 56,
+            width: 56,
             child: track.artworkUrl == null
                 ? const ColoredBox(
                     color: Color(0xFFE8F7F3),
@@ -60,7 +60,14 @@ class MusicTrackTile extends StatelessWidget {
           ),
         ),
         subtitle: Text(
-          track.artist,
+          track.artist.isEmpty
+              ? switch (track.type) {
+                  'artist' => 'Artista',
+                  'album' => 'Álbum',
+                  'genre' => 'Género',
+                  _ => 'Canción',
+                }
+              : track.artist,
           style: const TextStyle(color: Color(0xFF788A86)),
         ),
         trailing: trailing ?? const Icon(Icons.chevron_right_rounded),

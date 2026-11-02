@@ -50,11 +50,17 @@ progreso de subida, permite cancelarla y mantiene el borrador ante errores.
 `MUSIC_NOT_FOUND`, `MUSIC_UNAVAILABLE` y `POSTING_RESTRICTED` se traducen a
 mensajes para el usuario.
 
-La pantalla de selección consulta
-`GET /v1/music/search?q=<texto>` y espera el envelope estándar con
-`data.items`, donde cada elemento incluye `id`, `title`, `artist` y
-opcionalmente `artwork_url`. La publicación exitosa espera `data.post` (o el
-objeto de publicación en `data`) y opcionalmente `data.xp_awarded`.
+`features/music/presentation/music_search_screen.dart` contiene
+`MusicSearchScreen(mode)`, reutilizable en los modos `pickForPost`,
+`pickForPreference` y `browse`. Busca después de 400 ms y desde dos caracteres;
+las pestañas Canciones, Artistas, Álbumes y Géneros consultan
+`GET /v1/music/search?q=<texto>&type=<track|artist|album|genre>&offset=<n>`.
+La respuesta estándar usa `data.items` (o una colección específica por tipo),
+con elementos identificados por `id` y `name`/`title`; artista e imagen son
+opcionales. Los modos de selección devuelven el resultado a la pantalla previa,
+mientras `browse` abre la ficha musical. La publicación exitosa espera
+`data.post` (o el objeto de publicación en `data`) y opcionalmente
+`data.xp_awarded`.
 
 **Dependencia del backend:** en este repositorio el API Gateway todavía no
 enruta `/v1/posts` ni `/v1/music`; el `post-service` no implementa HTTP ni
@@ -73,8 +79,9 @@ caracteres y consulta en paralelo:
   o `nombre`, `avatar_url`, `nivel` y `friend_status`).
 - `GET /v1/search/posts?q=<texto>&filter=<text|song|artist|genre>` con
   `data.items` en formato de publicación compatible con Post Card.
-- `GET /v1/music/search?q=<texto>` con canciones `id`, `title`, `artist` y
-  `artwork_url`.
+- `GET /v1/music/search?q=<texto>&type=<track|artist|album|genre>&offset=<n>`.
+  La búsqueda global usa `type=track` y `offset=0`; el buscador musical envía
+  el tipo seleccionado y el offset de paginación.
 
 Cada pestaña conserva sus propios resultados, error y reintento; una fuente
 fallida no bloquea las otras. Cambiar el texto cancela las solicitudes previas.

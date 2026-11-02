@@ -114,12 +114,14 @@ class ApiClient implements PostPublisher {
 
   Future<ApiResponse<MusicSearchPage>> searchMusicTracks(
     String query, {
+    String type = 'track',
+    int offset = 0,
     CancelToken? cancelToken,
   }) {
     return _searchGet(
       '/v1/music/search',
-      {'q': query},
-      MusicSearchPage.fromJson,
+      {'q': query, 'type': type, 'offset': '$offset'},
+      (json) => MusicSearchPage.fromJson(json, type: type),
       cancelToken: cancelToken,
     );
   }

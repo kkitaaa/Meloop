@@ -2,11 +2,10 @@ import 'package:dio/dio.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_app/features/music/presentation/music_search_screen.dart';
 import 'package:flutter_app/models/music_track.dart';
 import 'package:flutter_app/services/api_client.dart';
 import 'package:flutter_app/services/post_publisher.dart';
-
-import 'music_search_screen.dart';
 
 const int maxPostImageSizeBytes = 5 * 1024 * 1024;
 const int maxPostAudioSizeBytes = 15 * 1024 * 1024;
@@ -258,8 +257,10 @@ class _PostEditorDialogState extends State<PostEditorDialog> {
   Future<void> _chooseSong() async {
     final song = await Navigator.of(context).push<MusicTrack>(
       MaterialPageRoute(
-        builder: (_) =>
-            MusicSearchScreen(pickForPost: true, apiClient: _apiClient),
+        builder: (_) => MusicSearchScreen(
+          mode: MusicSearchMode.pickForPost,
+          apiClient: _apiClient,
+        ),
       ),
     );
     if (!mounted || song == null) return;
