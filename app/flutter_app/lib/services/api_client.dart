@@ -10,6 +10,7 @@ import 'package:flutter_app/models/feed_data.dart';
 import 'package:flutter_app/models/global_search.dart';
 import 'package:flutter_app/models/music_track.dart';
 import 'package:flutter_app/models/music_preferences.dart';
+import 'package:flutter_app/models/music_detail.dart';
 import 'package:flutter_app/models/mutual_friends.dart';
 import 'package:flutter_app/services/post_publisher.dart';
 import 'package:http/http.dart' as http;
@@ -132,6 +133,32 @@ class ApiClient implements PostPublisher {
       'GET',
       '/v1/music/preferences',
       MusicPreferencesData.fromJson,
+    );
+  }
+
+  Future<ApiResponse<MusicDetail>> getMusicDetail({
+    required String type,
+    required String spotifyId,
+  }) {
+    final resource = switch (type) {
+      'track' || 'tracks' => 'tracks',
+      'artist' || 'artists' => 'artists',
+      'album' || 'albums' => 'albums',
+      _ => throw ArgumentError.value(
+        type,
+        'type',
+        'Tipo musical no compatible.',
+      ),
+    };
+    final normalizedType = switch (resource) {
+      'tracks' => 'track',
+      'artists' => 'artist',
+      _ => 'album',
+    };
+    return _musicPreferenceRequest(
+      'GET',
+      '/v1/music/$resource/${Uri.encodeComponent(spotifyId)}',
+      (json) => MusicDetail.fromJson(json, type: normalizedType),
     );
   }
 

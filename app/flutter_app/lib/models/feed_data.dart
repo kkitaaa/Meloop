@@ -5,6 +5,7 @@ class FeedPost {
   final String time;
   final String content;
   final String? song;
+  final String? songId;
   final String? artist;
   final String? audioUrl;
   final String? audioName;
@@ -22,6 +23,7 @@ class FeedPost {
     required this.time,
     required this.content,
     this.song,
+    this.songId,
     this.artist,
     this.audioUrl,
     this.audioName,
@@ -46,6 +48,9 @@ class FeedPost {
         json['isEdited'] is! bool ||
         json['within24Hours'] is! bool ||
         (json['song'] != null && json['song'] is! String) ||
+        (json['song_id'] != null && json['song_id'] is! String) ||
+        (json['spotify_track_id'] != null &&
+            json['spotify_track_id'] is! String) ||
         (json['artist'] != null && json['artist'] is! String) ||
         (json['audio_url'] != null && json['audio_url'] is! String) ||
         (json['audio_name'] != null && json['audio_name'] is! String) ||
@@ -62,6 +67,7 @@ class FeedPost {
       time: json['time'] as String,
       content: json['content'] as String,
       song: json['song'] as String?,
+      songId: (json['song_id'] ?? json['spotify_track_id']) as String?,
       artist: json['artist'] as String?,
       audioUrl: json['audio_url'] as String?,
       audioName: json['audio_name'] as String?,
@@ -81,6 +87,7 @@ class FeedPost {
     'time': time,
     'content': content,
     'song': song,
+    'song_id': songId,
     'artist': artist,
     'audio_url': audioUrl,
     'audio_name': audioName,

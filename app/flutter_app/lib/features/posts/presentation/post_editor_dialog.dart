@@ -37,6 +37,7 @@ class PostEditorResult {
   final String? audioName;
   final String? songTitle;
   final String? artistName;
+  final String? songId;
   final Map<String, dynamic>? publishedPost;
   final int? xpAwarded;
 
@@ -50,6 +51,7 @@ class PostEditorResult {
     this.audioName,
     this.songTitle,
     this.artistName,
+    this.songId,
     this.publishedPost,
     this.xpAwarded,
   });
@@ -401,6 +403,7 @@ class _PostEditorDialogState extends State<PostEditorDialog> {
       audioName: _audioName,
       songTitle: _selectedSong?.title ?? _legacySongTitle,
       artistName: _selectedSong?.artist ?? _legacyArtistName,
+      songId: _selectedSong?.id,
       publishedPost: publishedPost,
       xpAwarded: xpAwarded,
     );

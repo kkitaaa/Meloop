@@ -111,6 +111,18 @@ El cliente y la pantalla están conectados al contrato MU-05 esperado, pero las
 preferencias solo se podrán cargar y modificar cuando el music-service y el
 Gateway implementen esos endpoints.
 
+### Ficha musical
+
+`MusicDetailScreen(type, spotifyId)` consulta
+`GET /v1/music/{tracks|artists|albums}/{id}` y muestra el contenido específico,
+incluidas las canciones de un álbum y los géneros de un artista. Desde una
+canción o artista se puede consultar/agregar la preferencia del usuario;
+`external_url` abre Spotify fuera de la aplicación con `url_launcher`.
+La Post Card abre la ficha cuando el post incluye `song_id` (o
+`spotify_track_id`); los resultados musicales y preferencias también navegan a
+ella. El Gateway aún no registra `/v1/music`, por lo que estos detalles requieren
+la implementación MU-03 y las rutas de preferencias del backend.
+
 ### Conexión local
 
 Inicia el gateway desde la raíz del repositorio:

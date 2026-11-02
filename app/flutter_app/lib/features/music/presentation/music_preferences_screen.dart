@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_app/features/music/presentation/music_search_screen.dart';
+import 'package:flutter_app/features/music/presentation/music_track_detail_screen.dart';
 import 'package:flutter_app/models/music_preferences.dart';
 import 'package:flutter_app/models/music_track.dart';
 import 'package:flutter_app/services/api_client.dart';
@@ -500,13 +501,31 @@ class _MusicPreferencesScreenState extends State<MusicPreferencesScreen> {
             _preferenceFallback(preference.type),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(
-              preference.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Color(0xFF294441),
-                fontWeight: FontWeight.w600,
+            child: InkWell(
+              onTap: preference.type == 'genre'
+                  ? null
+                  : () => Navigator.push(
+                      context,
+                      MaterialPageRoute<void>(
+                        builder: (_) => MusicDetailScreen(
+                          type: preference.type,
+                          spotifyId: preference.id,
+                          apiClient: _apiClient,
+                        ),
+                      ),
+                    ),
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Text(
+                  preference.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF294441),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ),
             ),
           ),

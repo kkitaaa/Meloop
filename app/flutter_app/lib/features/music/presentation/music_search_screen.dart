@@ -462,10 +462,22 @@ class _MusicSearchScreenState extends State<MusicSearchScreen> {
               Navigator.pop(context, item);
               return;
             }
+            if (item.type == 'genre') {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Los géneros no tienen una ficha individual.'),
+                ),
+              );
+              return;
+            }
             Navigator.push(
               context,
               MaterialPageRoute<void>(
-                builder: (_) => MusicTrackDetailScreen(track: item),
+                builder: (_) => MusicDetailScreen(
+                  type: item.type,
+                  spotifyId: item.id,
+                  apiClient: _apiClient,
+                ),
               ),
             );
           },

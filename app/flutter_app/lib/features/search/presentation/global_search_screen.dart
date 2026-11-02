@@ -349,6 +349,7 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen>
               child: PostCard(
                 postData: _posts[index].cardData,
                 tealAccent: const Color(0xFF1ABC9C),
+                apiClient: _apiClient,
                 compact: true,
               ),
             ),
@@ -365,7 +366,11 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen>
               onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute<void>(
-                  builder: (_) => MusicTrackDetailScreen(track: track),
+                  builder: (_) => MusicDetailScreen(
+                    type: track.type,
+                    spotifyId: track.id,
+                    apiClient: _apiClient,
+                  ),
                 ),
               ),
             );

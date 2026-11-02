@@ -156,6 +156,23 @@ void main() {
     expect(find.text('Preferencia quitada.'), findsOneWidget);
     apiClient.close();
   });
+
+  testWidgets('opens the detail screen from a saved song preference', (
+    tester,
+  ) async {
+    final adapter = _PreferencesAdapter(withSong: true);
+    final apiClient = ApiClient(dio: Dio()..httpClientAdapter = adapter);
+    await tester.pumpWidget(
+      MaterialApp(home: MusicPreferencesScreen(apiClient: apiClient)),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Canción favorita'));
+    await tester.pumpAndSettle();
+    expect(find.text('Ficha musical'), findsOneWidget);
+    expect(find.text('Artista demo'), findsOneWidget);
+    apiClient.close();
+  });
 }
 
 class _PreferencesAdapter implements HttpClientAdapter {
@@ -235,6 +252,19 @@ class _PreferencesAdapter implements HttpClientAdapter {
           ],
           'offset': 0,
           'total': 1,
+        }),
+        200,
+      );
+    }
+    if (options.path == '/v1/music/tracks/song-1') {
+      return _response(
+        _success({
+          'id': 'song-1',
+          'name': 'Canción favorita',
+          'artists': [
+            {'name': 'Artista demo'},
+          ],
+          'external_url': 'https://open.spotify.com/track/song-1',
         }),
         200,
       );

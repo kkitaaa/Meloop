@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 
 import '../../features/comments/presentation/comments_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
+import '../../features/music/presentation/music_track_detail_screen.dart';
 import '../features/posts/presentation/post_editor_dialog.dart';
+import '../services/api_client.dart';
 import 'post_audio_controls.dart';
 import '../services/post_audio_playback.dart';
 
@@ -14,6 +16,7 @@ class PostCard extends StatefulWidget {
   final Color textColor;
   final bool compact;
   final PostAudioPlaybackController? audioPlaybackController;
+  final ApiClient? apiClient;
   final VoidCallback?
   onDelete; // Callback para eliminar de la vista sin recargar
 
@@ -22,6 +25,7 @@ class PostCard extends StatefulWidget {
     required this.postData,
     required this.tealAccent,
     this.audioPlaybackController,
+    this.apiClient,
     this.compact = false,
     this.textColor = Colors.black87,
     this.onDelete,
@@ -132,6 +136,13 @@ class _PostCardState extends State<PostCard> {
         : null;
     final String? audioTitle = widget.postData["song"];
     final String? artistName = widget.postData["artist"];
+    final Object? songIdData =
+        widget.postData["song_id"] ??
+        widget.postData["spotify_track_id"] ??
+        widget.postData["track_id"];
+    final String? songSpotifyId = songIdData is String && songIdData.isNotEmpty
+        ? songIdData
+        : null;
     final Object? audioBytesData = widget.postData["audio_bytes"];
     final Uint8List? audioBytes = audioBytesData is Uint8List
         ? audioBytesData
@@ -360,6 +371,16 @@ class _PostCardState extends State<PostCard> {
           ),
           const SizedBox(height: 12),
 
+          if (songSpotifyId != null && audioTitle?.isNotEmpty == true) ...[
+            _buildMusicLink(
+              context,
+              songTitle: audioTitle!,
+              artistName: artistName,
+              spotifyId: songSpotifyId,
+            ),
+            const SizedBox(height: 12),
+          ],
+
           if (imageProvider != null) ...[
             ClipRRect(
               borderRadius: BorderRadius.circular(8),
@@ -437,6 +458,75 @@ class _PostCardState extends State<PostCard> {
           const SizedBox(height: 16),
           const Divider(color: Colors.black12),
         ],
+      ),
+    );
+  }
+
+  Widget _buildMusicLink(
+    BuildContext context, {
+    required String songTitle,
+    required String? artistName,
+    required String spotifyId,
+  }) {
+    return Material(
+      color: const Color(0xFFE8F7F3),
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute<void>(
+            builder: (_) => MusicDetailScreen(
+              type: 'track',
+              spotifyId: spotifyId,
+              apiClient: widget.apiClient,
+            ),
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
+            children: [
+              const Icon(
+                Icons.music_note_rounded,
+                color: Color(0xFF0D7771),
+                size: 20,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      songTitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF183D3B),
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    if (artistName?.isNotEmpty == true)
+                      Text(
+                        artistName!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xFF70827F),
+                          fontSize: 12,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              const Icon(
+                Icons.arrow_forward_ios_rounded,
+                color: Color(0xFF0D7771),
+                size: 15,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

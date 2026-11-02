@@ -178,6 +178,7 @@ class _FeedScreenState extends State<FeedScreen> {
         "images": serverImages ?? result.images,
         "song": post['song_title'] ?? result.songTitle,
         "artist": post['artist_name'] ?? result.artistName,
+        "song_id": post['song_id'] ?? post['spotify_track_id'] ?? result.songId,
         "audio_url": post['audio_url'],
         "audio_bytes": result.audioBytes,
         "audio_name": result.audioName,
@@ -730,6 +731,7 @@ class _FeedScreenState extends State<FeedScreen> {
                         return PostCard(
                           postData: _posts[index],
                           tealAccent: _tealAccent,
+                          apiClient: _apiClient,
                           onDelete: () {
                             setState(() {
                               _posts.removeAt(index);
