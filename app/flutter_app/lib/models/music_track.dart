@@ -45,13 +45,16 @@ class MusicSearchPage {
   const MusicSearchPage({required this.items});
 
   factory MusicSearchPage.fromJson(Object? json) {
-    if (json is! Map<String, dynamic> || json['items'] is! List) {
+    final items = json is List
+        ? json
+        : json is Map<String, dynamic>
+        ? json['items'] ?? json['tracks'] ?? json['results']
+        : null;
+    if (items is! List) {
       throw const FormatException(
         'La respuesta de búsqueda musical tiene datos inválidos.',
       );
     }
-    return MusicSearchPage(
-      items: (json['items'] as List).map(MusicTrack.fromJson).toList(),
-    );
+    return MusicSearchPage(items: items.map(MusicTrack.fromJson).toList());
   }
 }

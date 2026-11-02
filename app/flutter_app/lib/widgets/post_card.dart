@@ -12,6 +12,7 @@ class PostCard extends StatefulWidget {
   final Map<String, dynamic> postData;
   final Color tealAccent;
   final Color textColor;
+  final bool compact;
   final PostAudioPlaybackController? audioPlaybackController;
   final VoidCallback?
   onDelete; // Callback para eliminar de la vista sin recargar
@@ -21,6 +22,7 @@ class PostCard extends StatefulWidget {
     required this.postData,
     required this.tealAccent,
     this.audioPlaybackController,
+    this.compact = false,
     this.textColor = Colors.black87,
     this.onDelete,
   });
@@ -225,125 +227,131 @@ class _PostCardState extends State<PostCard> {
               ),
 
               // Menú de opciones dinámico según el ROL
-              PopupMenuButton<String>(
-                icon: const Icon(
-                  Icons.more_horiz,
-                  color: Colors.grey,
-                  size: 20,
-                ),
-                color: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                onSelected: (value) async {
-                  if (value == 'edit') {
-                    // Esperamos el resultado del modal de edición
-                    final PostEditorResult? result =
-                        await showDialog<PostEditorResult>(
-                          context: context,
-                          builder: (context) => PostEditorDialog(
-                            postData: widget.postData,
-                            tealAccent: widget.tealAccent,
-                          ),
-                        );
+              if (!widget.compact)
+                PopupMenuButton<String>(
+                  icon: const Icon(
+                    Icons.more_horiz,
+                    color: Colors.grey,
+                    size: 20,
+                  ),
+                  color: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  onSelected: (value) async {
+                    if (value == 'edit') {
+                      // Esperamos el resultado del modal de edición
+                      final PostEditorResult? result =
+                          await showDialog<PostEditorResult>(
+                            context: context,
+                            builder: (context) => PostEditorDialog(
+                              postData: widget.postData,
+                              tealAccent: widget.tealAccent,
+                            ),
+                          );
 
-                    // Si recibimos un texto nuevo, actualizamos la tarjeta
-                    if (result != null) {
-                      setState(() {
-                        widget.postData["content"] = result.content;
-                        widget.postData["image_bytes"] = result.imageBytes;
-                        widget.postData["image_name"] = result.imageName;
-                        widget.postData["image_url"] = result.imageUrl;
-                        widget.postData["audio_bytes"] = result.audioBytes;
-                        widget.postData["audio_name"] = result.audioName;
-                        widget.postData["audio_url"] = null;
-                        widget.postData["song"] = result.songTitle;
-                        widget.postData["artist"] = result.artistName;
-                        widget.postData["isEdited"] =
-                            true; // Mostramos la etiqueta (editado)
-                      });
+                      // Si recibimos un texto nuevo, actualizamos la tarjeta
+                      if (result != null) {
+                        setState(() {
+                          widget.postData["content"] = result.content;
+                          widget.postData["image_bytes"] = result.imageBytes;
+                          widget.postData["image_name"] = result.imageName;
+                          widget.postData["image_url"] = result.imageUrl;
+                          widget.postData["audio_bytes"] = result.audioBytes;
+                          widget.postData["audio_name"] = result.audioName;
+                          widget.postData["audio_url"] = null;
+                          widget.postData["song"] = result.songTitle;
+                          widget.postData["artist"] = result.artistName;
+                          widget.postData["isEdited"] =
+                              true; // Mostramos la etiqueta (editado)
+                        });
+                      }
+                    } else if (value == 'delete') {
+                      _showDeleteConfirmation(context);
+                    } else if (value == 'save') {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: const Text(
+                            "Publicación guardada en tu colección.",
+                          ),
+                          backgroundColor: widget.tealAccent,
+                        ),
+                      );
+                    } else if (value == 'report') {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            "Publicación reportada a los administradores.",
+                          ),
+                          backgroundColor: Colors.orange,
+                        ),
+                      );
                     }
-                  } else if (value == 'delete') {
-                    _showDeleteConfirmation(context);
-                  } else if (value == 'save') {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: const Text(
-                          "Publicación guardada en tu colección.",
-                        ),
-                        backgroundColor: widget.tealAccent,
-                      ),
-                    );
-                  } else if (value == 'report') {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text(
-                          "Publicación reportada a los administradores.",
-                        ),
-                        backgroundColor: Colors.orange,
-                      ),
-                    );
-                  }
-                },
-                itemBuilder: (context) {
-                  if (isAuthor) {
-                    return [
-                      if (within24Hours)
+                  },
+                  itemBuilder: (context) {
+                    if (isAuthor) {
+                      return [
+                        if (within24Hours)
+                          const PopupMenuItem(
+                            value: 'edit',
+                            child: Text(
+                              "Editar publicación",
+                              style: TextStyle(fontSize: 13),
+                            ),
+                          )
+                        else
+                          const PopupMenuItem(
+                            value: 'expired',
+                            enabled: false,
+                            child: Text(
+                              "Tiempo de edición agotado",
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Colors.grey,
+                              ),
+                            ),
+                          ),
                         const PopupMenuItem(
-                          value: 'edit',
+                          value: 'delete',
                           child: Text(
-                            "Editar publicación",
+                            "Eliminar",
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.redAccent,
+                            ),
+                          ),
+                        ),
+                      ];
+                    } else {
+                      return [
+                        const PopupMenuItem(
+                          value: 'save',
+                          child: Text(
+                            "Guardar publicación",
                             style: TextStyle(fontSize: 13),
                           ),
-                        )
-                      else
+                        ),
                         const PopupMenuItem(
-                          value: 'expired',
-                          enabled: false,
+                          value: 'report',
                           child: Text(
-                            "Tiempo de edición agotado",
-                            style: TextStyle(fontSize: 13, color: Colors.grey),
+                            "Reportar",
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.redAccent,
+                            ),
                           ),
                         ),
-                      const PopupMenuItem(
-                        value: 'delete',
-                        child: Text(
-                          "Eliminar",
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: Colors.redAccent,
-                          ),
-                        ),
-                      ),
-                    ];
-                  } else {
-                    return [
-                      const PopupMenuItem(
-                        value: 'save',
-                        child: Text(
-                          "Guardar publicación",
-                          style: TextStyle(fontSize: 13),
-                        ),
-                      ),
-                      const PopupMenuItem(
-                        value: 'report',
-                        child: Text(
-                          "Reportar",
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: Colors.redAccent,
-                          ),
-                        ),
-                      ),
-                    ];
-                  }
-                },
-              ),
+                      ];
+                    }
+                  },
+                ),
             ],
           ),
           const SizedBox(height: 12),
           Text(
             content,
+            maxLines: widget.compact ? 4 : null,
+            overflow: widget.compact ? TextOverflow.ellipsis : null,
             style: TextStyle(
               fontSize: 13,
               color: widget.textColor,
@@ -357,7 +365,7 @@ class _PostCardState extends State<PostCard> {
               borderRadius: BorderRadius.circular(8),
               child: Image(
                 image: imageProvider,
-                height: 200,
+                height: widget.compact ? 120 : 200,
                 width: double.infinity,
                 fit: BoxFit.cover,
                 errorBuilder: (context, error, stackTrace) => Container(

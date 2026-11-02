@@ -7,6 +7,7 @@ import 'package:flutter_app/config/api_config.dart';
 import 'package:flutter_app/models/api_response.dart';
 import 'package:flutter_app/models/demo_data.dart';
 import 'package:flutter_app/models/feed_data.dart';
+import 'package:flutter_app/models/global_search.dart';
 import 'package:flutter_app/models/music_track.dart';
 import 'package:flutter_app/models/mutual_friends.dart';
 import 'package:flutter_app/services/post_publisher.dart';
@@ -111,9 +112,108 @@ class ApiClient implements PostPublisher {
     );
   }
 
-  Future<ApiResponse<MusicSearchPage>> searchMusicTracks(String query) {
-    final encodedQuery = Uri(queryParameters: {'q': query}).query;
-    return get('/v1/music/search?$encodedQuery', MusicSearchPage.fromJson);
+  Future<ApiResponse<MusicSearchPage>> searchMusicTracks(
+    String query, {
+    CancelToken? cancelToken,
+  }) {
+    return _searchGet(
+      '/v1/music/search',
+      {'q': query},
+      MusicSearchPage.fromJson,
+      cancelToken: cancelToken,
+    );
+  }
+
+  Future<ApiResponse<SearchUserPage>> searchUsers(
+    String query, {
+    CancelToken? cancelToken,
+  }) {
+    return _searchGet(
+      '/v1/search/users',
+      {'q': query},
+      SearchUserPage.fromJson,
+      cancelToken: cancelToken,
+    );
+  }
+
+  Future<ApiResponse<SearchPostPage>> searchPosts(
+    String query, {
+    required String filter,
+    CancelToken? cancelToken,
+  }) {
+    return _searchGet(
+      '/v1/search/posts',
+      {'q': query, 'filter': filter},
+      SearchPostPage.fromJson,
+      cancelToken: cancelToken,
+    );
+  }
+
+  Future<ApiResponse<Map<String, dynamic>>> sendFriendRequest(
+    String targetUserId,
+  ) {
+    return post('/v1/social/friends/requests', {'id_usuario': targetUserId}, (
+      json,
+    ) {
+      if (json is! Map<String, dynamic>) {
+        throw const FormatException(
+          'La respuesta de solicitud de amistad es inválida.',
+        );
+      }
+      return json;
+    });
+  }
+
+  Future<ApiResponse<T>> _searchGet<T>(
+    String path,
+    Map<String, String> queryParameters,
+    T Function(Object? json) parseData, {
+    CancelToken? cancelToken,
+  }) async {
+    try {
+      final response = await _dio.get<Object?>(
+        path,
+        queryParameters: queryParameters,
+        cancelToken: cancelToken,
+      );
+      final body = response.data;
+      if (body is! Map<String, dynamic>) {
+        throw const FormatException('Respuesta inválida del API Gateway.');
+      }
+
+      final result = ApiResponse<T>.fromJson(body, parseData);
+      if (response.statusCode == null ||
+          response.statusCode! < 200 ||
+          response.statusCode! >= 300 ||
+          !result.success) {
+        throw ApiException(
+          statusCode: response.statusCode,
+          errorCode: result.error?.code,
+          message:
+              result.error?.message ??
+              'El servidor no pudo completar la búsqueda.',
+        );
+      }
+      return result;
+    } on DioException catch (error) {
+      if (CancelToken.isCancel(error)) rethrow;
+      final body = error.response?.data;
+      final decodedBody = body is Map<String, dynamic> ? body : null;
+      final errorBody = decodedBody?['error'];
+      final code = errorBody is Map<String, dynamic>
+          ? errorBody['code'] as String?
+          : null;
+      final message = errorBody is Map<String, dynamic>
+          ? errorBody['message'] as String?
+          : null;
+      throw ApiException(
+        statusCode: error.response?.statusCode,
+        errorCode: code,
+        message: message ?? 'No se pudo conectar con el servicio de búsqueda. Inténtalo de nuevo.',
+      );
+    } on FormatException catch (error) {
+      throw ApiException(message: error.message);
+    }
   }
 
   @override

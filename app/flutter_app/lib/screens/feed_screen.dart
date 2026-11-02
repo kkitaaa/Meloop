@@ -7,6 +7,7 @@ import 'friends_screen.dart';
 import 'api_test_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
 import '../features/posts/presentation/post_editor_dialog.dart';
+import '../features/search/presentation/global_search_screen.dart';
 import '../../widgets/post_card.dart';
 import '../../widgets/rumi_xp_notice.dart';
 import '../../widgets/states/loading_state.dart';
@@ -273,6 +274,21 @@ class _FeedScreenState extends State<FeedScreen> {
           ],
           Row(
             children: [
+              IconButton(
+                tooltip: 'Búsqueda global',
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                icon: const Icon(Icons.search, color: Colors.white, size: 20),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute<void>(
+                      builder: (_) => GlobalSearchScreen(apiClient: _apiClient),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(width: 16),
               IconButton(
                 tooltip: 'Probar conexión con API',
                 padding: EdgeInsets.zero,

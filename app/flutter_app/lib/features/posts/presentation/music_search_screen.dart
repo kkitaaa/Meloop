@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_app/features/music/presentation/music_track_detail_screen.dart';
+import 'package:flutter_app/features/music/presentation/music_track_tile.dart';
 import 'package:flutter_app/models/music_track.dart';
 import 'package:flutter_app/services/api_client.dart';
 
@@ -129,22 +131,23 @@ class _MusicSearchScreenState extends State<MusicSearchScreen> {
                 itemCount: _tracks.length,
                 itemBuilder: (context, index) {
                   final track = _tracks[index];
-                  return ListTile(
-                    leading: track.artworkUrl == null
-                        ? const CircleAvatar(
-                            child: Icon(Icons.music_note_outlined),
-                          )
-                        : CircleAvatar(
-                            backgroundImage: NetworkImage(track.artworkUrl!),
-                          ),
-                    title: Text(track.title),
-                    subtitle: Text(track.artist),
+                  return MusicTrackTile(
+                    track: track,
                     trailing: widget.pickForPost
                         ? const Icon(Icons.add_circle_outline)
                         : null,
-                    onTap: widget.pickForPost
-                        ? () => Navigator.pop(context, track)
-                        : null,
+                    onTap: () {
+                      if (widget.pickForPost) {
+                        Navigator.pop(context, track);
+                        return;
+                      }
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute<void>(
+                          builder: (_) => MusicTrackDetailScreen(track: track),
+                        ),
+                      );
+                    },
                   );
                 },
               ),

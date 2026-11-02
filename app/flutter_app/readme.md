@@ -63,6 +63,29 @@ está cableado al contrato esperado, pero publicar y buscar canciones requieren
 que P-01, MU-07 y VS-03 expongan esos endpoints. La aplicación mostrará el error
 de conexión del Gateway y conservará el borrador mientras no estén disponibles.
 
+### Búsqueda global
+
+El feed abre `lib/features/search/presentation/global_search_screen.dart` desde
+el botón de búsqueda. La pantalla espera 400 ms tras escribir al menos dos
+caracteres y consulta en paralelo:
+
+- `GET /v1/search/users?q=<texto>` con `data.items` (`id_usuario`, `username`
+  o `nombre`, `avatar_url`, `nivel` y `friend_status`).
+- `GET /v1/search/posts?q=<texto>&filter=<text|song|artist|genre>` con
+  `data.items` en formato de publicación compatible con Post Card.
+- `GET /v1/music/search?q=<texto>` con canciones `id`, `title`, `artist` y
+  `artwork_url`.
+
+Cada pestaña conserva sus propios resultados, error y reintento; una fuente
+fallida no bloquea las otras. Cambiar el texto cancela las solicitudes previas.
+Al vaciar el campo se muestran hasta cinco búsquedas recientes de la sesión.
+La acción Agregar usa `POST /v1/social/friends/requests` con `id_usuario`.
+
+**Dependencia del backend:** este Gateway aún no registra `/v1/search/users`,
+`/v1/search/posts` ni `/v1/music/search`; por ello las pestañas muestran su
+estado de error/reintento hasta que BU-01, BU-02 y MU-02 estén disponibles.
+Las solicitudes de amistad sí usan la ruta existente del social-service.
+
 ### Conexión local
 
 Inicia el gateway desde la raíz del repositorio:
