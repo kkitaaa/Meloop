@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 
 import '../core/navigation/artists_and_songs_screen.dart';
 import '../features/profile/presentation/profile_screen.dart';
+import '../features/search/presentation/global_search_route.dart';
 import '../widgets/desktop_app_header.dart';
 import '../widgets/mobile_app_header.dart';
 
@@ -115,7 +116,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
 
   Widget _buildTopBar(bool isDesktop, BuildContext context) {
     if (!isDesktop && defaultTargetPlatform == TargetPlatform.android) {
-      return const MobileAppHeader();
+      return MobileAppHeader(onSearchTap: () => openGlobalSearch(context));
     }
 
     return DesktopAppHeader(
@@ -128,6 +129,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
       ),
       onProfileTap: () =>
           navigateToDesktopSection(context, (_) => const ProfileScreen()),
+      onSearchTap: () => openGlobalSearch(context),
     );
   }
 

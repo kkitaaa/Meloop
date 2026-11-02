@@ -53,6 +53,17 @@ void main() {
       }
 
       expect(find.text('Editar perfil'), findsOneWidget);
+      await tester.tap(find.bySemanticsLabel('Inicio'));
+      await tester.pump();
+      await tester.tap(find.byTooltip('Búsqueda global'));
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Busca personas, publicaciones o música.'),
+        findsOneWidget,
+      );
+      await tester.tap(find.byTooltip('Volver'));
+      await tester.pumpAndSettle();
+      expect(find.bySemanticsLabel('Inicio'), findsOneWidget);
       debugDefaultTargetPlatformOverride = null;
     },
   );

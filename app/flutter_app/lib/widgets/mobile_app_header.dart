@@ -3,9 +3,10 @@ import 'package:flutter/material.dart';
 import 'notifications_menu.dart';
 
 class MobileAppHeader extends StatelessWidget {
-  const MobileAppHeader({super.key, this.onModerationTap});
+  const MobileAppHeader({super.key, this.onModerationTap, this.onSearchTap});
 
   final VoidCallback? onModerationTap;
+  final VoidCallback? onSearchTap;
 
   static const _accentColor = Color(0xFF1ABC9C);
 
@@ -32,13 +33,28 @@ class MobileAppHeader extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              if (onModerationTap == null)
+              if (onSearchTap == null && onModerationTap == null)
                 const SizedBox(width: 48)
               else
-                IconButton(
-                  tooltip: 'Cola de moderación',
-                  onPressed: onModerationTap,
-                  icon: const Icon(Icons.shield_outlined, color: Colors.white),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (onSearchTap != null)
+                      IconButton(
+                        tooltip: 'Búsqueda global',
+                        onPressed: onSearchTap,
+                        icon: const Icon(Icons.search, color: Colors.white),
+                      ),
+                    if (onModerationTap != null)
+                      IconButton(
+                        tooltip: 'Cola de moderación',
+                        onPressed: onModerationTap,
+                        icon: const Icon(
+                          Icons.shield_outlined,
+                          color: Colors.white,
+                        ),
+                      ),
+                  ],
                 ),
               const NotificationsMenu(),
             ],

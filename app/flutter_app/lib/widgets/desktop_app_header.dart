@@ -28,6 +28,11 @@ class DesktopAppHeader extends StatelessWidget {
     required this.onArtistsTap,
     this.onProfileTap,
     this.onModerationTap,
+    this.onSearchTap,
+    this.searchOpen = false,
+    this.searchController,
+    this.onSearchChanged,
+    this.onSearchBack,
   });
 
   final DesktopNavigationSection activeSection;
@@ -36,6 +41,11 @@ class DesktopAppHeader extends StatelessWidget {
   final VoidCallback onArtistsTap;
   final VoidCallback? onProfileTap;
   final VoidCallback? onModerationTap;
+  final VoidCallback? onSearchTap;
+  final bool searchOpen;
+  final TextEditingController? searchController;
+  final ValueChanged<String>? onSearchChanged;
+  final VoidCallback? onSearchBack;
 
   static const _accentColor = Color(0xFF1ABC9C);
   static const _headerGradient = LinearGradient(
@@ -159,46 +169,36 @@ class DesktopAppHeader extends StatelessWidget {
               Center(
                 child: Transform.scale(
                   scale: navScale,
-                  child: Container(
-                    width: navigationWidth,
-                    height: 54,
-                    padding: const EdgeInsets.all(navigationPadding),
-                    decoration: BoxDecoration(
-                      color: _pillColor,
-                      borderRadius: BorderRadius.circular(36),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.15),
-                          blurRadius: 8,
-                          offset: const Offset(0, 3),
-                        ),
-                      ],
-                    ),
-                    child: Row(
-                      children: [
-                        _navigationButton(
-                          'Inicio',
-                          DesktopNavigationSection.home,
-                          onHomeTap,
-                          buttonWidth,
-                        ),
-                        _navigationButton(
-                          'Amigos',
-                          DesktopNavigationSection.friends,
-                          onFriendsTap,
-                          buttonWidth,
-                        ),
-                        _navigationButton(
-                          'Artistas y canciones',
-                          DesktopNavigationSection.artists,
-                          onArtistsTap,
-                          buttonWidth,
-                        ),
-                      ],
-                    ),
+                  child: _DesktopHeaderCenter(
+                    activeSection: activeSection,
+                    buttonWidth: buttonWidth,
+                    navigationPadding: navigationPadding,
+                    navigationWidth: navigationWidth,
+                    onHomeTap: onHomeTap,
+                    onFriendsTap: onFriendsTap,
+                    onArtistsTap: onArtistsTap,
+                    searchOpen: searchOpen,
+                    searchController: searchController,
+                    onSearchChanged: onSearchChanged,
+                    onSearchBack: onSearchBack,
+                    navigationBuilder: _navigationButton,
+                    pillColor: _pillColor,
                   ),
                 ),
               ),
+              if (!searchOpen && onSearchTap != null)
+                Positioned(
+                  left:
+                      constraints.maxWidth / 2 +
+                      navigationWidth * navScale / 2 +
+                      12,
+                  child: _HeaderCircleButton(
+                    tooltip: 'Búsqueda global',
+                    onPressed: onSearchTap,
+                    icon: Icons.search,
+                    color: _pillColor,
+                  ),
+                ),
             ],
           );
         },
@@ -260,6 +260,214 @@ class DesktopAppHeader extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _DesktopHeaderCenter extends StatefulWidget {
+  const _DesktopHeaderCenter({
+    required this.activeSection,
+    required this.buttonWidth,
+    required this.navigationPadding,
+    required this.navigationWidth,
+    required this.onHomeTap,
+    required this.onFriendsTap,
+    required this.onArtistsTap,
+    required this.searchOpen,
+    required this.navigationBuilder,
+    required this.pillColor,
+    this.searchController,
+    this.onSearchChanged,
+    this.onSearchBack,
+  });
+
+  final DesktopNavigationSection activeSection;
+  final double buttonWidth;
+  final double navigationPadding;
+  final double navigationWidth;
+  final VoidCallback onHomeTap;
+  final VoidCallback onFriendsTap;
+  final VoidCallback onArtistsTap;
+  final bool searchOpen;
+  final TextEditingController? searchController;
+  final ValueChanged<String>? onSearchChanged;
+  final VoidCallback? onSearchBack;
+  final Widget Function(String, DesktopNavigationSection, VoidCallback, double)
+  navigationBuilder;
+  final Color pillColor;
+
+  @override
+  State<_DesktopHeaderCenter> createState() => _DesktopHeaderCenterState();
+}
+
+class _DesktopHeaderCenterState extends State<_DesktopHeaderCenter> {
+  late bool _searchOpen;
+
+  @override
+  void initState() {
+    super.initState();
+    _searchOpen = false;
+    if (widget.searchOpen) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _searchOpen = true);
+      });
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _DesktopHeaderCenter oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.searchOpen != widget.searchOpen && widget.searchOpen) {
+      setState(() => _searchOpen = true);
+    }
+  }
+
+  void _closeSearch() {
+    if (!_searchOpen) {
+      widget.onSearchBack?.call();
+      return;
+    }
+
+    setState(() => _searchOpen = false);
+    Future<void>.delayed(const Duration(milliseconds: 280), () {
+      if (mounted && !_searchOpen) widget.onSearchBack?.call();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final width = widget.navigationWidth + 64;
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 280),
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeInCubic,
+      transitionBuilder: (child, animation) => SizeTransition(
+        axis: Axis.horizontal,
+        alignment: Alignment.centerRight,
+        sizeFactor: animation,
+        child: FadeTransition(opacity: animation, child: child),
+      ),
+      child: SizedBox(
+        key: ValueKey(_searchOpen),
+        width: width,
+        height: 66,
+        child: _searchOpen ? _buildSearchBar() : _buildNavigation(),
+      ),
+    );
+  }
+
+  Widget _buildNavigation() {
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        SizedBox(
+          width: widget.navigationWidth,
+          child: Container(
+            height: 54,
+            padding: EdgeInsets.all(widget.navigationPadding),
+            decoration: BoxDecoration(
+              color: widget.pillColor,
+              borderRadius: BorderRadius.circular(36),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.15),
+                  blurRadius: 8,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                widget.navigationBuilder(
+                  'Inicio',
+                  DesktopNavigationSection.home,
+                  widget.onHomeTap,
+                  widget.buttonWidth,
+                ),
+                widget.navigationBuilder(
+                  'Amigos',
+                  DesktopNavigationSection.friends,
+                  widget.onFriendsTap,
+                  widget.buttonWidth,
+                ),
+                widget.navigationBuilder(
+                  'Artistas y canciones',
+                  DesktopNavigationSection.artists,
+                  widget.onArtistsTap,
+                  widget.buttonWidth,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSearchBar() {
+    return Row(
+      children: [
+        Expanded(
+          child: Container(
+            height: 44,
+            alignment: Alignment.center,
+            padding: const EdgeInsets.symmetric(horizontal: 18),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(24),
+            ),
+            child: TextField(
+              controller: widget.searchController,
+              onChanged: widget.onSearchChanged,
+              autofocus: true,
+              textInputAction: TextInputAction.search,
+              decoration: const InputDecoration(
+                hintText: 'Buscar en Meloop',
+                border: InputBorder.none,
+                isDense: true,
+              ),
+            ),
+          ),
+        ),
+        _HeaderCircleButton(
+          tooltip: 'Volver',
+          onPressed: _closeSearch,
+          icon: Icons.arrow_back,
+          color: widget.pillColor,
+        ),
+      ],
+    );
+  }
+}
+
+class _HeaderCircleButton extends StatelessWidget {
+  const _HeaderCircleButton({
+    required this.tooltip,
+    required this.onPressed,
+    required this.icon,
+    required this.color,
+  });
+
+  final String tooltip;
+  final VoidCallback? onPressed;
+  final IconData icon;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      tooltip: tooltip,
+      onPressed: onPressed,
+      constraints: const BoxConstraints.tightFor(width: 48, height: 48),
+      padding: EdgeInsets.zero,
+      style: IconButton.styleFrom(
+        backgroundColor: color,
+        foregroundColor: Colors.white,
+        shadowColor: Colors.black.withValues(alpha: 0.15),
+        elevation: 4,
+        shape: const CircleBorder(),
+      ),
+      icon: Icon(icon, size: 30),
     );
   }
 }

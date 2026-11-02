@@ -17,6 +17,7 @@ import '../widgets/notifications_menu.dart';
 import '../widgets/mobile_app_header.dart';
 import '../widgets/level_progress/level_progress.dart';
 import '../features/gamification/presentation/gamification_demo_controller.dart';
+import '../features/search/presentation/global_search_route.dart';
 
 class FeedScreen extends StatefulWidget {
   const FeedScreen({super.key, this.userRole = ModerationRole.user});
@@ -670,6 +671,7 @@ class _FeedScreenState extends State<FeedScreen> {
     if (!isDesktop) {
       if (defaultTargetPlatform == TargetPlatform.android) {
         return MobileAppHeader(
+          onSearchTap: () => openGlobalSearch(context),
           onModerationTap: widget.userRole == ModerationRole.user
               ? null
               : _openModerationQueue,
@@ -751,6 +753,7 @@ class _FeedScreenState extends State<FeedScreen> {
         context,
         MaterialPageRoute(builder: (_) => const ProfileScreen()),
       ),
+      onSearchTap: () => openGlobalSearch(context),
       onModerationTap: widget.userRole == ModerationRole.user
           ? null
           : _openModerationQueue,

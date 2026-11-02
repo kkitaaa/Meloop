@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 
 import '../../features/profile/presentation/profile_screen.dart';
+import '../../features/search/presentation/global_search_route.dart';
 import '../../screens/friends_screen.dart';
 import '../../widgets/desktop_app_header.dart';
 import '../../widgets/mobile_app_header.dart';
@@ -46,7 +47,7 @@ class _ArtistsAndSongsScreenState extends State<ArtistsAndSongsScreen> {
       body: Column(
         children: [
           if (isAndroidMobile)
-            const MobileAppHeader()
+            MobileAppHeader(onSearchTap: () => openGlobalSearch(context))
           else if (isDesktop)
             DesktopAppHeader(
               activeSection: DesktopNavigationSection.artists,
@@ -60,6 +61,7 @@ class _ArtistsAndSongsScreenState extends State<ArtistsAndSongsScreen> {
                 context,
                 (_) => const ProfileScreen(),
               ),
+              onSearchTap: () => openGlobalSearch(context),
             )
           else
             Container(

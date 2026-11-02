@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_app/features/notifications/presentation/notification_scope.dart';
 import 'package:flutter_app/features/notifications/state/notification_controller.dart';
 import 'package:flutter_app/features/notifications/state/notification_repository.dart';
+import 'package:flutter_app/features/search/presentation/global_search_route.dart';
 import 'package:flutter_app/widgets/desktop_app_header.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -31,6 +32,7 @@ void main() {
                 onHomeTap: () {},
                 onFriendsTap: () {},
                 onArtistsTap: () => selectedArtists = true,
+                onSearchTap: () {},
               ),
             ),
           ),
@@ -59,10 +61,21 @@ void main() {
             (widget.decoration! as BoxDecoration).color ==
                 const Color(0xFF16877F),
       );
-      expect(tester.getCenter(navigationPill).dx, 640);
       expect(
         tester.getSize(navigationPill).width,
         tester.getSize(selectedButton).width * 3 + 10,
+      );
+      final searchButton = find.byTooltip('Búsqueda global');
+      expect(tester.getSize(searchButton), const Size(48, 48));
+      expect(tester.getCenter(navigationPill).dx, 640);
+      expect(
+        tester.getTopLeft(searchButton).dx,
+        greaterThan(tester.getTopRight(navigationPill).dx),
+      );
+      expect(
+        tester.getTopLeft(searchButton).dx -
+            tester.getTopRight(navigationPill).dx,
+        12,
       );
 
       final header = tester.widget<Container>(
@@ -148,6 +161,38 @@ void main() {
       expect(find.byKey(const ValueKey('section-Artistas')), findsNothing);
     },
   );
+
+  testWidgets('desktop search action opens a search field and back returns', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final controller = NotificationController(
+      repository: MockNotificationRepository(),
+      playSound: false,
+    )..start();
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      NotificationScope(
+        controller: controller,
+        child: const MaterialApp(home: _NavigationTestPage('Inicio')),
+      ),
+    );
+
+    await tester.tap(find.byTooltip('Búsqueda global'));
+    await tester.pumpAndSettle();
+    expect(find.byType(TextField), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Volver'));
+    await tester.pump(const Duration(milliseconds: 140));
+    expect(find.text('Inicio'), findsWidgets);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('section-Inicio')), findsOneWidget);
+  });
 }
 
 class _NavigationTestPage extends StatelessWidget {
@@ -178,6 +223,7 @@ class _NavigationTestPage extends StatelessWidget {
               context,
               (_) => const _NavigationTestPage('Artistas'),
             ),
+            onSearchTap: () => openGlobalSearch(context),
           ),
           Text(section, key: ValueKey('section-$section')),
         ],

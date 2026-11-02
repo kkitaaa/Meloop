@@ -8,6 +8,7 @@ import '../../../core/navigation/artists_and_songs_screen.dart';
 import '../../comments/presentation/comments_screen.dart';
 import '../../moderation/data/moderation_models.dart';
 import '../../moderation/presentation/report_sheet.dart';
+import '../../search/presentation/global_search_route.dart';
 import '../../../widgets/post_card.dart';
 import '../../../widgets/level_progress/level_progress.dart';
 import '../../../widgets/mobile_app_header.dart';
@@ -321,7 +322,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Widget _buildTopBar(bool isDesktop, BuildContext context) {
     if (!isDesktop && defaultTargetPlatform == TargetPlatform.android) {
-      return const MobileAppHeader();
+      return MobileAppHeader(onSearchTap: () => openGlobalSearch(context));
     }
 
     return DesktopAppHeader(
@@ -333,6 +334,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         context,
         (_) => const ArtistsAndSongsScreen(),
       ),
+      onSearchTap: () => openGlobalSearch(context),
     );
   }
 
