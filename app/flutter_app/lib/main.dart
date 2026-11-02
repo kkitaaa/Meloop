@@ -29,7 +29,7 @@ class _MeloopAppState extends State<MeloopApp> {
     _notificationController = NotificationController(
       repository: widget.notificationRepository ?? MockNotificationRepository(),
       playSound: false,
-    )..start();
+    );
   }
 
   @override

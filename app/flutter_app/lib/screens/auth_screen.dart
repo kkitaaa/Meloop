@@ -3,8 +3,9 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/foundation.dart';
 
 import '../core/navigation/responsive_navigation_shell.dart';
+import '../features/admin/presentation/admin_dashboard_screen.dart';
 import '../features/moderation/data/moderation_models.dart';
-import '../features/moderation/presentation/moderation_queue_screen.dart';
+import '../features/notifications/presentation/notification_scope.dart';
 import 'feed_screen.dart';
 
 class AuthScreen extends StatefulWidget {
@@ -207,10 +208,12 @@ class _AuthScreenState extends State<AuthScreen> {
                   : widget.userRole;
               final Widget destination;
               if (isAdminDemoLogin) {
-                destination = ModerationQueueScreen(role: userRole);
+                destination = AdminDashboardScreen(role: userRole);
               } else if (isAndroidMobile) {
+                NotificationScope.maybeOf(context)?.start();
                 destination = ResponsiveNavigationShell(userRole: userRole);
               } else {
+                NotificationScope.maybeOf(context)?.start();
                 destination = FeedScreen(userRole: userRole);
               }
               Navigator.pushReplacement(

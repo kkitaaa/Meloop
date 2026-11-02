@@ -49,6 +49,32 @@ void main() {
 
     controller.dispose();
   });
+
+  testWidgets('stopped notification polling can restart after next login', (
+    tester,
+  ) async {
+    final repository = _RecordingRepository();
+    final controller = NotificationController(
+      repository: repository,
+      pollInterval: const Duration(seconds: 5),
+      playSound: false,
+    );
+
+    controller.start();
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+    expect(repository.fetchCount, 1);
+
+    controller.stop();
+    await tester.pump(const Duration(seconds: 10));
+    expect(repository.fetchCount, 1);
+
+    controller.start();
+    await tester.pump();
+    expect(repository.fetchCount, 2);
+
+    controller.dispose();
+  });
 }
 
 class _RecordingRepository implements NotificationRepository {

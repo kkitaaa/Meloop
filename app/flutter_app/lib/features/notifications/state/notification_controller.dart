@@ -65,6 +65,16 @@ class NotificationController extends ChangeNotifier
     _onLifecycleChanged(WidgetsBinding.instance.lifecycleState);
   }
 
+  void stop() {
+    if (!_started) return;
+    _started = false;
+    _appIsResumed = false;
+    WidgetsBinding.instance.removeObserver(this);
+    _pollTimer?.cancel();
+    _pollTimer = null;
+    dismissBanner();
+  }
+
   Future<void> setPreference(String key, bool enabled) async {
     if (_preferences[key] == enabled) return;
     try {
@@ -173,8 +183,7 @@ class NotificationController extends ChangeNotifier
   @override
   void dispose() {
     _disposed = true;
-    WidgetsBinding.instance.removeObserver(this);
-    _pollTimer?.cancel();
+    stop();
     _bannerTimer?.cancel();
     if (_ownsAudioPlayer) unawaited(_audioPlayer?.dispose());
     repository.dispose();
