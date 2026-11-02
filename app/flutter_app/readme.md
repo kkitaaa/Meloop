@@ -93,6 +93,24 @@ La acción Agregar usa `POST /v1/social/friends/requests` con `id_usuario`.
 estado de error/reintento hasta que BU-01, BU-02 y MU-02 estén disponibles.
 Las solicitudes de amistad sí usan la ruta existente del social-service.
 
+### Preferencias musicales
+
+Desde el menú de ajustes del feed se abre
+`features/music/presentation/music_preferences_screen.dart`. La pantalla carga
+preferencias con `GET /v1/music/preferences`, agrega con `POST` al mismo recurso
+(`type`, `item_id`, `name` y `artwork_url` opcional) y elimina con
+`DELETE /v1/music/preferences/{type}/{item_id}`. La respuesta de lectura y
+escritura usa el envelope habitual; `data.preferences` incluye `songs`,
+`artists` y `genres`, y `data.limits` indica el máximo para `track`, `artist`
+y `genre`. Las canciones y artistas se eligen con `MusicSearchScreen`; los
+géneros usan autocompletado desde `/v1/music/search?type=genre`.
+`ALREADY_EXISTS` y `PREFERENCE_LIMIT` muestran mensajes específicos.
+
+**Dependencia del backend:** el Gateway todavía no registra rutas `/v1/music`.
+El cliente y la pantalla están conectados al contrato MU-05 esperado, pero las
+preferencias solo se podrán cargar y modificar cuando el music-service y el
+Gateway implementen esos endpoints.
+
 ### Conexión local
 
 Inicia el gateway desde la raíz del repositorio:

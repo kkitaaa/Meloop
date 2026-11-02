@@ -8,6 +8,7 @@ import 'api_test_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
 import '../features/posts/presentation/post_editor_dialog.dart';
 import '../features/search/presentation/global_search_screen.dart';
+import '../features/music/presentation/music_preferences_screen.dart';
 import '../../widgets/post_card.dart';
 import '../../widgets/rumi_xp_notice.dart';
 import '../../widgets/states/loading_state.dart';
@@ -308,19 +309,39 @@ class _FeedScreenState extends State<FeedScreen> {
                 },
               ),
               const SizedBox(width: 16),
-              // Botón de Ajustes para ir a la pantalla de bloqueados
-              IconButton(
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
+              PopupMenuButton<_FeedSettingsAction>(
+                tooltip: 'Ajustes',
                 icon: const Icon(Icons.settings, color: Colors.white, size: 20),
-                onPressed: () {
+                onSelected: (action) {
+                  final screen = switch (action) {
+                    _FeedSettingsAction.musicPreferences =>
+                      MusicPreferencesScreen(apiClient: _apiClient),
+                    _FeedSettingsAction.blockedUsers =>
+                      const BlockedUsersScreen(),
+                  };
                   Navigator.push(
                     context,
-                    MaterialPageRoute(
-                      builder: (context) => const BlockedUsersScreen(),
-                    ),
+                    MaterialPageRoute(builder: (_) => screen),
                   );
                 },
+                itemBuilder: (context) => const [
+                  PopupMenuItem(
+                    value: _FeedSettingsAction.musicPreferences,
+                    child: ListTile(
+                      leading: Icon(Icons.queue_music_rounded),
+                      title: Text('Preferencias musicales'),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                  PopupMenuItem(
+                    value: _FeedSettingsAction.blockedUsers,
+                    child: ListTile(
+                      leading: Icon(Icons.block_rounded),
+                      title: Text('Usuarios bloqueados'),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(width: 16),
               const Icon(Icons.notifications, color: Colors.white, size: 20),
@@ -786,3 +807,5 @@ class _FeedScreenState extends State<FeedScreen> {
     );
   }
 }
+
+enum _FeedSettingsAction { musicPreferences, blockedUsers }

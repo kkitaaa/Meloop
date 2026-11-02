@@ -93,6 +93,36 @@ void main() {
     await tester.pumpAndSettle();
     expect(requestCount, 2);
   });
+
+  testWidgets('settings menu exposes music preferences and blocked users', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final client = ApiClient(
+      httpClient: MockClient(
+        (_) async => http.Response(
+          jsonEncode({
+            'success': true,
+            'data': {'items': [], 'page': 1, 'pageSize': 5, 'hasMore': false},
+            'error': null,
+          }),
+          200,
+          headers: {'content-type': 'application/json; charset=utf-8'},
+        ),
+      ),
+    );
+    await tester.pumpWidget(MaterialApp(home: FeedScreen(apiClient: client)));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Ajustes'));
+    await tester.pumpAndSettle();
+    expect(find.text('Preferencias musicales'), findsOneWidget);
+    expect(find.text('Usuarios bloqueados'), findsOneWidget);
+  });
 }
 
 Map<String, Object?> _post(int id, String category) => {

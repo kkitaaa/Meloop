@@ -9,6 +9,7 @@ import 'package:flutter_app/models/demo_data.dart';
 import 'package:flutter_app/models/feed_data.dart';
 import 'package:flutter_app/models/global_search.dart';
 import 'package:flutter_app/models/music_track.dart';
+import 'package:flutter_app/models/music_preferences.dart';
 import 'package:flutter_app/models/mutual_friends.dart';
 import 'package:flutter_app/services/post_publisher.dart';
 import 'package:http/http.dart' as http;
@@ -124,6 +125,111 @@ class ApiClient implements PostPublisher {
       (json) => MusicSearchPage.fromJson(json, type: type),
       cancelToken: cancelToken,
     );
+  }
+
+  Future<ApiResponse<MusicPreferencesData>> getMusicPreferences() {
+    return _musicPreferenceRequest(
+      'GET',
+      '/v1/music/preferences',
+      MusicPreferencesData.fromJson,
+    );
+  }
+
+  Future<ApiResponse<MusicPreferencesData>> addMusicPreference({
+    required String type,
+    required String itemId,
+    required String name,
+    String? artworkUrl,
+  }) {
+    return _musicPreferenceRequest(
+      'POST',
+      '/v1/music/preferences',
+      MusicPreferencesData.fromJson,
+      data: {
+        'type': type,
+        'item_id': itemId,
+        'name': name,
+        'artwork_url': ?artworkUrl,
+      },
+      allowEmptyData: true,
+    );
+  }
+
+  Future<ApiResponse<MusicPreferencesData>> removeMusicPreference({
+    required String type,
+    required String itemId,
+  }) {
+    return _musicPreferenceRequest(
+      'DELETE',
+      '/v1/music/preferences/${Uri.encodeComponent(type)}/${Uri.encodeComponent(itemId)}',
+      MusicPreferencesData.fromJson,
+      allowEmptyData: true,
+    );
+  }
+
+  Future<ApiResponse<T>> _musicPreferenceRequest<T>(
+    String method,
+    String path,
+    T Function(Object? json) parseData, {
+    Object? data,
+    bool allowEmptyData = false,
+  }) async {
+    try {
+      final response = switch (method) {
+        'GET' => await _dio.get<Object?>(path),
+        'POST' => await _dio.post<Object?>(path, data: data),
+        'DELETE' => await _dio.delete<Object?>(path, data: data),
+        _ => throw ArgumentError.value(method, 'method'),
+      };
+      final body = response.data;
+      if (response.statusCode == 204 || body == null) {
+        return ApiResponse<T>(success: true);
+      }
+      if (body is! Map<String, dynamic>) {
+        throw const FormatException('Respuesta inválida del API Gateway.');
+      }
+      final payload = body['data'];
+      if (allowEmptyData &&
+          body['success'] == true &&
+          payload is Map<String, dynamic> &&
+          !payload.containsKey('preferences') &&
+          !payload.containsKey('songs') &&
+          !payload.containsKey('tracks') &&
+          !payload.containsKey('artists') &&
+          !payload.containsKey('genres')) {
+        return ApiResponse<T>(success: true);
+      }
+      final result = ApiResponse<T>.fromJson(body, parseData);
+      if (!result.success) {
+        throw ApiException(
+          statusCode: response.statusCode,
+          errorCode: result.error?.code,
+          message:
+              result.error?.message ?? 'No se pudo actualizar la preferencia.',
+        );
+      }
+      return result;
+    } on ApiException {
+      rethrow;
+    } on DioException catch (error) {
+      final body = error.response?.data;
+      final errorBody = body is Map<String, dynamic> ? body['error'] : null;
+      final code = errorBody is Map<String, dynamic>
+          ? errorBody['code'] as String?
+          : null;
+      final message = errorBody is Map<String, dynamic>
+          ? errorBody['message'] as String?
+          : null;
+      throw ApiException(
+        statusCode: error.response?.statusCode,
+        errorCode: code,
+        message:
+            message ??
+            'No se pudo conectar con el servicio de preferencias musicales.',
+      );
+    } on FormatException catch (error) {
+      throw ApiException(message: error.message);
+    }
   }
 
   Future<ApiResponse<SearchUserPage>> searchUsers(

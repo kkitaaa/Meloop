@@ -12,8 +12,14 @@ enum MusicSearchMode { pickForPost, pickForPreference, browse }
 class MusicSearchScreen extends StatefulWidget {
   final MusicSearchMode mode;
   final ApiClient? apiClient;
+  final String initialType;
 
-  const MusicSearchScreen({super.key, required this.mode, this.apiClient});
+  const MusicSearchScreen({
+    super.key,
+    required this.mode,
+    this.apiClient,
+    this.initialType = 'track',
+  });
 
   @override
   State<MusicSearchScreen> createState() => _MusicSearchScreenState();
@@ -28,6 +34,15 @@ class _MusicSearchScreenState extends State<MusicSearchScreen> {
     _MusicSearchType('Álbumes', 'album', Icons.album_rounded),
     _MusicSearchType('Géneros', 'genre', Icons.category_outlined),
   ];
+
+  List<_MusicSearchType> get _availableTypes =>
+      widget.mode == MusicSearchMode.pickForPreference
+      ? _types
+            .where(
+              (type) => type.apiType == 'track' || type.apiType == 'artist',
+            )
+            .toList()
+      : _types;
 
   final TextEditingController _queryController = TextEditingController();
   late final ApiClient _apiClient;
@@ -44,13 +59,17 @@ class _MusicSearchScreenState extends State<MusicSearchScreen> {
   bool _hasSearched = false;
   String? _errorMessage;
 
-  _MusicSearchType get _selectedType => _types[_selectedTypeIndex];
+  _MusicSearchType get _selectedType => _availableTypes[_selectedTypeIndex];
 
   @override
   void initState() {
     super.initState();
     _apiClient = widget.apiClient ?? ApiClient();
     _ownsApiClient = widget.apiClient == null;
+    final initialIndex = _availableTypes.indexWhere(
+      (type) => type.apiType == widget.initialType,
+    );
+    _selectedTypeIndex = initialIndex < 0 ? 0 : initialIndex;
   }
 
   @override
@@ -323,7 +342,7 @@ class _MusicSearchScreenState extends State<MusicSearchScreen> {
         unselectedLabelColor: const Color(0xFF667C78),
         labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
         tabs: [
-          for (final type in _types)
+          for (final type in _availableTypes)
             Tab(icon: Icon(type.icon, size: 18), text: type.label),
         ],
       ),
@@ -333,7 +352,8 @@ class _MusicSearchScreenState extends State<MusicSearchScreen> {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: _types.length,
+      length: _availableTypes.length,
+      initialIndex: _selectedTypeIndex,
       child: Scaffold(
         backgroundColor: const Color(0xFF0D5C5E),
         appBar: _buildBrandedAppBar(),
