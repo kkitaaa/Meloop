@@ -123,6 +123,27 @@ La Post Card abre la ficha cuando el post incluye `song_id` (o
 ella. El Gateway aún no registra `/v1/music`, por lo que estos detalles requieren
 la implementación MU-03 y las rutas de preferencias del backend.
 
+### Guardados y compartir publicaciones
+
+La Post Card permite guardar y compartir. Desde el perfil propio se abre
+**Guardados**, que consulta `GET /v1/me/saved?offset=<n>&limit=20`; la respuesta
+espera `data.items` y `data.hasMore`. Guardar usa
+`POST /v1/me/saved` con `post_id`; quitar usa
+`DELETE /v1/me/saved/{post_id}`. Los elementos eliminados se devuelven con
+`post: null` o `is_available: false` para mostrar el aviso y permitir quitarlos.
+
+La hoja Compartir carga amigos mediante
+`GET /v1/social/friends?limit=100` y envía la selección con
+`POST /v1/posts/{id}/share` y `recipient_id`. Los errores `NOT_FRIENDS` y
+`BLOCKED` se presentan como "No puedes compartir con esta persona".
+
+**Dependencia del backend:** el Gateway enruta `/v1/social`, pero este
+repositorio todavía no implementa la lectura de amigos para compartir, las rutas
+de guardados ni `POST /v1/posts/{id}/share`. La UI y el cliente usan el contrato
+descrito arriba; guardar, cargar y compartir requieren completar esos endpoints
+en los servicios correspondientes y enrutar `/v1/me/saved` y `/v1/posts` en el
+Gateway.
+
 ### Conexión local
 
 Inicia el gateway desde la raíz del repositorio:

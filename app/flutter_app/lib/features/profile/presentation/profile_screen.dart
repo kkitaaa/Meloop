@@ -5,12 +5,15 @@ import 'dart:async';
 import '../../social/presentation/mutual_friends_row.dart';
 import '../../../screens/friends_screen.dart';
 import '../../../widgets/post_card.dart';
+import '../../../services/api_client.dart';
+import '../../posts/presentation/saved_posts_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   final String? username;
   final String? userId;
+  final ApiClient? apiClient;
 
-  const ProfileScreen({super.key, this.username, this.userId});
+  const ProfileScreen({super.key, this.username, this.userId, this.apiClient});
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
@@ -667,23 +670,58 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Widget _buildActionButtons() {
     if (_profileStatus == 'own') {
-      return OutlinedButton(
-        style: OutlinedButton.styleFrom(
-          side: BorderSide(color: _tealAccent),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          OutlinedButton(
+            style: OutlinedButton.styleFrom(
+              side: BorderSide(color: _tealAccent),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              backgroundColor: Colors.white,
+            ),
+            onPressed: _showEditProfileDialog,
+            child: Text(
+              "Editar perfil",
+              style: TextStyle(
+                color: _tealAccent,
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ),
-          backgroundColor: Colors.white,
-        ),
-        onPressed: _showEditProfileDialog,
-        child: Text(
-          "Editar perfil",
-          style: TextStyle(
-            color: _tealAccent,
-            fontSize: 12,
-            fontWeight: FontWeight.bold,
+          const SizedBox(width: 8),
+          OutlinedButton.icon(
+            style: OutlinedButton.styleFrom(
+              side: BorderSide(color: _tealAccent),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              backgroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+            ),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute<void>(
+                builder: (_) => SavedPostsScreen(apiClient: widget.apiClient),
+              ),
+            ),
+            icon: Icon(
+              Icons.bookmark_border_rounded,
+              color: _tealAccent,
+              size: 15,
+            ),
+            label: Text(
+              'Guardados',
+              style: TextStyle(
+                color: _tealAccent,
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ),
-        ),
+        ],
       );
     } else {
       return Row(
@@ -1065,6 +1103,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         postData: _posts[index],
                         tealAccent: _tealAccent,
                         textColor: _paperTextColor,
+                        apiClient: widget.apiClient,
                         onDelete: () {
                           setState(() {
                             _posts.removeAt(index);

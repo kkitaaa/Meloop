@@ -12,6 +12,7 @@ import 'package:flutter_app/models/music_track.dart';
 import 'package:flutter_app/models/music_preferences.dart';
 import 'package:flutter_app/models/music_detail.dart';
 import 'package:flutter_app/models/mutual_friends.dart';
+import 'package:flutter_app/models/saved_posts.dart';
 import 'package:flutter_app/services/post_publisher.dart';
 import 'package:http/http.dart' as http;
 
@@ -112,6 +113,141 @@ class ApiClient implements PostPublisher {
       '/v1/social/users/${Uri.encodeComponent(targetUserId)}/mutual-friends?$query',
       MutualFriendsPage.fromJson,
     );
+  }
+
+  Future<ApiResponse<SavedPostPage>> getSavedPosts({
+    required int offset,
+    int limit = 20,
+  }) {
+    return _requestEnvelope(
+      'GET',
+      '/v1/me/saved',
+      SavedPostPage.fromJson,
+      queryParameters: {'offset': '$offset', 'limit': '$limit'},
+    );
+  }
+
+  Future<void> savePost(String postId) async {
+    await _requestEnvelope<Map<String, dynamic>>(
+      'POST',
+      '/v1/me/saved',
+      _emptyObject,
+      data: {'post_id': postId},
+      allowEmptyData: true,
+    );
+  }
+
+  Future<void> removeSavedPost(String postId) async {
+    await _requestEnvelope<Map<String, dynamic>>(
+      'DELETE',
+      '/v1/me/saved/${Uri.encodeComponent(postId)}',
+      _emptyObject,
+      allowEmptyData: true,
+    );
+  }
+
+  Future<ApiResponse<SearchUserPage>> getFriends({int limit = 100}) {
+    return _requestEnvelope(
+      'GET',
+      '/v1/social/friends',
+      SearchUserPage.fromJson,
+      queryParameters: {'limit': '$limit'},
+    );
+  }
+
+  Future<void> sharePost({
+    required String postId,
+    required String recipientId,
+  }) async {
+    try {
+      await _requestEnvelope<Map<String, dynamic>>(
+        'POST',
+        '/v1/posts/${Uri.encodeComponent(postId)}/share',
+        _emptyObject,
+        data: {'recipient_id': recipientId},
+        allowEmptyData: true,
+      );
+    } on ApiException catch (error) {
+      if (error.errorCode == 'NOT_FRIENDS' || error.errorCode == 'BLOCKED') {
+        throw const ApiException(
+          statusCode: 403,
+          errorCode: 'SHARE_RESTRICTED',
+          message: 'No puedes compartir con esta persona.',
+        );
+      }
+      rethrow;
+    }
+  }
+
+  Map<String, dynamic> _emptyObject(Object? json) {
+    if (json == null) return {};
+    if (json is Map<String, dynamic>) return json;
+    throw const FormatException(
+      'El API Gateway devolvió una respuesta inválida.',
+    );
+  }
+
+  Future<ApiResponse<T>> _requestEnvelope<T>(
+    String method,
+    String path,
+    T Function(Object? json) parseData, {
+    Object? data,
+    Map<String, String>? queryParameters,
+    bool allowEmptyData = false,
+  }) async {
+    try {
+      final response = await _dio.request<Object?>(
+        path,
+        data: data,
+        queryParameters: queryParameters,
+        options: Options(method: method),
+      );
+      if (response.statusCode == 204 || response.data == null) {
+        if (allowEmptyData) return ApiResponse<T>(success: true);
+        throw const FormatException(
+          'El API Gateway devolvió una respuesta vacía.',
+        );
+      }
+      if (response.data is! Map<String, dynamic>) {
+        throw const FormatException(
+          'El API Gateway devolvió una respuesta inválida.',
+        );
+      }
+      final result = ApiResponse<T>.fromJson(
+        response.data as Map<String, dynamic>,
+        parseData,
+      );
+      if (!result.success) {
+        throw ApiException(
+          statusCode: response.statusCode,
+          errorCode: result.error?.code,
+          message: result.error?.message ?? 'El servidor rechazó la solicitud.',
+        );
+      }
+      if (allowEmptyData && result.data == null) {
+        return ApiResponse<T>(success: true);
+      }
+      return result;
+    } on ApiException {
+      rethrow;
+    } on DioException catch (error) {
+      final body = error.response?.data;
+      final errorBody = body is Map<String, dynamic> ? body['error'] : null;
+      final code = errorBody is Map<String, dynamic>
+          ? errorBody['code'] as String?
+          : null;
+      final message = errorBody is Map<String, dynamic>
+          ? errorBody['message'] as String?
+          : null;
+      throw ApiException(
+        statusCode: error.response?.statusCode,
+        errorCode: code,
+        message:
+            message ?? 'No se pudo completar la solicitud. Inténtalo de nuevo.',
+      );
+    } on FormatException catch (error) {
+      throw ApiException(message: error.message);
+    }
   }
 
   Future<ApiResponse<MusicSearchPage>> searchMusicTracks(

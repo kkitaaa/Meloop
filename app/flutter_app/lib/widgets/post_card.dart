@@ -6,6 +6,7 @@ import '../../features/comments/presentation/comments_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
 import '../../features/music/presentation/music_track_detail_screen.dart';
 import '../features/posts/presentation/post_editor_dialog.dart';
+import '../features/posts/presentation/share_post_sheet.dart';
 import '../services/api_client.dart';
 import 'post_audio_controls.dart';
 import '../services/post_audio_playback.dart';
@@ -17,6 +18,7 @@ class PostCard extends StatefulWidget {
   final bool compact;
   final PostAudioPlaybackController? audioPlaybackController;
   final ApiClient? apiClient;
+  final VoidCallback? onUnsave;
   final VoidCallback?
   onDelete; // Callback para eliminar de la vista sin recargar
 
@@ -26,6 +28,7 @@ class PostCard extends StatefulWidget {
     required this.tealAccent,
     this.audioPlaybackController,
     this.apiClient,
+    this.onUnsave,
     this.compact = false,
     this.textColor = Colors.black87,
     this.onDelete,
@@ -36,6 +39,77 @@ class PostCard extends StatefulWidget {
 }
 
 class _PostCardState extends State<PostCard> {
+  late final ApiClient _apiClient;
+  late final bool _ownsApiClient;
+  bool _isSaved = false;
+  bool _isSaving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _ownsApiClient = widget.apiClient == null;
+    _apiClient = widget.apiClient ?? ApiClient();
+    _isSaved = widget.postData['is_saved'] == true;
+  }
+
+  @override
+  void dispose() {
+    if (_ownsApiClient) _apiClient.close();
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant PostCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.postData != widget.postData) {
+      _isSaved = widget.postData['is_saved'] == true;
+    }
+  }
+
+  Future<void> _toggleSaved(String postId) async {
+    setState(() => _isSaving = true);
+    try {
+      if (_isSaved) {
+        await _apiClient.removeSavedPost(postId);
+      } else {
+        await _apiClient.savePost(postId);
+      }
+      if (!mounted) return;
+      final saved = !_isSaved;
+      setState(() {
+        _isSaved = saved;
+        _isSaving = false;
+        widget.postData['is_saved'] = saved;
+      });
+      if (!saved) widget.onUnsave?.call();
+      _showActionMessage(
+        saved ? 'Publicación guardada.' : 'Publicación quitada de Guardados.',
+      );
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      setState(() => _isSaving = false);
+      _showActionMessage(error.message);
+    }
+  }
+
+  Future<void> _sharePost(String postId) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => SharePostSheet(apiClient: _apiClient, postId: postId),
+    );
+  }
+
+  void _showActionMessage(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: widget.tealAccent),
+    );
+  }
+
   void _showDeleteConfirmation(BuildContext context) {
     showDialog(
       context: context,
@@ -167,10 +241,13 @@ class _PostCardState extends State<PostCard> {
 
     // --- Variables de lógica de negocio (Roles y Permisos) ---
     final Object? postIdData = widget.postData["id"];
-    final int postId = postIdData is int
-        ? postIdData
-        : identityHashCode(widget.postData);
-    final bool isAuthor = widget.postData["isAuthor"] ?? (postId % 2 == 0);
+    final String postId = postIdData is int || postIdData is String
+        ? '$postIdData'
+        : '${identityHashCode(widget.postData)}';
+    final int postNumericId =
+        int.tryParse(postId) ?? identityHashCode(widget.postData);
+    final bool isAuthor =
+        widget.postData["isAuthor"] ?? (postNumericId % 2 == 0);
     final bool isEdited = widget.postData["isEdited"] ?? false;
     final bool within24Hours = widget.postData["within24Hours"] ?? true;
 
@@ -189,8 +266,11 @@ class _PostCardState extends State<PostCard> {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (context) =>
-                              ProfileScreen(username: user, userId: authorId),
+                          builder: (context) => ProfileScreen(
+                            username: user,
+                            userId: authorId,
+                            apiClient: _apiClient,
+                          ),
                         ),
                       );
                     },
@@ -212,6 +292,7 @@ class _PostCardState extends State<PostCard> {
                               builder: (context) => ProfileScreen(
                                 username: user,
                                 userId: authorId,
+                                apiClient: _apiClient,
                               ),
                             ),
                           );
@@ -280,14 +361,7 @@ class _PostCardState extends State<PostCard> {
                     } else if (value == 'delete') {
                       _showDeleteConfirmation(context);
                     } else if (value == 'save') {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: const Text(
-                            "Publicación guardada en tu colección.",
-                          ),
-                          backgroundColor: widget.tealAccent,
-                        ),
-                      );
+                      _toggleSaved(postId);
                     } else if (value == 'report') {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
@@ -335,11 +409,13 @@ class _PostCardState extends State<PostCard> {
                       ];
                     } else {
                       return [
-                        const PopupMenuItem(
+                        PopupMenuItem(
                           value: 'save',
                           child: Text(
-                            "Guardar publicación",
-                            style: TextStyle(fontSize: 13),
+                            _isSaved
+                                ? 'Quitar de Guardados'
+                                : 'Guardar publicación',
+                            style: const TextStyle(fontSize: 13),
                           ),
                         ),
                         const PopupMenuItem(
@@ -403,7 +479,7 @@ class _PostCardState extends State<PostCard> {
 
           if (audioDisplayTitle != null && audioDisplayTitle.isNotEmpty) ...[
             PostAudioControls(
-              postId: postId.toString(),
+              postId: postId,
               title: audioDisplayTitle,
               artist: artistName ?? "Artista desconocido",
               audioBytes: audioBytes,
@@ -453,6 +529,40 @@ class _PostCardState extends State<PostCard> {
                   ],
                 ),
               ),
+              const Spacer(),
+              IconButton(
+                tooltip: _isSaved
+                    ? 'Quitar de Guardados'
+                    : 'Guardar publicación',
+                visualDensity: VisualDensity.compact,
+                onPressed: _isSaving ? null : () => _toggleSaved(postId),
+                icon: _isSaving
+                    ? SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: widget.tealAccent,
+                        ),
+                      )
+                    : Icon(
+                        _isSaved
+                            ? Icons.bookmark_rounded
+                            : Icons.bookmark_border_rounded,
+                        color: _isSaved ? widget.tealAccent : Colors.grey,
+                        size: 20,
+                      ),
+              ),
+              IconButton(
+                tooltip: 'Compartir publicación',
+                visualDensity: VisualDensity.compact,
+                onPressed: () => _sharePost(postId),
+                icon: const Icon(
+                  Icons.share_outlined,
+                  color: Colors.grey,
+                  size: 19,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 16),
@@ -479,7 +589,7 @@ class _PostCardState extends State<PostCard> {
             builder: (_) => MusicDetailScreen(
               type: 'track',
               spotifyId: spotifyId,
-              apiClient: widget.apiClient,
+              apiClient: _apiClient,
             ),
           ),
         ),

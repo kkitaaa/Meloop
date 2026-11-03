@@ -440,7 +440,11 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen>
         onTap: () => Navigator.push(
           context,
           MaterialPageRoute<void>(
-            builder: (_) => ProfileScreen(username: user.name, userId: user.id),
+            builder: (_) => ProfileScreen(
+              username: user.name,
+              userId: user.id,
+              apiClient: _apiClient,
+            ),
           ),
         ),
         trailing: SizedBox(
