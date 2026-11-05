@@ -54,9 +54,11 @@ func (s *CommentService) GetComments(postID string) ([]models.Comment, error) {
 		return nil, err
 	}
 
-	return buildCommentTree(comments), nil
+	// Devolvemos los comentarios directamente ya que no usamos el árbol
+	return comments, nil
 }
 
 func (s *CommentService) GetCommentByID(commentID string) (models.Comment, error) {
-	return s.repo.GetByID(commentID)
+	// Cambiamos s.repo por s.repository
+	return s.repository.GetByID(commentID)
 }
