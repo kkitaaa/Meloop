@@ -3,7 +3,6 @@ package controllers
 import (
 	"errors"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -53,19 +52,19 @@ func (ctrl *FriendshipController) Sent(c *gin.Context) {
 }
 
 func (ctrl *FriendshipController) Accept(c *gin.Context) {
-	ctrl.process(c, func(id int, userID string) (*models.FriendRequest, error) {
+	ctrl.process(c, func(id string, userID string) (*models.FriendRequest, error) {
 		return ctrl.service.AcceptRequest(c, id, userID)
 	})
 }
 
 func (ctrl *FriendshipController) Reject(c *gin.Context) {
-	ctrl.process(c, func(id int, userID string) (*models.FriendRequest, error) {
+	ctrl.process(c, func(id string, userID string) (*models.FriendRequest, error) {
 		return ctrl.service.RejectRequest(c, id, userID)
 	})
 }
 
 func (ctrl *FriendshipController) Cancel(c *gin.Context) {
-	ctrl.process(c, func(id int, userID string) (*models.FriendRequest, error) {
+	ctrl.process(c, func(id string, userID string) (*models.FriendRequest, error) {
 		return ctrl.service.CancelRequest(c, id, userID)
 	})
 }
@@ -224,9 +223,9 @@ func (ctrl *FriendshipController) ExcludeBlocked(c *gin.Context) {
 	})
 }
 
-func (ctrl *FriendshipController) process(c *gin.Context, action func(int, string) (*models.FriendRequest, error)) {
-	requestID, err := strconv.Atoi(c.Param("id"))
-	if err != nil || requestID <= 0 {
+func (ctrl *FriendshipController) process(c *gin.Context, action func(string, string) (*models.FriendRequest, error)) {
+	requestID := strings.TrimSpace(c.Param("id"))
+	if requestID == "" {
 		httpresponse.BadRequestGin(c, "El identificador de la solicitud no es válido")
 		return
 	}

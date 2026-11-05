@@ -25,13 +25,13 @@ func (m *mockFriendshipRepoForSuggestions) ListReceived(ctx context.Context, use
 func (m *mockFriendshipRepoForSuggestions) ListSent(ctx context.Context, userID string) ([]models.FriendRequest, error) {
 	return nil, nil
 }
-func (m *mockFriendshipRepoForSuggestions) Accept(ctx context.Context, requestID int, receiverID string) (*models.FriendRequest, error) {
+func (m *mockFriendshipRepoForSuggestions) Accept(ctx context.Context, requestID string, receiverID string) (*models.FriendRequest, error) {
 	return nil, nil
 }
-func (m *mockFriendshipRepoForSuggestions) Reject(ctx context.Context, requestID int, receiverID string) (*models.FriendRequest, error) {
+func (m *mockFriendshipRepoForSuggestions) Reject(ctx context.Context, requestID string, receiverID string) (*models.FriendRequest, error) {
 	return nil, nil
 }
-func (m *mockFriendshipRepoForSuggestions) Cancel(ctx context.Context, requestID int, senderID string) (*models.FriendRequest, error) {
+func (m *mockFriendshipRepoForSuggestions) Cancel(ctx context.Context, requestID string, senderID string) (*models.FriendRequest, error) {
 	return nil, nil
 }
 func (m *mockFriendshipRepoForSuggestions) ListFriends(ctx context.Context, userID string) ([]models.Friend, error) {
