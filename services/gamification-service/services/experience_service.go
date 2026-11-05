@@ -4,17 +4,18 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/meloop/gamification-service/repositories"
 )
 
 type ExperienceService struct {
-	repo   *repositories.PostgresExperienceRepository
+	repo   repositories.GamificationRepository
 	engine *GamificationEngine
 }
 
 // NewExperienceService inicializa la capa de servicio
-func NewExperienceService(repo *repositories.PostgresExperienceRepository, engine *GamificationEngine) *ExperienceService {
+func NewExperienceService(repo repositories.GamificationRepository, engine *GamificationEngine) *ExperienceService {
 	return &ExperienceService{
 		repo:   repo,
 		engine: engine,
@@ -25,14 +26,20 @@ func NewExperienceService(repo *repositories.PostgresExperienceRepository, engin
 func (s *ExperienceService) AddUserExperience(ctx context.Context, userID string, xpToAdd int) (int, error) {
 	// Definimos el número máximo de reintentos permitidos si hay fallos temporales en Supabase
 	maxRetries := 3
+	var lastErr error
 
-	// Ejecutamos la suma atómica con la protección de reintentos
-	newXP, err := s.repo.AddExperienceWithRetry(ctx, userID, xpToAdd, maxRetries)
-	if err != nil {
-		return 0, err
+	// Ejecutamos la suma con la protección de reintentos adaptada a la nueva interfaz
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		result, err := s.repo.AddExperience(ctx, userID, xpToAdd)
+		if err == nil {
+			return result.CurrentXP, nil
+		}
+		lastErr = err
+		log.Printf("Intento %d fallido al agregar experiencia: %v", attempt, err)
+		time.Sleep(time.Millisecond * 500) // Breve pausa antes de reintentar
 	}
 
-	return newXP, nil
+	return 0, fmt.Errorf("después de %d intentos: %w", maxRetries, lastErr)
 }
 
 // HandleInteractionEvent es el punto de entrada cuando llega un evento (ej. desde RabbitMQ)
