@@ -53,6 +53,7 @@ Para instrucciones detalladas, ve a [docs/setup/](docs/setup/).
 ### Desarrollo
 - [📝 Style Guide](docs/style-guide.md) - Estándares de código
 - [🧪 Testing](docs/testing.md) - Estrategia de testing
+- [▶️ Ejecutar y probar microservicios](docs/guia-microservicios.md) - Dependencias, base de datos, infraestructura, API y pruebas por servicio
 - [📋 Logging](docs/logging.md) - Sistema de logging
 - [🔐 Redis](docs/redis.md) - Configuración de caché
 
@@ -68,13 +69,16 @@ Una vez que el setup esté completo, valida que todo funciona:
 ```bash
 # Health checks
 curl http://localhost:8080/health     # API Gateway
-curl http://localhost:3000/health     # Backend NestJS
-curl http://localhost:8000/health     # ML Service
+curl http://localhost:8081/health     # Test Service
+curl http://localhost:8001/health     # ML Service (Compose)
+curl http://localhost:8001/ready      # ML readiness
+# NestJS: http://localhost:3000/      # Responde "Hello World!"
 
 # Dashboards
-# RabbitMQ: http://localhost:15672 (guest/guest)
-# MinIO: http://localhost:9001 (minioadmin/minioadmin)
+# RabbitMQ: http://localhost:15672 (credenciales de .env)
+# MinIO: http://localhost:9001 (credenciales de .env)
 # Flutter: http://localhost:5000 (web)
+# Supabase Studio: http://localhost:15423
 ```
 
 ---

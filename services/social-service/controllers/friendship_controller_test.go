@@ -17,18 +17,20 @@ import (
 )
 
 type mockFriendshipService struct {
-	sendRequestFunc          func(ctx context.Context, senderID, receiverID string) (*models.FriendRequest, error)
-	receivedRequestsFunc     func(ctx context.Context, userID string) ([]models.FriendRequest, error)
-	sentRequestsFunc         func(ctx context.Context, userID string) ([]models.FriendRequest, error)
-	acceptRequestFunc        func(ctx context.Context, requestID int, receiverID string) (*models.FriendRequest, error)
-	rejectRequestFunc        func(ctx context.Context, requestID int, receiverID string) (*models.FriendRequest, error)
-	cancelRequestFunc        func(ctx context.Context, requestID int, senderID string) (*models.FriendRequest, error)
-	listFriendsFunc          func(ctx context.Context, userID string) ([]models.Friend, error)
-	removeFriendFunc         func(ctx context.Context, userID, targetID string) error
-	getFriendProfileFunc     func(ctx context.Context, userID, friendID string) (*models.FriendProfile, error)
-	blockUserFunc            func(ctx context.Context, blockerID, blockedID string) error
-	validateInteractionFunc  func(ctx context.Context, user1ID, user2ID string) error
-	getFriendSuggestionsFunc func(ctx context.Context, userID string) ([]models.FriendSuggestion, error)
+	sendRequestFunc            func(ctx context.Context, senderID, receiverID string) (*models.FriendRequest, error)
+	receivedRequestsFunc       func(ctx context.Context, userID string) ([]models.FriendRequest, error)
+	sentRequestsFunc           func(ctx context.Context, userID string) ([]models.FriendRequest, error)
+	acceptRequestFunc          func(ctx context.Context, requestID string, receiverID string) (*models.FriendRequest, error)
+	rejectRequestFunc          func(ctx context.Context, requestID string, receiverID string) (*models.FriendRequest, error)
+	cancelRequestFunc          func(ctx context.Context, requestID string, senderID string) (*models.FriendRequest, error)
+	listFriendsFunc            func(ctx context.Context, userID string) ([]models.Friend, error)
+	removeFriendFunc           func(ctx context.Context, userID, targetID string) error
+	getFriendProfileFunc       func(ctx context.Context, userID, friendID string) (*models.FriendProfile, error)
+	blockUserFunc              func(ctx context.Context, blockerID, blockedID string) error
+	validateInteractionFunc    func(ctx context.Context, user1ID, user2ID string) error
+	getFriendSuggestionsFunc   func(ctx context.Context, userID string) ([]models.FriendSuggestion, error)
+	excludeBlockedFunc         func(ctx context.Context, userID string, candidateIDs []string) ([]string, error)
+	getBlockedCandidateIDsFunc func(ctx context.Context, userID string, candidateIDs []string) ([]string, error)
 }
 
 func (m *mockFriendshipService) GetFriendSuggestions(ctx context.Context, userID string) ([]models.FriendSuggestion, error) {
@@ -46,11 +48,25 @@ func (m *mockFriendshipService) GetFriendSuggestions(ctx context.Context, userID
 	}, nil
 }
 
+func (m *mockFriendshipService) ExcludeBlocked(ctx context.Context, userID string, candidateIDs []string) ([]string, error) {
+	if m.excludeBlockedFunc != nil {
+		return m.excludeBlockedFunc(ctx, userID, candidateIDs)
+	}
+	return candidateIDs, nil
+}
+
+func (m *mockFriendshipService) GetBlockedCandidateIDs(ctx context.Context, userID string, candidateIDs []string) ([]string, error) {
+	if m.getBlockedCandidateIDsFunc != nil {
+		return m.getBlockedCandidateIDsFunc(ctx, userID, candidateIDs)
+	}
+	return []string{}, nil
+}
+
 func (m *mockFriendshipService) SendRequest(ctx context.Context, senderID, receiverID string) (*models.FriendRequest, error) {
 	if m.sendRequestFunc != nil {
 		return m.sendRequestFunc(ctx, senderID, receiverID)
 	}
-	return &models.FriendRequest{ID: 1, SenderID: senderID, ReceiverID: receiverID, Status: models.FriendshipPending}, nil
+	return &models.FriendRequest{ID: "1", SenderID: senderID, ReceiverID: receiverID, Status: models.FriendshipPending}, nil
 }
 
 func (m *mockFriendshipService) ReceivedRequests(ctx context.Context, userID string) ([]models.FriendRequest, error) {
@@ -67,25 +83,25 @@ func (m *mockFriendshipService) SentRequests(ctx context.Context, userID string)
 	return []models.FriendRequest{}, nil
 }
 
-func (m *mockFriendshipService) AcceptRequest(ctx context.Context, requestID int, receiverID string) (*models.FriendRequest, error) {
+func (m *mockFriendshipService) AcceptRequest(ctx context.Context, requestID string, receiverID string) (*models.FriendRequest, error) {
 	if m.acceptRequestFunc != nil {
 		return m.acceptRequestFunc(ctx, requestID, receiverID)
 	}
-	return &models.FriendRequest{ID: requestID, SenderID: "sender", ReceiverID: receiverID, Status: models.FriendshipAccepted}, nil
+	return &models.FriendRequest{ID: models.FriendshipID(requestID), SenderID: "sender", ReceiverID: receiverID, Status: models.FriendshipAccepted}, nil
 }
 
-func (m *mockFriendshipService) RejectRequest(ctx context.Context, requestID int, receiverID string) (*models.FriendRequest, error) {
+func (m *mockFriendshipService) RejectRequest(ctx context.Context, requestID string, receiverID string) (*models.FriendRequest, error) {
 	if m.rejectRequestFunc != nil {
 		return m.rejectRequestFunc(ctx, requestID, receiverID)
 	}
-	return &models.FriendRequest{ID: requestID, SenderID: "sender", ReceiverID: receiverID, Status: models.FriendshipRejected}, nil
+	return &models.FriendRequest{ID: models.FriendshipID(requestID), SenderID: "sender", ReceiverID: receiverID, Status: models.FriendshipRejected}, nil
 }
 
-func (m *mockFriendshipService) CancelRequest(ctx context.Context, requestID int, senderID string) (*models.FriendRequest, error) {
+func (m *mockFriendshipService) CancelRequest(ctx context.Context, requestID string, senderID string) (*models.FriendRequest, error) {
 	if m.cancelRequestFunc != nil {
 		return m.cancelRequestFunc(ctx, requestID, senderID)
 	}
-	return &models.FriendRequest{ID: requestID, SenderID: senderID, ReceiverID: "receiver", Status: models.FriendshipCanceled}, nil
+	return &models.FriendRequest{ID: models.FriendshipID(requestID), SenderID: senderID, ReceiverID: "receiver", Status: models.FriendshipCanceled}, nil
 }
 
 func (m *mockFriendshipService) ListFriends(ctx context.Context, userID string) ([]models.Friend, error) {
@@ -93,7 +109,7 @@ func (m *mockFriendshipService) ListFriends(ctx context.Context, userID string) 
 		return m.listFriendsFunc(ctx, userID)
 	}
 	return []models.Friend{
-		{IDAmistad: 1, IDUsuario: "friend-1", Username: "user1", Estado: models.FriendshipAccepted},
+		{IDAmistad: "1", IDUsuario: "friend-1", Username: "user1", Estado: models.FriendshipAccepted},
 	}, nil
 }
 
@@ -115,7 +131,7 @@ func (m *mockFriendshipService) GetFriendProfile(ctx context.Context, userID, fr
 		Correo:      "friend@example.com",
 		IDNivel:     &nivel,
 		Experiencia: 1500,
-		IDAmistad:   1,
+		IDAmistad:   "1",
 	}, nil
 }
 
@@ -139,6 +155,64 @@ func setupTestRouter(svc services.FriendshipService) *gin.Engine {
 	ctrl := controllers.NewFriendshipController(svc)
 	routes.SetupRoutes(router, ctrl)
 	return router
+}
+
+func TestFriendshipRequestActions_HTTP_AcceptTextAndLegacyIDs(t *testing.T) {
+	const uuid = "d2719cd6-3a4f-4f4a-9c2a-0b52f4ca8b21"
+	ids := []struct {
+		name string
+		path string
+		want string
+	}{
+		{name: "UUID", path: uuid, want: uuid},
+		{name: "legacy numeric ID", path: "123", want: "123"},
+	}
+	actions := []struct {
+		name   string
+		path   string
+		handle func(*mockFriendshipService, func(context.Context, string, string) (*models.FriendRequest, error))
+	}{
+		{name: "accept", path: "accept", handle: func(m *mockFriendshipService, fn func(context.Context, string, string) (*models.FriendRequest, error)) {
+			m.acceptRequestFunc = fn
+		}},
+		{name: "reject", path: "reject", handle: func(m *mockFriendshipService, fn func(context.Context, string, string) (*models.FriendRequest, error)) {
+			m.rejectRequestFunc = fn
+		}},
+		{name: "cancel", path: "cancel", handle: func(m *mockFriendshipService, fn func(context.Context, string, string) (*models.FriendRequest, error)) {
+			m.cancelRequestFunc = fn
+		}},
+	}
+
+	for _, id := range ids {
+		for _, action := range actions {
+			t.Run(id.name+"/"+action.name, func(t *testing.T) {
+				var receivedID string
+				mockSvc := &mockFriendshipService{}
+				handleAction := func(_ context.Context, requestID, userID string) (*models.FriendRequest, error) {
+					receivedID = requestID
+					return &models.FriendRequest{
+						ID:         models.FriendshipID(requestID),
+						SenderID:   "sender",
+						ReceiverID: userID,
+						Status:     models.FriendshipAccepted,
+					}, nil
+				}
+				action.handle(mockSvc, handleAction)
+				router := setupTestRouter(mockSvc)
+				recorder := httptest.NewRecorder()
+				request := httptest.NewRequest(http.MethodPost, "/friends/requests/"+id.path+"/"+action.path, nil)
+				request.Header.Set("X-User-ID", "receiver")
+				router.ServeHTTP(recorder, request)
+
+				if recorder.Code != http.StatusOK {
+					t.Fatalf("status = %d, want %d: %s", recorder.Code, http.StatusOK, recorder.Body.String())
+				}
+				if receivedID != id.want {
+					t.Fatalf("service received ID %q, want %q", receivedID, id.want)
+				}
+			})
+		}
+	}
 }
 
 // =========================================================================
@@ -271,8 +345,8 @@ func TestGetFriendProfile_HTTP_Bloqueado(t *testing.T) {
 
 	router.ServeHTTP(w, req)
 
-	if w.Code != http.StatusForbidden {
-		t.Fatalf("se esperaba 403 Forbidden, se obtuvo %d", w.Code)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("se esperaba 404 Not Found, se obtuvo %d", w.Code)
 	}
 }
 
@@ -637,4 +711,117 @@ func TestSuggestionController_Directo(t *testing.T) {
 	if wNoAuth.Code != http.StatusUnauthorized {
 		t.Fatalf("se esperaba 401 Unauthorized en SuggestionController directo, se obtuvo %d", wNoAuth.Code)
 	}
+}
+
+func TestFriendshipController_ExcludeBlocked(t *testing.T) {
+	mockSvc := &mockFriendshipService{
+		excludeBlockedFunc: func(ctx context.Context, userID string, candidateIDs []string) ([]string, error) {
+			// Simular que 'cand-blocked' se excluye
+			res := make([]string, 0)
+			for _, c := range candidateIDs {
+				if c != "cand-blocked" {
+					res = append(res, c)
+				}
+			}
+			return res, nil
+		},
+		getBlockedCandidateIDsFunc: func(ctx context.Context, userID string, candidateIDs []string) ([]string, error) {
+			res := make([]string, 0)
+			for _, c := range candidateIDs {
+				if c == "cand-blocked" {
+					res = append(res, c)
+				}
+			}
+			return res, nil
+		},
+	}
+
+	router := setupTestRouter(mockSvc)
+
+	// 1. Llamada a endpoint interno /internal/blocks/exclude
+	t.Run("Internal endpoint success", func(t *testing.T) {
+		body := `{"user_id": "usr-ref", "candidate_ids": ["cand-1", "cand-blocked", "cand-2"]}`
+		req, _ := http.NewRequest(http.MethodPost, "/internal/blocks/exclude", bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("se esperaba 200 OK, se obtuvo %d, body: %s", w.Code, w.Body.String())
+		}
+
+		var resp struct {
+			Success bool `json:"success"`
+			Data    struct {
+				CandidateIDs []string `json:"candidate_ids"`
+				ExcludedIDs  []string `json:"excluded_ids"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("error parseando respuesta: %v", err)
+		}
+
+		if !resp.Success {
+			t.Errorf("se esperaba success = true")
+		}
+		if len(resp.Data.CandidateIDs) != 2 || resp.Data.CandidateIDs[0] != "cand-1" || resp.Data.CandidateIDs[1] != "cand-2" {
+			t.Errorf("candidatos conservados inesperados: %v", resp.Data.CandidateIDs)
+		}
+		if len(resp.Data.ExcludedIDs) != 1 || resp.Data.ExcludedIDs[0] != "cand-blocked" {
+			t.Errorf("candidatos excluidos inesperados: %v", resp.Data.ExcludedIDs)
+		}
+	})
+
+	// 2. Llamada a endpoint protegido /friends/blocks/exclude con header de usuario
+	t.Run("Protected endpoint with auth header", func(t *testing.T) {
+		body := `{"candidate_ids": ["cand-1", "cand-blocked"]}`
+		req, _ := http.NewRequest(http.MethodPost, "/friends/blocks/exclude", bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-User-ID", "usr-ref")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("se esperaba 200 OK, se obtuvo %d", w.Code)
+		}
+	})
+
+	// 3. Error cuando falta el ID de usuario de referencia
+	t.Run("Missing user_id returns 400", func(t *testing.T) {
+		body := `{"candidate_ids": ["cand-1"]}`
+		req, _ := http.NewRequest(http.MethodPost, "/internal/blocks/exclude", bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("se esperaba 400 Bad Request, se obtuvo %d", w.Code)
+		}
+	})
+
+	// 4. Lista de candidatos vacía
+	t.Run("Empty candidate list returns 200 with empty slices", func(t *testing.T) {
+		body := `{"user_id": "usr-ref", "candidate_ids": []}`
+		req, _ := http.NewRequest(http.MethodPost, "/internal/blocks/exclude", bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("se esperaba 200 OK, se obtuvo %d", w.Code)
+		}
+	})
+
+	// 5. Payload inválido
+	t.Run("Invalid JSON payload returns 400", func(t *testing.T) {
+		body := `invalid-json`
+		req, _ := http.NewRequest(http.MethodPost, "/internal/blocks/exclude", bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("se esperaba 400 Bad Request, se obtuvo %d", w.Code)
+		}
+	})
 }

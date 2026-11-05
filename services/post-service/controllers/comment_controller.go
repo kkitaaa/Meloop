@@ -13,39 +13,60 @@ type CommentController struct {
 }
 
 func NewCommentController(service *services.CommentService) *CommentController {
-	return &CommentController{service: service}
+	return &CommentController{
+		service: service,
+	}
 }
 
-func (cc *CommentController) CreateComment(c *gin.Context) {
-	var comment models.Comment
-	if err := c.ShouldBindJSON(&comment); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+// CreateComment crea un comentario principal en una publicación.
+func (controller *CommentController) CreateComment(c *gin.Context) {
+	postID := c.Param("id") // <-- Cambio aquí
+
+	var request models.CreateCommentRequest
+
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid request body",
+		})
 		return
 	}
 	// Cambiado a "id" para coincidir con las rutas
 	comment.PostID = c.Param("id")
 	created, err := cc.service.CreateComment(comment)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
 		return
 	}
-	c.JSON(http.StatusCreated, created)
+
+	c.JSON(http.StatusCreated, comment)
 }
 
 func (cc *CommentController) GetComments(c *gin.Context) {
 	// Cambiado a "id" para coincidir con las rutas
 	comments, err := cc.service.GetCommentsByPostID(c.Param("id"))
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
 		return
 	}
+
 	c.JSON(http.StatusOK, comments)
 }
 
-func (cc *CommentController) CreateReply(c *gin.Context) {
-	var comment models.Comment
-	if err := c.ShouldBindJSON(&comment); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+// CreateReply crea una respuesta asociada a un comentario.
+func (controller *CommentController) CreateReply(c *gin.Context) {
+	postID := c.Param("id") // <-- Cambio aquí
+	commentID := c.Param("commentId")
+
+	var request models.CreateCommentRequest
+
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid request body",
+		})
 		return
 	}
 	// Cambiado a "id" para coincidir con las rutas
@@ -54,7 +75,9 @@ func (cc *CommentController) CreateReply(c *gin.Context) {
 	comment.ParentCommentID = &parentID
 	created, err := cc.service.CreateComment(comment)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
 		return
 	}
 	c.JSON(http.StatusCreated, created)

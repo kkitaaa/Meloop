@@ -29,7 +29,6 @@ func (s *ExperienceService) AddUserExperience(ctx context.Context, userID string
 	// Ejecutamos la suma atómica con la protección de reintentos
 	newXP, err := s.repo.AddExperienceWithRetry(ctx, userID, xpToAdd, maxRetries)
 	if err != nil {
-		// Aquí podrías emitir métricas o logs en un futuro
 		return 0, err
 	}
 
@@ -41,8 +40,6 @@ func (s *ExperienceService) HandleInteractionEvent(ctx context.Context, event In
 	// 1. Pasar el evento por los filtros anti-abuso y calcular XP
 	xp, err := s.engine.ProcessEvent(event)
 	if err != nil {
-		// Logueamos el rechazo (rate limit o auto-interacción) pero no devolvemos error fatal
-		// para que el sistema de mensajería no reintente procesar un evento abusivo.
 		log.Printf("Evento descartado por filtros anti-abuso: %v", err)
 		return nil
 	}

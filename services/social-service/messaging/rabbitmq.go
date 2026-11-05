@@ -16,10 +16,10 @@ const (
 )
 
 type FriendAcceptedEvent struct {
-	Event      string `json:"event"`
-	RequestID  int    `json:"request_id"`
-	SenderID   string `json:"sender_id"`
-	ReceiverID string `json:"receiver_id"`
+	Event      string              `json:"event"`
+	RequestID  models.FriendshipID `json:"request_id"`
+	SenderID   string              `json:"sender_id"`
+	ReceiverID string              `json:"receiver_id"`
 }
 
 type Publisher struct {

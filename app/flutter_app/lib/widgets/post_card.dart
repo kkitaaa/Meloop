@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../features/comments/presentation/comments_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
 import '../features/profile/presentation/post_editor_dialog.dart';
+import 'post_interactions/post_interaction_bar.dart';
 
 class PostCard extends StatelessWidget {
   final Map<String, dynamic> postData;
@@ -252,44 +253,20 @@ class PostCard extends StatelessWidget {
             const SizedBox(height: 12),
           ],
 
-          Row(
-            children: [
-              Row(
-                children: [
-                  const Icon(Icons.favorite, color: Colors.red, size: 16),
-                  const SizedBox(width: 4),
-                  Text(
-                    "$likes Likes",
-                    style: const TextStyle(color: Colors.grey, fontSize: 11),
-                  ),
-                ],
-              ),
-              const SizedBox(width: 16),
-              InkWell(
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => CommentsScreen(postData: postData),
-                    ),
-                  );
-                },
-                child: Row(
-                  children: [
-                    const Icon(
-                      Icons.mode_comment_outlined,
-                      color: Colors.grey,
-                      size: 16,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      "$comments Comentarios",
-                      style: const TextStyle(color: Colors.grey, fontSize: 11),
-                    ),
-                  ],
+          PostInteractionBar(
+            postId: postData['id'] ?? postData['postId'] ?? '',
+            likes: likes,
+            comments: comments,
+            initiallyLiked: postData['isLiked'] ?? false,
+            initiallySaved: postData['isSaved'] ?? false,
+            onCommentsTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => CommentsScreen(postData: postData),
                 ),
-              ),
-            ],
+              );
+            },
           ),
           const SizedBox(height: 16),
           const Divider(color: Colors.black12),

@@ -5,7 +5,7 @@ import (
 	"gorm.io/gorm"
 )
 
-type PostRepository interface {
+type GormPostRepository interface {
 	Create(post models.Post) (models.Post, error)
 }
 
