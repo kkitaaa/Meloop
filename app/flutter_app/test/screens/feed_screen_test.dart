@@ -118,6 +118,7 @@ void main() {
     await tester.pumpWidget(MaterialApp(home: FeedScreen(apiClient: client)));
     await tester.pumpAndSettle();
 
+    expect(find.byTooltip('Probar conexión con API'), findsNothing);
     await tester.tap(find.byTooltip('Ajustes'));
     await tester.pumpAndSettle();
     expect(find.text('Preferencias musicales'), findsOneWidget);

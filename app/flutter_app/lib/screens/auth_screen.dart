@@ -1,10 +1,27 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 
+import '../features/admin/presentation/admin_dashboard_screen.dart';
+import '../features/moderation/data/moderation_models.dart';
 import 'feed_screen.dart';
 
-class AuthScreen extends StatelessWidget {
+class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
+
+  @override
+  State<AuthScreen> createState() => _AuthScreenState();
+}
+
+class _AuthScreenState extends State<AuthScreen> {
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -125,6 +142,7 @@ class AuthScreen extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         TextField(
+          controller: _emailController,
           keyboardType: TextInputType
               .emailAddress, // Muestra el teclado con el "@" en celular
           decoration: InputDecoration(
@@ -147,6 +165,7 @@ class AuthScreen extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         TextField(
+          controller: _passwordController,
           obscureText: true,
           decoration: InputDecoration(
             filled: true,
@@ -174,9 +193,16 @@ class AuthScreen extends StatelessWidget {
               ),
             ),
             onPressed: () {
+              final isAdminDemoLogin =
+                  _emailController.text.trim().toLowerCase() ==
+                      'admin@admin.com' &&
+                  _passwordController.text == 'ADMIN';
+              final Widget destination = isAdminDemoLogin
+                  ? const AdminDashboardScreen(role: ModerationRole.admin)
+                  : const FeedScreen();
               Navigator.pushReplacement(
                 context,
-                MaterialPageRoute(builder: (context) => const FeedScreen()),
+                MaterialPageRoute(builder: (context) => destination),
               );
             },
             child: const Text(

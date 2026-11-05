@@ -4,11 +4,11 @@ import 'package:flutter/material.dart';
 
 import '../services/api_client.dart';
 import 'friends_screen.dart';
-import 'api_test_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
 import '../features/posts/presentation/post_editor_dialog.dart';
 import '../features/search/presentation/global_search_screen.dart';
 import '../features/music/presentation/music_preferences_screen.dart';
+import '../widgets/app_background.dart';
 import '../../widgets/post_card.dart';
 import '../../widgets/rumi_xp_notice.dart';
 import '../../widgets/states/loading_state.dart';
@@ -28,7 +28,6 @@ class FeedScreen extends StatefulWidget {
 class _FeedScreenState extends State<FeedScreen> {
   static const int _pageSize = 5;
 
-  final Color _bgColor = const Color(0xFF0D5C5E);
   final Color _tealAccent = const Color(0xFF1ABC9C);
 
   late final ApiClient _apiClient;
@@ -201,12 +200,17 @@ class _FeedScreenState extends State<FeedScreen> {
     final bool isDesktop = screenWidth > 900;
 
     return Scaffold(
-      backgroundColor: _bgColor,
-      body: Column(
+      backgroundColor: Colors.transparent,
+      body: Stack(
         children: [
-          _buildTopBar(isDesktop),
-          Expanded(
-            child: isDesktop ? _buildDesktopLayout() : _buildMobileLayout(),
+          const Positioned.fill(child: AppBackground()),
+          Column(
+            children: [
+              _buildTopBar(isDesktop),
+              Expanded(
+                child: isDesktop ? _buildDesktopLayout() : _buildMobileLayout(),
+              ),
+            ],
           ),
         ],
       ),
@@ -215,15 +219,22 @@ class _FeedScreenState extends State<FeedScreen> {
 
   Widget _buildTopBar(bool isDesktop) {
     return Container(
-      height: 55,
-      color: _tealAccent,
-      padding: const EdgeInsets.symmetric(horizontal: 24),
+      height: isDesktop ? 82 : 55,
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xFF59E5C9), Color(0xFF00AF92)],
+        ),
+        borderRadius: BorderRadius.vertical(bottom: Radius.circular(24)),
+      ),
+      padding: EdgeInsets.symmetric(horizontal: isDesktop ? 24 : 16),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Image.asset(
             'assets/imagenes/meloop.png',
-            height: 24,
+            height: isDesktop ? 38 : 24,
             fit: BoxFit.contain,
           ),
           if (isDesktop) ...[
@@ -287,25 +298,6 @@ class _FeedScreenState extends State<FeedScreen> {
                     context,
                     MaterialPageRoute<void>(
                       builder: (_) => GlobalSearchScreen(apiClient: _apiClient),
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(width: 16),
-              IconButton(
-                tooltip: 'Probar conexión con API',
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
-                icon: const Icon(
-                  Icons.cloud_outlined,
-                  color: Colors.white,
-                  size: 20,
-                ),
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const ApiTestScreen(),
                     ),
                   );
                 },
