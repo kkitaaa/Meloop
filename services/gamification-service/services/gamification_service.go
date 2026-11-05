@@ -24,6 +24,10 @@ type EventPublisher interface {
 type GamificationService interface {
 	ProcessExperience(ctx context.Context, userID string, amount int) (*models.ExperienceResult, error)
 	GetUserProgress(ctx context.Context, userID string) (*models.UserProgress, error)
+	ListRewards(ctx context.Context) ([]models.Reward, error)
+	CreateReward(ctx context.Context, reward *models.RewardCreateRequest) (*models.Reward, error)
+	UpdateReward(ctx context.Context, id string, reward *models.RewardUpdateRequest) (*models.Reward, error)
+	DeleteReward(ctx context.Context, id string) error
 }
 
 type gamificationService struct {
@@ -94,4 +98,38 @@ func (s *gamificationService) GetUserProgress(ctx context.Context, userID string
 		return nil, ErrInvalidUserID
 	}
 	return s.repo.GetUserProgress(ctx, userID)
+}
+
+func (s *gamificationService) ListRewards(ctx context.Context) ([]models.Reward, error) {
+	return s.repo.ListRewards(ctx)
+}
+
+func (s *gamificationService) CreateReward(ctx context.Context, reward *models.RewardCreateRequest) (*models.Reward, error) {
+	if reward == nil {
+		return nil, errors.New("reward payload is required")
+	}
+	if strings.TrimSpace(reward.Tipo) == "" {
+		return nil, errors.New("reward type is required")
+	}
+	if reward.IDNivel <= 0 {
+		return nil, errors.New("reward level is required")
+	}
+	return s.repo.CreateReward(ctx, reward)
+}
+
+func (s *gamificationService) UpdateReward(ctx context.Context, id string, reward *models.RewardUpdateRequest) (*models.Reward, error) {
+	if strings.TrimSpace(id) == "" {
+		return nil, errors.New("reward id is required")
+	}
+	if reward == nil {
+		return nil, errors.New("reward payload is required")
+	}
+	return s.repo.UpdateReward(ctx, id, reward)
+}
+
+func (s *gamificationService) DeleteReward(ctx context.Context, id string) error {
+	if strings.TrimSpace(id) == "" {
+		return errors.New("reward id is required")
+	}
+	return s.repo.DeleteReward(ctx, id)
 }

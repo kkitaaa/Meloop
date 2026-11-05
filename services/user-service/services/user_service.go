@@ -38,6 +38,10 @@ type UserService interface {
 	GetAccount(ctx context.Context, userID string) (*models.AccountResponse, error)
 	UpdateUsername(ctx context.Context, userID string, req *models.UpdateUsernameRequest) (*models.AccountResponse, error)
 	RequestEmailChange(ctx context.Context, userID string, req *models.RequestEmailChangeRequest) (*models.EmailChangeResponse, error)
+	ListUsers(ctx context.Context) ([]models.AdminUserSummary, error)
+	SuspendUser(ctx context.Context, userID string, reason string) (*models.AdminUserSummary, error)
+	ReactivateUser(ctx context.Context, userID string) (*models.AdminUserSummary, error)
+	SetModeratorRole(ctx context.Context, userID string, moderator bool) (*models.AdminUserSummary, error)
 }
 
 type userService struct {
@@ -202,6 +206,55 @@ func (s *userService) RequestEmailChange(ctx context.Context, userID string, req
 		Message:      "Solicitud de cambio de correo recibida. El correo actual se mantendrá hasta su verificación.",
 		PendingEmail: email,
 	}, nil
+}
+
+func (s *userService) ListUsers(ctx context.Context) ([]models.AdminUserSummary, error) {
+	if s.repo == nil {
+		return nil, ErrUserNotFound
+	}
+	return s.repo.ListUsers(ctx)
+}
+
+func (s *userService) SuspendUser(ctx context.Context, userID string, reason string) (*models.AdminUserSummary, error) {
+	if strings.TrimSpace(userID) == "" {
+		return nil, ErrUserNotFound
+	}
+	user, err := s.repo.SuspendUser(ctx, userID, reason)
+	if err != nil {
+		return nil, err
+	}
+	if user == nil {
+		return nil, ErrUserNotFound
+	}
+	return user, nil
+}
+
+func (s *userService) ReactivateUser(ctx context.Context, userID string) (*models.AdminUserSummary, error) {
+	if strings.TrimSpace(userID) == "" {
+		return nil, ErrUserNotFound
+	}
+	user, err := s.repo.ReactivateUser(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if user == nil {
+		return nil, ErrUserNotFound
+	}
+	return user, nil
+}
+
+func (s *userService) SetModeratorRole(ctx context.Context, userID string, moderator bool) (*models.AdminUserSummary, error) {
+	if strings.TrimSpace(userID) == "" {
+		return nil, ErrUserNotFound
+	}
+	user, err := s.repo.SetModeratorRole(ctx, userID, moderator)
+	if err != nil {
+		return nil, err
+	}
+	if user == nil {
+		return nil, ErrUserNotFound
+	}
+	return user, nil
 }
 
 // isUniqueViolation detecta si el error corresponde a una violación de clave única en PostgreSQL
