@@ -9,7 +9,8 @@ import (
 )
 
 var (
-	ErrPostNotFoundOrUnauthorized = errors.New("publicación no encontrada o no tienes permisos de autor")
+	ErrPostNotFound = errors.New("publicación no encontrada")
+	ErrUnauthorized = errors.New("no tienes permisos para modificar esta publicación")
 )
 
 // Post representa una publicación basada estrictamente en el MER
@@ -30,26 +31,39 @@ func NewPostRepository(db *sql.DB) *PostRepository {
 	return &PostRepository{db: db}
 }
 
+// verifyOwnership es un helper interno para validar seguridad antes de modificar
+func (r *PostRepository) verifyOwnership(ctx context.Context, postID string, authorID string) error {
+	var ownerID string
+	query := `SELECT id_usuario FROM publicacion WHERE id_publicacion = $1`
+
+	err := r.db.QueryRowContext(ctx, query, postID).Scan(&ownerID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return ErrPostNotFound
+		}
+		return fmt.Errorf("error al verificar publicación: %w", err)
+	}
+
+	if ownerID != authorID {
+		return ErrUnauthorized
+	}
+	return nil
+}
+
 // UpdatePost modifica el contenido de una publicación usando el esquema real del MER
 func (r *PostRepository) UpdatePost(ctx context.Context, postID string, authorID string, newContent string) error {
+	if err := r.verifyOwnership(ctx, postID, authorID); err != nil {
+		return err
+	}
+
 	query := `
 		UPDATE publicacion 
 		SET texto = $1 
-		WHERE id_publicacion = $2 AND id_usuario = $3
+		WHERE id_publicacion = $2
 	`
-
-	result, err := r.db.ExecContext(ctx, query, newContent, postID, authorID)
+	_, err := r.db.ExecContext(ctx, query, newContent, postID)
 	if err != nil {
 		return fmt.Errorf("error al actualizar la publicación: %w", err)
-	}
-
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("error al verificar filas afectadas: %w", err)
-	}
-
-	if rowsAffected == 0 {
-		return ErrPostNotFoundOrUnauthorized
 	}
 
 	return nil
@@ -57,23 +71,15 @@ func (r *PostRepository) UpdatePost(ctx context.Context, postID string, authorID
 
 // DeletePost elimina una publicación validando la autoría con el MER
 func (r *PostRepository) DeletePost(ctx context.Context, postID string, authorID string) error {
-	query := `
-		DELETE FROM publicacion 
-		WHERE id_publicacion = $1 AND id_usuario = $2
-	`
+	if err := r.verifyOwnership(ctx, postID, authorID); err != nil {
+		return err
+	}
 
-	result, err := r.db.ExecContext(ctx, query, postID, authorID)
+	query := `DELETE FROM publicacion WHERE id_publicacion = $1`
+
+	_, err := r.db.ExecContext(ctx, query, postID)
 	if err != nil {
 		return fmt.Errorf("error al eliminar la publicación: %w", err)
-	}
-
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("error al verificar filas afectadas: %w", err)
-	}
-
-	if rowsAffected == 0 {
-		return ErrPostNotFoundOrUnauthorized
 	}
 
 	return nil
@@ -92,7 +98,7 @@ func (r *PostRepository) GetPostByID(ctx context.Context, postID string, request
 	err := row.Scan(&post.ID, &post.AuthorID, &post.Content, &post.MusicID, &post.UrlMultimedia, &post.CreatedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, errors.New("publicación no encontrada")
+			return nil, ErrPostNotFound
 		}
 		return nil, fmt.Errorf("error al obtener post: %w", err)
 	}

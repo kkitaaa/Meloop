@@ -16,7 +16,7 @@ func NewPostController(postService *services.PostService) *PostController {
 	return &PostController{postService: postService}
 }
 
-// Estructura para recibir el nuevo contenido en formato JSON
+// Estructura para recibir el nuevo contenido en formato JSON (Edición)
 type UpdatePostRequest struct {
 	Content string `json:"content" binding:"required"`
 }
@@ -25,8 +25,6 @@ type UpdatePostRequest struct {
 func (ctrl *PostController) UpdatePost(c *gin.Context) {
 	postID := c.Param("id")
 
-	// IMPORTANTE: Obtenemos el ID del usuario directamente del contexto de Gin
-	// (Asumiendo que tu Middleware de autenticación guarda el "userID" en el contexto)
 	authorID := c.GetString("userID")
 	if authorID == "" {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "usuario no autenticado"})
@@ -41,7 +39,11 @@ func (ctrl *PostController) UpdatePost(c *gin.Context) {
 
 	err := ctrl.postService.EditPost(c.Request.Context(), postID, authorID, req.Content)
 	if err != nil {
-		if err.Error() == "publicación no encontrada o no tienes permisos de autor" {
+		if err.Error() == "publicación no encontrada" {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()}) // 404 Not Found
+			return
+		}
+		if err.Error() == "no tienes permisos para modificar esta publicación" {
 			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()}) // 403 Forbidden
 			return
 		}
@@ -56,7 +58,6 @@ func (ctrl *PostController) UpdatePost(c *gin.Context) {
 func (ctrl *PostController) DeletePost(c *gin.Context) {
 	postID := c.Param("id")
 
-	// Validación de seguridad obligatoria
 	authorID := c.GetString("userID")
 	if authorID == "" {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "usuario no autenticado"})
@@ -65,7 +66,11 @@ func (ctrl *PostController) DeletePost(c *gin.Context) {
 
 	err := ctrl.postService.DeletePost(c.Request.Context(), postID, authorID)
 	if err != nil {
-		if err.Error() == "publicación no encontrada o no tienes permisos de autor" {
+		if err.Error() == "publicación no encontrada" {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()}) // 404 Not Found
+			return
+		}
+		if err.Error() == "no tienes permisos para modificar esta publicación" {
 			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()}) // 403 Forbidden
 			return
 		}
