@@ -21,6 +21,22 @@ type mockUserService struct {
 	requestEmailChangeFunc func(ctx context.Context, userID string, req *models.RequestEmailChangeRequest) (*models.EmailChangeResponse, error)
 }
 
+func (m *mockUserService) ListUsers(ctx context.Context) ([]models.AdminUserSummary, error) {
+	return nil, nil
+}
+
+func (m *mockUserService) SuspendUser(ctx context.Context, userID string, reason string) (*models.AdminUserSummary, error) {
+	return nil, nil
+}
+
+func (m *mockUserService) ReactivateUser(ctx context.Context, userID string) (*models.AdminUserSummary, error) {
+	return nil, nil
+}
+
+func (m *mockUserService) SetModeratorRole(ctx context.Context, userID string, moderator bool) (*models.AdminUserSummary, error) {
+	return nil, nil
+}
+
 func (m *mockUserService) GetAccount(ctx context.Context, userID string) (*models.AccountResponse, error) {
 	if m.getAccountFunc != nil {
 		return m.getAccountFunc(ctx, userID)

@@ -18,13 +18,13 @@ func TestFriendshipRepository_NilPool(t *testing.T) {
 	if _, err := repo.ListSent(ctx, "u1"); err == nil {
 		t.Error("expected error with nil pool on ListSent")
 	}
-	if _, err := repo.Accept(ctx, 1, "u1"); err == nil {
+	if _, err := repo.Accept(ctx, "1", "u1"); err == nil {
 		t.Error("expected error with nil pool on Accept")
 	}
-	if _, err := repo.Reject(ctx, 1, "u1"); err == nil {
+	if _, err := repo.Reject(ctx, "1", "u1"); err == nil {
 		t.Error("expected error with nil pool on Reject")
 	}
-	if _, err := repo.Cancel(ctx, 1, "u1"); err == nil {
+	if _, err := repo.Cancel(ctx, "1", "u1"); err == nil {
 		t.Error("expected error with nil pool on Cancel")
 	}
 	if _, err := repo.ListFriends(ctx, "u1"); err == nil {

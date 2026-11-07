@@ -19,6 +19,7 @@ func SetupRoutes(
 		c.JSON(http.StatusOK, gin.H{"service": "post-service", "status": "ok"})
 	})
 
+	// Estas se quedan igual porque están en la ruta base /posts, no en /api/v1/posts
 	router.POST("/posts/:postId/likes", likeController.AddLike)
 	router.DELETE("/posts/:postId/likes/:userId", likeController.RemoveLike)
 
@@ -36,10 +37,11 @@ func SetupRoutes(
 		api.GET("/author/:authorId", postController.GetPostsByAuthor)
 		api.GET("/search", postController.Search)
 
-		// Comentarios y respuestas
-		api.POST("/:postId/comments", commentController.CreateComment)
-		api.GET("/:postId/comments", commentController.GetComments)
-		api.POST("/:postId/comments/:commentId/replies", commentController.CreateReply)
+		// Comentarios y respuestas (¡AQUÍ ESTÁ EL CAMBIO!)
+		// Cambiamos :postId por :id para evitar el conflicto con las rutas de arriba
+		api.POST("/:id/comments", commentController.CreateComment)
+		api.GET("/:id/comments", commentController.GetComments)
+		api.POST("/:id/comments/:commentId/replies", commentController.CreateReply)
 	}
 }
 

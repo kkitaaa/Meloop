@@ -20,7 +20,7 @@ func NewCommentController(service *services.CommentService) *CommentController {
 
 // CreateComment crea un comentario principal en una publicación.
 func (controller *CommentController) CreateComment(c *gin.Context) {
-	postID := c.Param("postId")
+	postID := c.Param("id") // <-- Cambio aquí
 
 	var request models.CreateCommentRequest
 
@@ -44,7 +44,7 @@ func (controller *CommentController) CreateComment(c *gin.Context) {
 
 // GetComments obtiene los comentarios de una publicación.
 func (controller *CommentController) GetComments(c *gin.Context) {
-	postID := c.Param("postId")
+	postID := c.Param("id") // <-- Cambio aquí
 
 	comments, err := controller.service.GetComments(postID)
 	if err != nil {
@@ -59,7 +59,7 @@ func (controller *CommentController) GetComments(c *gin.Context) {
 
 // CreateReply crea una respuesta asociada a un comentario.
 func (controller *CommentController) CreateReply(c *gin.Context) {
-	postID := c.Param("postId")
+	postID := c.Param("id") // <-- Cambio aquí
 	commentID := c.Param("commentId")
 
 	var request models.CreateCommentRequest

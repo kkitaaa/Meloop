@@ -37,7 +37,7 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	// 1. INICIALIZAR DEPENDENCIAS ANTERIORES
+	// 1. INICIALIZAR DEPENDENCIAS PRINCIPALES
 	pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
 	if err != nil {
 		return fmt.Errorf("initialize database pool: %w", err)
@@ -51,18 +51,11 @@ func run() error {
 	repo := repositories.NewGamificationRepository(pool)
 	publisher := messaging.NewPublisher(cfg.RabbitMQURL)
 	service := services.NewGamificationService(repo, publisher)
+	
 	gamificationController := controllers.NewGamificationController(service)
+	adminController := controllers.NewAdminController(service)
 
-	// 2. INICIAR CONSUMIDOR RABBITMQ (Sin bloquear)
-	logger.Info("service_started")
-	go func() {
-		if err := messaging.StartConsumer(ctx, cfg.RabbitMQURL, service); err != nil && !errors.Is(err, context.Canceled) {
-			logger.Error("event_consumer_failed", "error", err)
-			log.Printf("Advertencia: RabbitMQ falló, pero el servidor web seguirá iniciando: %v\n", err)
-		}
-	}()
-
-	// 3. INICIALIZAR NUEVO MÓDULO DE PROGRESO
+	// 2. INICIALIZAR NUEVO MÓDULO DE PROGRESO
 	gormDB, err := gorm.Open(postgres.Open(cfg.DatabaseURL), &gorm.Config{})
 	if err != nil {
 		return fmt.Errorf("error conectando GORM: %w", err)
@@ -72,13 +65,22 @@ func run() error {
 	progressService := services.NewProgressService(progressRepo)
 	progressController := controllers.NewProgressController(progressService)
 
-	// 4. CONFIGURAR Y LEVANTAR SERVIDOR HTTP CON ROUTES.GO
+	// 3. INICIAR CONSUMIDOR RABBITMQ (En segundo plano)
+	logger.Info("service_started")
+	go func() {
+		if err := messaging.StartConsumer(ctx, cfg.RabbitMQURL, service); err != nil && !errors.Is(err, context.Canceled) {
+			logger.Error("event_consumer_failed", "error", err)
+			log.Printf("Advertencia: RabbitMQ falló, pero el servidor web seguirá iniciando: %v\n", err)
+		}
+	}()
+
+	// 4. CONFIGURAR Y LEVANTAR SERVIDOR HTTP UNIFICADO
 	router := gin.Default()
 
-	// AQUÍ CONECTAMOS TU ARCHIVO DE RUTAS
-	routes.SetupRoutes(router, gamificationController, progressController)
+	// AQUÍ CONECTAMOS TODOS LOS CONTROLADORES JUNTOS
+	routes.SetupRoutes(router, gamificationController, adminController, progressController)
 
-	port := os.Getenv("PORT")
+	port := cfg.Port
 	if port == "" {
 		port = "8085"
 	}

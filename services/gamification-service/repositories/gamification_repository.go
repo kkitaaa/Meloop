@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -20,6 +22,10 @@ var (
 type GamificationRepository interface {
 	AddExperience(ctx context.Context, userID string, amount int) (*models.ExperienceResult, error)
 	GetUserProgress(ctx context.Context, userID string) (*models.UserProgress, error)
+	ListRewards(ctx context.Context) ([]models.Reward, error)
+	CreateReward(ctx context.Context, reward *models.RewardCreateRequest) (*models.Reward, error)
+	UpdateReward(ctx context.Context, id string, reward *models.RewardUpdateRequest) (*models.Reward, error)
+	DeleteReward(ctx context.Context, id string) error
 }
 
 type postgresGamificationRepository struct {
@@ -175,6 +181,176 @@ func (r *postgresGamificationRepository) GetUserProgress(ctx context.Context, us
 	}
 
 	return &progress, nil
+}
+
+func (r *postgresGamificationRepository) ensureRewardColumns(ctx context.Context) error {
+	if r.pool == nil {
+		return errors.New("database connection pool is not initialized")
+	}
+	queries := []string{
+		`ALTER TABLE RECOMPENSA ADD COLUMN IF NOT EXISTS nombre VARCHAR(100)`,
+		`ALTER TABLE RECOMPENSA ADD COLUMN IF NOT EXISTS descripcion TEXT`,
+		`ALTER TABLE RECOMPENSA ADD COLUMN IF NOT EXISTS habilitada BOOLEAN NOT NULL DEFAULT TRUE`,
+		`ALTER TABLE RECOMPENSA ADD COLUMN IF NOT EXISTS disponible BOOLEAN NOT NULL DEFAULT TRUE`,
+	}
+	for _, q := range queries {
+		if _, err := r.pool.Exec(ctx, q); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *postgresGamificationRepository) ListRewards(ctx context.Context) ([]models.Reward, error) {
+	if r.pool == nil {
+		return nil, errors.New("database connection pool is not initialized")
+	}
+	if err := r.ensureRewardColumns(ctx); err != nil {
+		return nil, err
+	}
+
+	rows, err := r.pool.Query(ctx, `
+		SELECT id_recompensa, tipo, COALESCE(nombre, tipo), COALESCE(descripcion, ''), COALESCE(id_nivel, 1),
+			COALESCE(habilitada, TRUE), COALESCE(disponible, TRUE)
+		FROM RECOMPENSA
+		ORDER BY id_nivel ASC, tipo ASC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	rewards := make([]models.Reward, 0)
+	for rows.Next() {
+		var reward models.Reward
+		if err := rows.Scan(&reward.IDRecompensa, &reward.Tipo, &reward.Nombre, &reward.Descripcion, &reward.IDNivel, &reward.Habilitada, &reward.Disponible); err != nil {
+			return nil, err
+		}
+		rewards = append(rewards, reward)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return rewards, nil
+}
+
+func (r *postgresGamificationRepository) CreateReward(ctx context.Context, reward *models.RewardCreateRequest) (*models.Reward, error) {
+	if r.pool == nil {
+		return nil, errors.New("database connection pool is not initialized")
+	}
+	if reward == nil {
+		return nil, errors.New("reward payload is required")
+	}
+	if err := r.ensureRewardColumns(ctx); err != nil {
+		return nil, err
+	}
+
+	id := generateID("reward")
+	var created models.Reward
+	query := `
+		INSERT INTO RECOMPENSA (id_recompensa, tipo, nombre, descripcion, id_nivel, habilitada, disponible)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		RETURNING id_recompensa, tipo, COALESCE(nombre, tipo), COALESCE(descripcion, ''), id_nivel,
+			COALESCE(habilitada, TRUE), COALESCE(disponible, TRUE)
+	`
+	err := r.pool.QueryRow(ctx, query, id, reward.Tipo, reward.Nombre, reward.Descripcion, reward.IDNivel, reward.Habilitada, reward.Disponible).Scan(
+		&created.IDRecompensa,
+		&created.Tipo,
+		&created.Nombre,
+		&created.Descripcion,
+		&created.IDNivel,
+		&created.Habilitada,
+		&created.Disponible,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &created, nil
+}
+
+func (r *postgresGamificationRepository) UpdateReward(ctx context.Context, id string, reward *models.RewardUpdateRequest) (*models.Reward, error) {
+	if r.pool == nil {
+		return nil, errors.New("database connection pool is not initialized")
+	}
+	if reward == nil {
+		return nil, errors.New("reward payload is required")
+	}
+	if strings.TrimSpace(id) == "" {
+		return nil, errors.New("reward id is required")
+	}
+	if err := r.ensureRewardColumns(ctx); err != nil {
+		return nil, err
+	}
+
+	updates := make([]string, 0, 6)
+	values := make([]interface{}, 0, 7)
+	index := 1
+
+	if reward.Tipo != "" {
+		updates = append(updates, "tipo = $"+strconv.Itoa(index))
+		values = append(values, reward.Tipo)
+		index++
+	}
+	if reward.Nombre != "" {
+		updates = append(updates, "nombre = $"+strconv.Itoa(index))
+		values = append(values, reward.Nombre)
+		index++
+	}
+	if reward.Descripcion != "" {
+		updates = append(updates, "descripcion = $"+strconv.Itoa(index))
+		values = append(values, reward.Descripcion)
+		index++
+	}
+	if reward.IDNivel != 0 {
+		updates = append(updates, "id_nivel = $"+strconv.Itoa(index))
+		values = append(values, reward.IDNivel)
+		index++
+	}
+	if reward.Habilitada != nil {
+		updates = append(updates, "habilitada = $"+strconv.Itoa(index))
+		values = append(values, *reward.Habilitada)
+		index++
+	}
+	if reward.Disponible != nil {
+		updates = append(updates, "disponible = $"+strconv.Itoa(index))
+		values = append(values, *reward.Disponible)
+		index++
+	}
+	if len(updates) == 0 {
+		return nil, nil
+	}
+
+	query := "UPDATE RECOMPENSA SET " + strings.Join(updates, ", ") + " WHERE id_recompensa = $" + strconv.Itoa(index) + " RETURNING id_recompensa, tipo, COALESCE(nombre, tipo), COALESCE(descripcion, ''), id_nivel, COALESCE(habilitada, TRUE), COALESCE(disponible, TRUE)"
+	values = append(values, id)
+
+	var created models.Reward
+	err := r.pool.QueryRow(ctx, query, values...).Scan(
+		&created.IDRecompensa,
+		&created.Tipo,
+		&created.Nombre,
+		&created.Descripcion,
+		&created.IDNivel,
+		&created.Habilitada,
+		&created.Disponible,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &created, nil
+}
+
+func (r *postgresGamificationRepository) DeleteReward(ctx context.Context, id string) error {
+	if r.pool == nil {
+		return errors.New("database connection pool is not initialized")
+	}
+	if strings.TrimSpace(id) == "" {
+		return errors.New("reward id is required")
+	}
+	_, err := r.pool.Exec(ctx, `DELETE FROM RECOMPENSA WHERE id_recompensa = $1`, id)
+	return err
 }
 
 func generateID(prefix string) string {

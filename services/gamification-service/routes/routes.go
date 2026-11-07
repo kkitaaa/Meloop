@@ -8,6 +8,7 @@ import (
 func SetupRoutes(
 	router *gin.Engine,
 	gamificationController *controllers.GamificationController,
+	adminController *controllers.AdminController,
 	progressController *controllers.ProgressController,
 ) {
 	api := router.Group("/api/v1/gamification")
@@ -15,7 +16,15 @@ func SetupRoutes(
 		// Endpoint para sumar XP manualmente (simulando eventos)
 		api.POST("/xp", gamificationController.AddXP)
 
-		// Nuestro nuevo endpoint de progreso (RF-34)
-		api.GET("/me/progress", progressController.GetProgress)
+api.GET("/me/progress", progressController.GetProgress)
+
+		admin := api.Group("/admin")
+		admin.Use(controllers.AdminRequired())
+		{
+			admin.GET("/rewards", adminController.ListRewards)
+			admin.POST("/rewards", adminController.CreateReward)
+			admin.PATCH("/rewards/:id", adminController.UpdateReward)
+			admin.DELETE("/rewards/:id", adminController.DeleteReward)
+		}
 	}
 }

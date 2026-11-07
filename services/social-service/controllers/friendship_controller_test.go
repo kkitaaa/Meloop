@@ -20,9 +20,9 @@ type mockFriendshipService struct {
 	sendRequestFunc            func(ctx context.Context, senderID, receiverID string) (*models.FriendRequest, error)
 	receivedRequestsFunc       func(ctx context.Context, userID string) ([]models.FriendRequest, error)
 	sentRequestsFunc           func(ctx context.Context, userID string) ([]models.FriendRequest, error)
-	acceptRequestFunc          func(ctx context.Context, requestID int, receiverID string) (*models.FriendRequest, error)
-	rejectRequestFunc          func(ctx context.Context, requestID int, receiverID string) (*models.FriendRequest, error)
-	cancelRequestFunc          func(ctx context.Context, requestID int, senderID string) (*models.FriendRequest, error)
+	acceptRequestFunc          func(ctx context.Context, requestID string, receiverID string) (*models.FriendRequest, error)
+	rejectRequestFunc          func(ctx context.Context, requestID string, receiverID string) (*models.FriendRequest, error)
+	cancelRequestFunc          func(ctx context.Context, requestID string, senderID string) (*models.FriendRequest, error)
 	listFriendsFunc            func(ctx context.Context, userID string) ([]models.Friend, error)
 	removeFriendFunc           func(ctx context.Context, userID, targetID string) error
 	getFriendProfileFunc       func(ctx context.Context, userID, friendID string) (*models.FriendProfile, error)
@@ -66,7 +66,7 @@ func (m *mockFriendshipService) SendRequest(ctx context.Context, senderID, recei
 	if m.sendRequestFunc != nil {
 		return m.sendRequestFunc(ctx, senderID, receiverID)
 	}
-	return &models.FriendRequest{ID: 1, SenderID: senderID, ReceiverID: receiverID, Status: models.FriendshipPending}, nil
+	return &models.FriendRequest{ID: "1", SenderID: senderID, ReceiverID: receiverID, Status: models.FriendshipPending}, nil
 }
 
 func (m *mockFriendshipService) ReceivedRequests(ctx context.Context, userID string) ([]models.FriendRequest, error) {
@@ -83,25 +83,25 @@ func (m *mockFriendshipService) SentRequests(ctx context.Context, userID string)
 	return []models.FriendRequest{}, nil
 }
 
-func (m *mockFriendshipService) AcceptRequest(ctx context.Context, requestID int, receiverID string) (*models.FriendRequest, error) {
+func (m *mockFriendshipService) AcceptRequest(ctx context.Context, requestID string, receiverID string) (*models.FriendRequest, error) {
 	if m.acceptRequestFunc != nil {
 		return m.acceptRequestFunc(ctx, requestID, receiverID)
 	}
-	return &models.FriendRequest{ID: requestID, SenderID: "sender", ReceiverID: receiverID, Status: models.FriendshipAccepted}, nil
+	return &models.FriendRequest{ID: models.FriendshipID(requestID), SenderID: "sender", ReceiverID: receiverID, Status: models.FriendshipAccepted}, nil
 }
 
-func (m *mockFriendshipService) RejectRequest(ctx context.Context, requestID int, receiverID string) (*models.FriendRequest, error) {
+func (m *mockFriendshipService) RejectRequest(ctx context.Context, requestID string, receiverID string) (*models.FriendRequest, error) {
 	if m.rejectRequestFunc != nil {
 		return m.rejectRequestFunc(ctx, requestID, receiverID)
 	}
-	return &models.FriendRequest{ID: requestID, SenderID: "sender", ReceiverID: receiverID, Status: models.FriendshipRejected}, nil
+	return &models.FriendRequest{ID: models.FriendshipID(requestID), SenderID: "sender", ReceiverID: receiverID, Status: models.FriendshipRejected}, nil
 }
 
-func (m *mockFriendshipService) CancelRequest(ctx context.Context, requestID int, senderID string) (*models.FriendRequest, error) {
+func (m *mockFriendshipService) CancelRequest(ctx context.Context, requestID string, senderID string) (*models.FriendRequest, error) {
 	if m.cancelRequestFunc != nil {
 		return m.cancelRequestFunc(ctx, requestID, senderID)
 	}
-	return &models.FriendRequest{ID: requestID, SenderID: senderID, ReceiverID: "receiver", Status: models.FriendshipCanceled}, nil
+	return &models.FriendRequest{ID: models.FriendshipID(requestID), SenderID: senderID, ReceiverID: "receiver", Status: models.FriendshipCanceled}, nil
 }
 
 func (m *mockFriendshipService) ListFriends(ctx context.Context, userID string) ([]models.Friend, error) {
@@ -109,7 +109,7 @@ func (m *mockFriendshipService) ListFriends(ctx context.Context, userID string) 
 		return m.listFriendsFunc(ctx, userID)
 	}
 	return []models.Friend{
-		{IDAmistad: 1, IDUsuario: "friend-1", Username: "user1", Estado: models.FriendshipAccepted},
+		{IDAmistad: "1", IDUsuario: "friend-1", Username: "user1", Estado: models.FriendshipAccepted},
 	}, nil
 }
 
@@ -131,7 +131,7 @@ func (m *mockFriendshipService) GetFriendProfile(ctx context.Context, userID, fr
 		Correo:      "friend@example.com",
 		IDNivel:     &nivel,
 		Experiencia: 1500,
-		IDAmistad:   1,
+		IDAmistad:   "1",
 	}, nil
 }
 
@@ -155,6 +155,64 @@ func setupTestRouter(svc services.FriendshipService) *gin.Engine {
 	ctrl := controllers.NewFriendshipController(svc)
 	routes.SetupRoutes(router, ctrl)
 	return router
+}
+
+func TestFriendshipRequestActions_HTTP_AcceptTextAndLegacyIDs(t *testing.T) {
+	const uuid = "d2719cd6-3a4f-4f4a-9c2a-0b52f4ca8b21"
+	ids := []struct {
+		name string
+		path string
+		want string
+	}{
+		{name: "UUID", path: uuid, want: uuid},
+		{name: "legacy numeric ID", path: "123", want: "123"},
+	}
+	actions := []struct {
+		name   string
+		path   string
+		handle func(*mockFriendshipService, func(context.Context, string, string) (*models.FriendRequest, error))
+	}{
+		{name: "accept", path: "accept", handle: func(m *mockFriendshipService, fn func(context.Context, string, string) (*models.FriendRequest, error)) {
+			m.acceptRequestFunc = fn
+		}},
+		{name: "reject", path: "reject", handle: func(m *mockFriendshipService, fn func(context.Context, string, string) (*models.FriendRequest, error)) {
+			m.rejectRequestFunc = fn
+		}},
+		{name: "cancel", path: "cancel", handle: func(m *mockFriendshipService, fn func(context.Context, string, string) (*models.FriendRequest, error)) {
+			m.cancelRequestFunc = fn
+		}},
+	}
+
+	for _, id := range ids {
+		for _, action := range actions {
+			t.Run(id.name+"/"+action.name, func(t *testing.T) {
+				var receivedID string
+				mockSvc := &mockFriendshipService{}
+				handleAction := func(_ context.Context, requestID, userID string) (*models.FriendRequest, error) {
+					receivedID = requestID
+					return &models.FriendRequest{
+						ID:         models.FriendshipID(requestID),
+						SenderID:   "sender",
+						ReceiverID: userID,
+						Status:     models.FriendshipAccepted,
+					}, nil
+				}
+				action.handle(mockSvc, handleAction)
+				router := setupTestRouter(mockSvc)
+				recorder := httptest.NewRecorder()
+				request := httptest.NewRequest(http.MethodPost, "/friends/requests/"+id.path+"/"+action.path, nil)
+				request.Header.Set("X-User-ID", "receiver")
+				router.ServeHTTP(recorder, request)
+
+				if recorder.Code != http.StatusOK {
+					t.Fatalf("status = %d, want %d: %s", recorder.Code, http.StatusOK, recorder.Body.String())
+				}
+				if receivedID != id.want {
+					t.Fatalf("service received ID %q, want %q", receivedID, id.want)
+				}
+			})
+		}
+	}
 }
 
 // =========================================================================
