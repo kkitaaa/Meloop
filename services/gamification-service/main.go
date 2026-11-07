@@ -51,7 +51,7 @@ func run() error {
 	repo := repositories.NewGamificationRepository(pool)
 	publisher := messaging.NewPublisher(cfg.RabbitMQURL)
 	service := services.NewGamificationService(repo, publisher)
-	
+
 	gamificationController := controllers.NewGamificationController(service)
 	adminController := controllers.NewAdminController(service)
 

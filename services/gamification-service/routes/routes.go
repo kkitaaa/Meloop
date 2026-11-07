@@ -16,7 +16,7 @@ func SetupRoutes(
 		// Endpoint para sumar XP manualmente (simulando eventos)
 		api.POST("/xp", gamificationController.AddXP)
 
-api.GET("/me/progress", progressController.GetProgress)
+		api.GET("/me/progress", progressController.GetProgress)
 
 		admin := api.Group("/admin")
 		admin.Use(controllers.AdminRequired())
