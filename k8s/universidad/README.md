@@ -114,3 +114,55 @@ Write-Output "Registro, inicio de sesión y validación por Gateway OK para $ema
 ```
 
 El nombre y correo de prueba son únicos para cada ejecución. Si el host no resuelve desde tu equipo, configura el DNS/hosts del equipo para apuntar a la dirección del Ingress; no cambies el manifiesto del Ingress para esta prueba.
+
+## Preparar User Service
+
+`user-service.yaml` agrega una réplica y un Service `ClusterIP` llamado `meloop-user` para User Service. Reutiliza `DATABASE_URL` de `meloop-auth-connection` y valida sesiones con `http://meloop-auth-service:8083`; no crea PVC. Con la cuota reportada para `student-acofre`, sus requests/límites elevan los recursos agregados a 300m CPU/576Mi solicitados y 1.4 CPU/1408Mi limitados; el total proyectado es 5 Pods y 7 Services, con los 2 PVC y 3 GiB de almacenamiento actuales.
+
+Desde la raíz del repositorio, construye y publica la imagen, y después aplica el manifiesto:
+
+```powershell
+docker build -f .\services\user-service\Dockerfile -t alancof/meloop-user:1.0 .
+docker push alancof/meloop-user:1.0
+kubectl apply -f .\k8s\universidad\user-service.yaml
+kubectl rollout status deployment/meloop-user --namespace student-acofre --timeout=180s
+kubectl get deployment,service,pods -n student-acofre -l app.kubernetes.io/name=meloop-user
+```
+
+El API Gateway debe tener su variable `USER_SERVICE_URL` apuntando a `http://meloop-user:8082`. El Deployment del Gateway no forma parte de este manifiesto y no se modifica aquí. El servicio no expone una ruta HTTP de salud, por lo que las probes usan TCP.
+
+El repositorio no incluye el manifiesto del Deployment del Gateway ni un Service de Auth llamado `meloop-auth-service`, por lo que sus nombres no se pueden verificar localmente. Antes de desplegar User Service, confirma que ese Service exista en `student-acofre` y configura el Gateway existente (sin imprimir variables/Secrets) con:
+
+```powershell
+kubectl set env deployment/meloop-api-gateway --namespace student-acofre USER_SERVICE_URL=http://meloop-user:8082
+kubectl rollout status deployment/meloop-api-gateway --namespace student-acofre --timeout=180s
+```
+
+Para comprobar la integración funcional, inicia sesión con una cuenta de prueba y usa el token en memoria, sin imprimirlo:
+
+```powershell
+$gatewayUrl = 'http://localhost:8080'
+$email = Read-Host 'Correo de la cuenta de prueba'
+$passwordInput = Read-Host 'Contraseña de la cuenta de prueba' -AsSecureString
+$plainPassword = [System.Net.NetworkCredential]::new('', $passwordInput).Password
+$loginBody = @{ email = $email; password = $plainPassword } | ConvertTo-Json
+$login = Invoke-RestMethod -Uri "$gatewayUrl/auth/login" -Method Post -ContentType 'application/json' -Body $loginBody
+if (-not $login.success -or -not $login.data.session_token) { throw 'El login de prueba falló' }
+$headers = @{ Authorization = "Bearer $($login.data.session_token)" }
+$account = Invoke-RestMethod -Uri "$gatewayUrl/users/me" -Method Get -Headers $headers
+$profile = Invoke-RestMethod -Uri "$gatewayUrl/users/me/profile" -Method Get -Headers $headers
+
+function Assert-Unauthorized($requestHeaders) {
+    try {
+        Invoke-WebRequest -Uri "$gatewayUrl/users/me" -Method Get -Headers $requestHeaders -ErrorAction Stop | Out-Null
+        throw 'Se esperaba HTTP 401'
+    } catch {
+        if (-not $_.Exception.Response -or [int]$_.Exception.Response.StatusCode -ne 401) { throw }
+    }
+}
+
+Assert-Unauthorized @{}
+Assert-Unauthorized @{ Authorization = 'Bearer invalid-test-token' }
+```
+
+Prueba además `GET /users/me` sin `Authorization` (debe responder HTTP 401) y con un token inválido (HTTP 401). Los encabezados `X-User-ID` y `X-User-Role` no autentican ni autorizan. Las operaciones de perfil que necesitan validar fotos o banners dependen de Media Service; al no estar desplegado, esas actualizaciones deben fallar con HTTP 502 y no guardar el cambio. Las lecturas de cuenta y perfil no requieren esa dependencia.

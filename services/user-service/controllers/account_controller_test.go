@@ -76,7 +76,7 @@ func setupTestRouter(srv services.UserService) *gin.Engine {
 	ctrl := controllers.NewAccountController(srv)
 
 	protected := router.Group("/users")
-	protected.Use(controllers.AuthRequired())
+	protected.Use(testAuthRequired())
 	{
 		protected.GET("/me", ctrl.GetAccount)
 		protected.PATCH("/me/username", ctrl.UpdateUsername)

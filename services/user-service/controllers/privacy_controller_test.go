@@ -57,7 +57,7 @@ func setupPrivacyTestRouter(srv services.PrivacyService) *gin.Engine {
 	ctrl := controllers.NewPrivacyController(srv)
 
 	protected := router.Group("/users")
-	protected.Use(controllers.AuthRequired())
+	protected.Use(testAuthRequired())
 	{
 		protected.GET("/me/privacy", ctrl.GetPrivacy)
 		protected.PATCH("/me/privacy", ctrl.UpdatePrivacy)

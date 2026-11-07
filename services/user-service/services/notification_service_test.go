@@ -3,6 +3,7 @@ package services_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/meloop/user-service/models"
@@ -35,7 +36,7 @@ func (m *mockNotificationConfigRepository) GetByUserID(ctx context.Context, user
 	var list []models.ConfiguracionNotificacion
 	for i, t := range models.AllNotificationTypes {
 		list = append(list, models.ConfiguracionNotificacion{
-			IDConfiguracion:  i + 1,
+			IDConfiguracion:  fmt.Sprintf("config-%d", i+1),
 			IDUsuario:        userID,
 			TipoNotificacion: t,
 			Habilitada:       m.configs[userID][t],
@@ -56,7 +57,7 @@ func (m *mockNotificationConfigRepository) Upsert(ctx context.Context, userID st
 	m.ensureInit(userID)
 	m.configs[userID][tipo] = habilitada
 	return &models.ConfiguracionNotificacion{
-		IDConfiguracion:  1,
+		IDConfiguracion:  "config-1",
 		IDUsuario:        userID,
 		TipoNotificacion: tipo,
 		Habilitada:       habilitada,

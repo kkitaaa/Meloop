@@ -44,7 +44,7 @@ func (s *smtpEmailService) SendPasswordRecoveryEmail(ctx context.Context, toEmai
 
 	// Si no hay configuración SMTP (modo desarrollo/testing), registrar en logs y continuar
 	if s.cfg.SMTPHost == "" {
-		s.logger.Info("password_recovery_email_simulated", "to", toEmail, "link", recoveryLink)
+		s.logger.Info("password_recovery_email_simulated", "to", toEmail)
 		return nil
 	}
 
@@ -66,10 +66,14 @@ func (s *smtpEmailService) SendPasswordRecoveryEmail(ctx context.Context, toEmai
 	addr := fmt.Sprintf("%s:%d", s.cfg.SMTPHost, s.cfg.SMTPPort)
 	err := smtp.SendMail(addr, auth, s.cfg.SMTPFrom, []string{toEmail}, msg)
 	if err != nil {
-		s.logger.Error("smtp_send_mail_failed", "error", err, "to", toEmail)
+		logSMTPFailure(s.logger, toEmail, err)
 		return fmt.Errorf("error sending email via SMTP: %w", err)
 	}
 
 	s.logger.Info("password_recovery_email_sent", "to", toEmail)
 	return nil
+}
+
+func logSMTPFailure(logger *slog.Logger, toEmail string, _ error) {
+	logger.Error("smtp_send_mail_failed", "to", toEmail)
 }

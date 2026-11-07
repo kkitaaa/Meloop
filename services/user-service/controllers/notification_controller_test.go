@@ -68,7 +68,7 @@ func setupNotifTestRouter(srv services.NotificationConfigService) *gin.Engine {
 	ctrl := controllers.NewNotificationController(srv)
 
 	protected := router.Group("/users")
-	protected.Use(controllers.AuthRequired())
+	protected.Use(testAuthRequired())
 	{
 		protected.GET("/me/notifications/settings", ctrl.GetNotificationSettings)
 		protected.PATCH("/me/notifications/settings", ctrl.UpdateNotificationSettings)

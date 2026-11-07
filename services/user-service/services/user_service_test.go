@@ -43,6 +43,13 @@ func (m *mockUserRepository) GetByID(ctx context.Context, id string) (*models.Us
 	return nil, nil
 }
 
+func (m *mockUserRepository) GetRoleByID(ctx context.Context, id string) (string, error) {
+	if _, ok := m.users[id]; ok {
+		return "usuario", nil
+	}
+	return "", nil
+}
+
 func (m *mockUserRepository) GetByUsername(ctx context.Context, username string) (*models.Usuario, error) {
 	if m.getByUsernameFunc != nil {
 		return m.getByUsernameFunc(ctx, username)

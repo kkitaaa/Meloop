@@ -1,10 +1,14 @@
 package controllers
 
 import (
+	"context"
+	"errors"
+	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/meloop/services/common/httpresponse"
+	"github.com/meloop/user-service/services"
 )
 
 const (
@@ -14,60 +18,82 @@ const (
 	ContextUserRoleKey = "user_role"
 )
 
-// AuthRequired es un middleware que verifica la presencia del identificador de usuario en el contexto de autenticación
-func AuthRequired() gin.HandlerFunc {
+type SessionValidator interface {
+	ValidateToken(ctx context.Context, token string) (string, error)
+}
+
+type UserRoleProvider interface {
+	GetRoleByID(ctx context.Context, userID string) (string, error)
+}
+
+// AuthRequired valida cada token contra Auth Service y establece la identidad devuelta por ese servicio.
+func AuthRequired(validator SessionValidator) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// 1. Verificar si ya fue fijado en el contexto por un middleware previo o prueba
-		if val, exists := c.Get(ContextUserIDKey); exists {
-			if userID, ok := val.(string); ok && strings.TrimSpace(userID) != "" {
-				c.Set(ContextUserIDKey, strings.TrimSpace(userID))
-				c.Next()
-				return
-			}
+		authHeader := strings.TrimSpace(c.GetHeader("Authorization"))
+		if !strings.HasPrefix(strings.ToLower(authHeader), "bearer ") {
+			httpresponse.UnauthorizedGin(c, "Token de sesión no proporcionado")
+			c.Abort()
+			return
 		}
 
-		// 2. Verificar si viene en los encabezados estándar de propagación de identidad
-		userID := c.GetHeader("X-User-ID")
-		if userID == "" {
-			userID = c.GetHeader("X-User-Id")
+		token := strings.TrimSpace(authHeader[len("Bearer "):])
+		if token == "" {
+			httpresponse.UnauthorizedGin(c, "Token de sesión no proporcionado")
+			c.Abort()
+			return
+		}
+		if validator == nil {
+			httpresponse.ErrorGin(c, http.StatusServiceUnavailable, "AUTH_UNAVAILABLE", "Servicio de autenticación no disponible")
+			c.Abort()
+			return
 		}
 
+		userID, err := validator.ValidateToken(c.Request.Context(), token)
+		if errors.Is(err, services.ErrInvalidSession) {
+			httpresponse.UnauthorizedGin(c, "Sesión inválida o expirada")
+			c.Abort()
+			return
+		}
+		if err != nil {
+			httpresponse.ErrorGin(c, http.StatusServiceUnavailable, "AUTH_UNAVAILABLE", "Servicio de autenticación no disponible")
+			c.Abort()
+			return
+		}
 		userID = strings.TrimSpace(userID)
 		if userID == "" {
-			httpresponse.UnauthorizedGin(c, "No se encontró sesión de usuario autenticada")
+			httpresponse.UnauthorizedGin(c, "Sesión inválida o expirada")
 			c.Abort()
 			return
 		}
 
 		c.Set(ContextUserIDKey, userID)
-		if role := strings.TrimSpace(c.GetHeader("X-User-Role")); role != "" {
-			c.Set(ContextUserRoleKey, strings.ToLower(role))
-		}
 		c.Next()
 	}
 }
 
-// AdminRequired valida que la sesión actual tenga permisos de administrador o moderación privilegiada.
-func AdminRequired() gin.HandlerFunc {
+// AdminRequired obtiene el rol vigente desde PostgreSQL, nunca desde encabezados del cliente.
+func AdminRequired(roleProvider UserRoleProvider) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		roleValue := strings.TrimSpace(c.GetHeader("X-User-Role"))
-		if roleValue == "" {
-			roleValue = strings.TrimSpace(c.GetHeader("X-Role"))
+		userIDValue, exists := c.Get(ContextUserIDKey)
+		userID, validUserID := userIDValue.(string)
+		if !exists || !validUserID || strings.TrimSpace(userID) == "" {
+			httpresponse.UnauthorizedGin(c, "No se encontró sesión de usuario autenticada")
+			c.Abort()
+			return
 		}
-		if roleValue == "" {
-			if value, exists := c.Get(ContextUserRoleKey); exists {
-				if role, ok := value.(string); ok {
-					roleValue = role
-				}
-			}
-		}
-		if roleValue == "" {
-			httpresponse.ForbiddenGin(c, "Se requieren permisos de administrador")
+		if roleProvider == nil {
+			httpresponse.ErrorGin(c, http.StatusServiceUnavailable, "DATABASE_UNAVAILABLE", "Servicio de usuarios no disponible")
 			c.Abort()
 			return
 		}
 
-		roles := strings.FieldsFunc(strings.ToLower(roleValue), func(r rune) bool {
+		roleValue, err := roleProvider.GetRoleByID(c.Request.Context(), strings.TrimSpace(userID))
+		if err != nil {
+			httpresponse.ErrorGin(c, http.StatusServiceUnavailable, "DATABASE_UNAVAILABLE", "Servicio de usuarios no disponible")
+			c.Abort()
+			return
+		}
+		roles := strings.FieldsFunc(strings.ToLower(strings.TrimSpace(roleValue)), func(r rune) bool {
 			return r == ',' || r == ';' || r == '|' || r == ' '
 		})
 		isAllowed := false
@@ -83,7 +109,7 @@ func AdminRequired() gin.HandlerFunc {
 			return
 		}
 
-		c.Set(ContextUserRoleKey, strings.ToLower(roleValue))
+		c.Set(ContextUserRoleKey, strings.ToLower(strings.TrimSpace(roleValue)))
 		c.Next()
 	}
 }
