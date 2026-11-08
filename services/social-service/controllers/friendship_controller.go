@@ -173,6 +173,14 @@ func (ctrl *FriendshipController) GetFriendSuggestions(c *gin.Context) {
 }
 
 func (ctrl *FriendshipController) ExcludeBlocked(c *gin.Context) {
+	ctrl.excludeBlocked(c, true)
+}
+
+func (ctrl *FriendshipController) ExcludeBlockedInternal(c *gin.Context) {
+	ctrl.excludeBlocked(c, false)
+}
+
+func (ctrl *FriendshipController) excludeBlocked(c *gin.Context, authenticated bool) {
 	var req models.ExcludeBlockedRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		httpresponse.BadRequestGin(c, "Payload JSON inválido: "+err.Error())
@@ -180,11 +188,21 @@ func (ctrl *FriendshipController) ExcludeBlocked(c *gin.Context) {
 	}
 
 	userID := strings.TrimSpace(req.UserID)
-	if userID == "" {
-		userID = strings.TrimSpace(req.IDUsuario)
-	}
-	if userID == "" {
-		userID = strings.TrimSpace(c.GetString(ContextUserIDKey))
+	legacyUserID := strings.TrimSpace(req.IDUsuario)
+	if authenticated {
+		authenticatedUserID := strings.TrimSpace(c.GetString(ContextUserIDKey))
+		if authenticatedUserID == "" {
+			httpresponse.UnauthorizedGin(c, "No se encontró sesión de usuario autenticada")
+			return
+		}
+		if (userID != "" && userID != authenticatedUserID) ||
+			(legacyUserID != "" && legacyUserID != authenticatedUserID) {
+			httpresponse.ForbiddenGin(c, "El usuario solicitado no coincide con la sesión autenticada")
+			return
+		}
+		userID = authenticatedUserID
+	} else if userID == "" {
+		userID = legacyUserID
 	}
 	if userID == "" {
 		httpresponse.BadRequestGin(c, "El identificador del usuario de referencia (user_id) es requerido")

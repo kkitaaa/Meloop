@@ -3,8 +3,11 @@ package services
 import (
 	"context"
 	"errors"
+	"fmt"
+	"log/slog"
 	"strings"
 
+	"github.com/meloop/services/common/logging"
 	"github.com/meloop/social-service/models"
 	"github.com/meloop/social-service/repositories"
 )
@@ -54,6 +57,9 @@ type friendshipService struct {
 	repo       repositories.FriendshipRepository
 	publisher  EventPublisher
 	compatRepo repositories.CompatibilityRepository
+	logger     interface {
+		Warn(string, ...any)
+	}
 }
 
 func NewFriendshipService(repo repositories.FriendshipRepository, publisher EventPublisher, compatRepo ...repositories.CompatibilityRepository) FriendshipService {
@@ -61,7 +67,12 @@ func NewFriendshipService(repo repositories.FriendshipRepository, publisher Even
 	if len(compatRepo) > 0 {
 		cr = compatRepo[0]
 	}
-	return &friendshipService{repo: repo, publisher: publisher, compatRepo: cr}
+	return &friendshipService{
+		repo:       repo,
+		publisher:  publisher,
+		compatRepo: cr,
+		logger:     logging.New("social-service"),
+	}
 }
 
 func (s *friendshipService) SendRequest(ctx context.Context, senderID, receiverID string) (*models.FriendRequest, error) {
@@ -97,7 +108,13 @@ func (s *friendshipService) AcceptRequest(ctx context.Context, requestID string,
 		return nil, mapRepositoryError(err)
 	}
 	if s.publisher != nil {
-		_ = s.publisher.PublishFriendAccepted(ctx, request)
+		if err := s.publisher.PublishFriendAccepted(ctx, request); err != nil {
+			if s.logger != nil {
+				s.logger.Warn("event_publish_failed", "event", "friend.accepted", "error_type", fmt.Sprintf("%T", err), "delivery", "best_effort")
+			} else {
+				slog.Warn("event_publish_failed", "event", "friend.accepted", "error_type", fmt.Sprintf("%T", err), "delivery", "best_effort")
+			}
+		}
 	}
 	return request, nil
 }

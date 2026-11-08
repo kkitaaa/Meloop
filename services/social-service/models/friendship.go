@@ -79,5 +79,5 @@ type FriendProfile struct {
 	Correo      string       `json:"correo,omitempty"`
 	IDNivel     *int         `json:"id_nivel,omitempty"`
 	Experiencia int          `json:"experiencia"`
-	IDAmistad   FriendshipID `json:"id_amistad"`
+	IDAmistad   FriendshipID `json:"id_amistad,omitempty"`
 }

@@ -479,16 +479,27 @@ func (r *postgresFriendshipRepository) GetFriendProfile(ctx context.Context, use
 		return nil, ErrBlocked
 	}
 
-	// 3. Obtener datos de perfil del usuario amigo
-	var profile models.FriendProfile
-	profile.IDAmistad = models.FriendshipID(friendshipID)
+	// 3. Aplicar la visibilidad configurada por el titular.
+	visibility := "PUBLICO"
 	err = r.pool.QueryRow(ctx, `
-		SELECT id_usuario::text, username, correo, id_nivel, experiencia
+		SELECT COALESCE(visibilidad_perfil, 'PUBLICO')
+		FROM configuracion_privacidad
+		WHERE id_usuario = $1
+	`, resolvedFriendID).Scan(&visibility)
+	if errors.Is(err, pgx.ErrNoRows) {
+		visibility = "PUBLICO"
+	} else if err != nil {
+		return nil, err
+	}
+
+	// 4. Obtener únicamente los campos permitidos por el perfil.
+	var profile models.FriendProfile
+	err = r.pool.QueryRow(ctx, `
+		SELECT id_usuario::text, username, id_nivel, experiencia
 		FROM usuario
 		WHERE id_usuario::text = $1`, resolvedFriendID).Scan(
 		&profile.IDUsuario,
 		&profile.Username,
-		&profile.Correo,
 		&profile.IDNivel,
 		&profile.Experiencia,
 	)
@@ -499,6 +510,9 @@ func (r *postgresFriendshipRepository) GetFriendProfile(ctx context.Context, use
 		return nil, err
 	}
 
+	if strings.ToUpper(strings.TrimSpace(visibility)) != "PRIVADO" {
+		profile.IDAmistad = models.FriendshipID(friendshipID)
+	}
 	return &profile, nil
 }
 

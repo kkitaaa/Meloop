@@ -155,11 +155,12 @@ func (f *friendshipRepositoryFake) GetBlockedCandidateIDs(ctx context.Context, u
 
 type eventPublisherFake struct {
 	called bool
+	err    error
 }
 
 func (f *eventPublisherFake) PublishFriendAccepted(context.Context, *models.FriendRequest) error {
 	f.called = true
-	return nil
+	return f.err
 }
 
 func TestFriendshipServiceSendRequest(t *testing.T) {
@@ -273,6 +274,25 @@ func TestFriendshipServiceAcceptPublishesEventAfterRepositoryAction(t *testing.T
 	}
 	if !publisher.called {
 		t.Fatal("expected friend.accepted event to be published")
+	}
+}
+
+func TestFriendshipServiceAcceptIsBestEffortWhenEventPublishFails(t *testing.T) {
+	repo := &friendshipRepositoryFake{
+		request: &models.FriendRequest{ID: "1", SenderID: "sender", ReceiverID: "receiver", Status: models.FriendshipAccepted},
+	}
+	publisher := &eventPublisherFake{err: errors.New("broker unavailable")}
+	service := NewFriendshipService(repo, publisher)
+
+	request, err := service.AcceptRequest(context.Background(), "1", "receiver")
+	if err != nil {
+		t.Fatalf("AcceptRequest() error = %v, want best-effort success", err)
+	}
+	if request.Status != models.FriendshipAccepted {
+		t.Fatalf("status = %q, want %q", request.Status, models.FriendshipAccepted)
+	}
+	if !publisher.called {
+		t.Fatal("expected friend.accepted event publication attempt")
 	}
 }
 
