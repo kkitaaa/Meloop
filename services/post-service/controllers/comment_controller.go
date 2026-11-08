@@ -20,10 +20,9 @@ func NewCommentController(service *services.CommentService) *CommentController {
 
 // CreateComment crea un comentario principal en una publicación.
 func (controller *CommentController) CreateComment(c *gin.Context) {
-	postID := c.Param("id") // <-- Cambio aquí
+	postID := c.Param("id")
 
 	var request models.CreateCommentRequest
-
 	if err := c.ShouldBindJSON(&request); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "invalid request body",
@@ -31,7 +30,7 @@ func (controller *CommentController) CreateComment(c *gin.Context) {
 		return
 	}
 
-	comment, err := controller.service.CreateComment(postID, request)
+	created, err := controller.service.CreateComment(postID, request)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": err.Error(),
@@ -39,12 +38,11 @@ func (controller *CommentController) CreateComment(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, comment)
+	c.JSON(http.StatusCreated, created)
 }
 
-// GetComments obtiene los comentarios de una publicación.
 func (controller *CommentController) GetComments(c *gin.Context) {
-	postID := c.Param("id") // <-- Cambio aquí
+	postID := c.Param("id")
 
 	comments, err := controller.service.GetComments(postID)
 	if err != nil {
@@ -59,11 +57,9 @@ func (controller *CommentController) GetComments(c *gin.Context) {
 
 // CreateReply crea una respuesta asociada a un comentario.
 func (controller *CommentController) CreateReply(c *gin.Context) {
-	postID := c.Param("id") // <-- Cambio aquí
-	commentID := c.Param("commentId")
+	postID := c.Param("id")
 
 	var request models.CreateCommentRequest
-
 	if err := c.ShouldBindJSON(&request); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "invalid request body",
@@ -71,12 +67,7 @@ func (controller *CommentController) CreateReply(c *gin.Context) {
 		return
 	}
 
-	reply, err := controller.service.CreateReply(
-		postID,
-		commentID,
-		request,
-	)
-
+	created, err := controller.service.CreateComment(postID, request)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": err.Error(),
@@ -84,5 +75,5 @@ func (controller *CommentController) CreateReply(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, reply)
+	c.JSON(http.StatusCreated, created)
 }

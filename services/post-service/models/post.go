@@ -28,3 +28,9 @@ func (p *Post) BeforeCreate(tx *gorm.DB) (err error) {
 	}
 	return
 }
+
+type CreatePostRequest struct {
+	AuthorID string `form:"author_id" binding:"required"`
+	Content  string `form:"content"`
+	MusicID  string `form:"music_id"`
+}

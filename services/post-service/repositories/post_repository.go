@@ -22,16 +22,18 @@ type Post struct {
 	CreatedAt     time.Time `json:"created_at"`
 }
 
-type PostRepository struct {
+// Cambiamos el nombre de la estructura a SQLPostRepository para evitar el conflicto
+type SQLPostRepository struct {
 	db *sql.DB
 }
 
-func NewPostRepository(db *sql.DB) *PostRepository {
-	return &PostRepository{db: db}
+// Mantenemos NewPostRepository para no romper las inyecciones en main.go
+func NewPostRepository(db *sql.DB) *SQLPostRepository {
+	return &SQLPostRepository{db: db}
 }
 
 // UpdatePost modifica el contenido de una publicación usando el esquema real del MER
-func (r *PostRepository) UpdatePost(ctx context.Context, postID string, authorID string, newContent string) error {
+func (r *SQLPostRepository) UpdatePost(ctx context.Context, postID string, authorID string, newContent string) error {
 	query := `
 		UPDATE publicacion 
 		SET texto = $1 
@@ -56,7 +58,7 @@ func (r *PostRepository) UpdatePost(ctx context.Context, postID string, authorID
 }
 
 // DeletePost elimina una publicación validando la autoría con el MER
-func (r *PostRepository) DeletePost(ctx context.Context, postID string, authorID string) error {
+func (r *SQLPostRepository) DeletePost(ctx context.Context, postID string, authorID string) error {
 	query := `
 		DELETE FROM publicacion 
 		WHERE id_publicacion = $1 AND id_usuario = $2
@@ -80,7 +82,7 @@ func (r *PostRepository) DeletePost(ctx context.Context, postID string, authorID
 }
 
 // GetPostByID obtiene un post por su ID
-func (r *PostRepository) GetPostByID(ctx context.Context, postID string, requesterID string) (*Post, error) {
+func (r *SQLPostRepository) GetPostByID(ctx context.Context, postID string, requesterID string) (*Post, error) {
 	query := `
 		SELECT id_publicacion, id_usuario, texto, id_cancion, url_multimedia, fecha_creacion
 		FROM publicacion
@@ -101,7 +103,7 @@ func (r *PostRepository) GetPostByID(ctx context.Context, postID string, request
 }
 
 // GetPostsByAuthor obtiene los posts de un perfil con paginación
-func (r *PostRepository) GetPostsByAuthor(ctx context.Context, authorID string, requesterID string, limit int, offset int) ([]Post, error) {
+func (r *SQLPostRepository) GetPostsByAuthor(ctx context.Context, authorID string, requesterID string, limit int, offset int) ([]Post, error) {
 	query := `
 		SELECT id_publicacion, id_usuario, texto, id_cancion, url_multimedia, fecha_creacion
 		FROM publicacion
@@ -131,7 +133,7 @@ func (r *PostRepository) GetPostsByAuthor(ctx context.Context, authorID string, 
 }
 
 // SearchPosts busca posts por texto o canción
-func (r *PostRepository) SearchPosts(ctx context.Context, searchTerm string, requesterID string, limit int, offset int) ([]Post, error) {
+func (r *SQLPostRepository) SearchPosts(ctx context.Context, searchTerm string, requesterID string, limit int, offset int) ([]Post, error) {
 	searchPattern := "%" + searchTerm + "%"
 
 	query := `
@@ -160,4 +162,26 @@ func (r *PostRepository) SearchPosts(ctx context.Context, searchTerm string, req
 		posts = []Post{}
 	}
 	return posts, nil
+}
+
+// CreatePost inserta una nueva publicación en la base de datos
+func (r *SQLPostRepository) CreatePost(ctx context.Context, authorID string, content string, urlMultimedia *string) (*Post, error) {
+	// Generamos un ID simple basado en el timestamp actual (puedes cambiarlo a UUID si tu BD lo usa)
+	newID := fmt.Sprintf("post-%d", time.Now().UnixMilli())
+
+	query := `
+		INSERT INTO publicacion (id_publicacion, id_usuario, texto, url_multimedia, fecha_creacion)
+		VALUES ($1, $2, $3, $4, NOW())
+		RETURNING id_publicacion, id_usuario, texto, url_multimedia, fecha_creacion
+	`
+	var post Post
+	err := r.db.QueryRowContext(ctx, query, newID, authorID, content, urlMultimedia).Scan(
+		&post.ID, &post.AuthorID, &post.Content, &post.UrlMultimedia, &post.CreatedAt,
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("error insertando publicación: %w", err)
+	}
+
+	return &post, nil
 }
