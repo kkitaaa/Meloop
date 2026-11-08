@@ -1,0 +1,2810 @@
+openapi: 3.0.3
+info:
+  title: Meloop Gateway API
+  version: 1.0.0
+  description: |
+    Contrato REST versionado de Meloop. Se documentan las operaciones que hoy
+    existen detrás de las rutas del Gateway; los dominios sin rutas desplegadas
+    se indican en sus tags como pendientes y no se simulan.
+
+    Las rutas protegidas aceptan el session_token opaco de Auth en el esquema
+    HTTP Bearer. El Gateway valida cada token contra Auth, elimina las cabeceras
+    de identidad aportadas por el cliente e inyecta la identidad y el rol
+    verificados. Los IDs de usuario e interacción son UUID.
+servers:
+  - url: http://localhost:8080
+    description: API Gateway local
+tags:
+  - name: Auth
+    description: Registro, inicio de sesión y cuenta.
+  - name: Usuarios
+    description: Cuenta, perfil, privacidad, notificaciones e inventario.
+  - name: Social
+    description: Amistades, solicitudes, bloqueos y sugerencias.
+  - name: Publicaciones
+    description: "Pendiente: el Gateway aún no enruta publicaciones, comentarios ni likes."
+  - name: Música
+    description: "Pendiente: no hay rutas de catálogo o reproducción musical en el Gateway."
+  - name: Chat
+    description: "Pendiente: no hay rutas REST de chat en el Gateway; el WebSocket se documentará aparte."
+  - name: Notificaciones
+    description: Solo están disponibles las preferencias de notificación del usuario.
+  - name: Gamificación
+    description: "Pendiente: el Gateway aún no enruta gamification-service."
+  - name: Moderación
+    description: Solo está disponible la administración de usuarios del user-service.
+  - name: Administración
+    description: Operaciones administrativas y diagnósticos de desarrollo.
+security:
+  - bearerAuth: []
+
+paths:
+  /health:
+    get:
+      tags: [Administración]
+      security: []
+      operationId: gatewayHealth
+      summary: Comprobar el estado del Gateway
+      responses:
+        '200':
+          description: Gateway disponible
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    enum: [ok]
+              example:
+                status: ok
+
+  /auth/register:
+    post:
+      tags: [Auth]
+      security: []
+      operationId: register
+      summary: Registrar una cuenta
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+            example:
+              username: ana
+              email: ana@example.com
+              password: password-segura
+      responses:
+        '201':
+          description: Cuenta creada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /auth/login:
+    post:
+      tags: [Auth]
+      security: []
+      operationId: login
+      summary: Iniciar sesión
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+            example:
+              email: ana@example.com
+              password: password-segura
+      responses:
+        '200':
+          description: Sesión iniciada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /auth/password-recovery:
+    post:
+      tags: [Auth]
+      security: []
+      operationId: requestPasswordRecovery
+      summary: Solicitar recuperación de contraseña
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordRecoveryRequest'
+            example:
+              email: ana@example.com
+      responses:
+        '200':
+          description: Solicitud aceptada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /auth/password-recovery/reset:
+    post:
+      tags: [Auth]
+      security: []
+      operationId: resetPassword
+      summary: Restablecer contraseña con el token de recuperación
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordRequest'
+      responses:
+        '200':
+          description: Contraseña restablecida
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /auth/logout:
+    post:
+      tags: [Auth]
+      operationId: logout
+      summary: Cerrar la sesión activa
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      responses:
+        '200':
+          description: Sesión cerrada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /auth/validate:
+    get:
+      tags: [Auth]
+      operationId: validateSession
+      summary: Validar la sesión activa
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      responses:
+        '200':
+          description: Sesión válida
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidateSessionResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /auth/change-password:
+    post:
+      tags: [Auth]
+      operationId: changePassword
+      summary: Cambiar la contraseña de la sesión
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangePasswordRequest'
+      responses:
+        '200':
+          description: Contraseña actualizada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /auth/password:
+    patch:
+      tags: [Auth]
+      operationId: changePasswordPatch
+      summary: Cambiar la contraseña (alias PATCH)
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangePasswordRequest'
+      responses:
+        '200':
+          description: Contraseña actualizada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /users:
+    get:
+      tags: [Usuarios]
+      operationId: listUsersPublic
+      summary: Listar usuarios (endpoint heredado)
+      description: Respuesta heredada de prueba; los IDs de ejemplo todavía son enteros y no UUID.
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      responses:
+        '200':
+          description: Lista de usuarios
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data, error]
+                properties:
+                  success:
+                    type: boolean
+                    enum: [true]
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, username, email]
+                      properties:
+                        id:
+                          type: integer
+                          description: ID entero heredado de esta ruta de demostración.
+                        username:
+                          type: string
+                        email:
+                          type: string
+                          format: email
+                  error:
+                    type: object
+                    nullable: true
+              example:
+                success: true
+                data:
+                  - id: 1
+                    username: alanp
+                    email: alanp@example.com
+                  - id: 2
+                    username: antigravity
+                    email: antigravity@example.com
+                error: null
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      tags: [Usuarios]
+      operationId: createUserLegacy
+      summary: Crear usuario (endpoint heredado)
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUserRequest'
+            example:
+              username: ana
+              email: ana@example.com
+      responses:
+        '201':
+          description: Usuario creado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+              example:
+                success: true
+                data:
+                  id: 3
+                  username: ana
+                  email: ana@example.com
+                error: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /users/me:
+    get:
+      tags: [Usuarios]
+      operationId: getMyAccount
+      summary: Consultar los datos básicos de la cuenta
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      responses:
+        '200':
+          description: Cuenta consultada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /users/me/username:
+    patch:
+      tags: [Usuarios]
+      operationId: updateUsername
+      summary: Actualizar el nombre de usuario
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username]
+              properties:
+                username:
+                  type: string
+      responses:
+        '200':
+          description: Nombre actualizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /users/me/email:
+    post:
+      tags: [Usuarios]
+      operationId: requestEmailChange
+      summary: Solicitar cambio de correo electrónico
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                  format: email
+                correo:
+                  type: string
+                  format: email
+      responses:
+        '200':
+          description: Solicitud de cambio creada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /users/me/profile:
+    get:
+      tags: [Usuarios]
+      operationId: getMyProfile
+      summary: Consultar el perfil propio
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      responses:
+        '200':
+          description: Perfil consultado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    put:
+      tags: [Usuarios]
+      operationId: updateMyProfile
+      summary: Actualizar el perfil propio
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProfileRequest'
+      responses:
+        '200':
+          description: Perfil actualizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /users/me/perfil:
+    get:
+      tags: [Usuarios]
+      operationId: getMyProfileSpanishAlias
+      summary: Consultar el perfil propio (alias español)
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      responses:
+        '200':
+          description: Perfil consultado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    put:
+      tags: [Usuarios]
+      operationId: updateMyProfileSpanishAlias
+      summary: Actualizar el perfil propio (alias español)
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProfileRequest'
+      responses:
+        '200':
+          description: Perfil actualizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /users/{id}/profile:
+    get:
+      tags: [Usuarios]
+      operationId: getUserProfile
+      summary: Consultar el perfil de un usuario
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          description: Perfil consultado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /users/{id}/perfil:
+    get:
+      tags: [Usuarios]
+      operationId: getUserProfileSpanishAlias
+      summary: Consultar el perfil de un usuario (alias español)
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          description: Perfil consultado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /users/me/privacy:
+    get:
+      tags: [Usuarios]
+      operationId: getPrivacy
+      summary: Consultar la configuración de privacidad
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      responses:
+        '200':
+          description: Configuración consultada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    patch:
+      tags: [Usuarios]
+      operationId: updatePrivacy
+      summary: Actualizar la configuración de privacidad
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Configuración actualizada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    put:
+      tags: [Usuarios]
+      operationId: replacePrivacy
+      summary: Actualizar la configuración de privacidad (alias PUT)
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Configuración actualizada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /users/me/privacidad:
+    get:
+      tags: [Usuarios]
+      operationId: getPrivacySpanishAlias
+      summary: Consultar la configuración de privacidad (alias español)
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      responses:
+        '200':
+          description: Configuración consultada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    patch:
+      tags: [Usuarios]
+      operationId: updatePrivacySpanishAlias
+      summary: Actualizar la configuración de privacidad (alias español)
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Configuración actualizada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /users/me/notifications/settings:
+    get:
+      tags: [Notificaciones]
+      operationId: getNotificationSettings
+      summary: Consultar preferencias de notificación
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      responses:
+        '200':
+          description: Preferencias consultadas
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    patch:
+      tags: [Notificaciones]
+      operationId: updateNotificationSettings
+      summary: Actualizar preferencias de notificación
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateNotificationsRequest'
+      responses:
+        '200':
+          description: Preferencias actualizadas
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    put:
+      tags: [Notificaciones]
+      operationId: replaceNotificationSettings
+      summary: Actualizar preferencias de notificación (alias PUT)
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateNotificationsRequest'
+      responses:
+        '200':
+          description: Preferencias actualizadas
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /users/me/notifications/settings/{tipo}:
+    patch:
+      tags: [Notificaciones]
+      operationId: updateSingleNotificationSetting
+      summary: Actualizar una preferencia de notificación
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      parameters:
+        - name: tipo
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [SOLICITUD_AMISTAD, SOLICITUD_AMISTAD_ACEPTADA, LIKE, COMENTARIO, RESPUESTA, MENSAJE, SUBIDA_NIVEL, RECOMPENSA_DESBLOQUEADA, ACCION_MODERACION]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [habilitada]
+              properties:
+                habilitada:
+                  type: boolean
+      responses:
+        '200':
+          description: Preferencia actualizada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /users/me/notifications:
+    get:
+      tags: [Notificaciones]
+      operationId: getNotificationSettingsAlias
+      summary: Consultar preferencias de notificación (alias)
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      responses:
+        '200':
+          description: Preferencias consultadas
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    patch:
+      tags: [Notificaciones]
+      operationId: updateNotificationSettingsAlias
+      summary: Actualizar preferencias de notificación (alias)
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateNotificationsRequest'
+      responses:
+        '200':
+          description: Preferencias actualizadas
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /users/me/notificaciones:
+    get:
+      tags: [Notificaciones]
+      operationId: getNotificationSettingsSpanishAlias
+      summary: Consultar preferencias de notificación (alias español)
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      responses:
+        '200':
+          description: Preferencias consultadas
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    patch:
+      tags: [Notificaciones]
+      operationId: updateNotificationSettingsSpanishAlias
+      summary: Actualizar preferencias de notificación (alias español)
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateNotificationsRequest'
+      responses:
+        '200':
+          description: Preferencias actualizadas
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/users/me/profile:
+    get:
+      tags: [Usuarios]
+      operationId: getMyProfileV1
+      summary: Consultar el perfil propio (v1)
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      responses:
+        '200':
+          description: Perfil consultado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    put:
+      tags: [Usuarios]
+      operationId: updateMyProfileV1
+      summary: Actualizar el perfil propio (v1)
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProfileRequest'
+      responses:
+        '200':
+          description: Perfil actualizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /v1/users/me/perfil:
+    get:
+      tags: [Usuarios]
+      operationId: getMyProfileV1SpanishAlias
+      summary: Consultar el perfil propio (v1, alias español)
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      responses:
+        '200':
+          description: Perfil consultado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    put:
+      tags: [Usuarios]
+      operationId: updateMyProfileV1SpanishAlias
+      summary: Actualizar el perfil propio (v1, alias español)
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProfileRequest'
+      responses:
+        '200':
+          description: Perfil actualizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /v1/users/{id}/profile:
+    get:
+      tags: [Usuarios]
+      operationId: getUserProfileV1
+      summary: Consultar el perfil de un usuario (v1)
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          description: Perfil consultado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /v1/users/{id}/perfil:
+    get:
+      tags: [Usuarios]
+      operationId: getUserProfileV1SpanishAlias
+      summary: Consultar el perfil de un usuario (v1, alias español)
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          description: Perfil consultado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /v1/users/me/inventory:
+    get:
+      tags: [Gamificación]
+      operationId: getMyInventory
+      summary: Consultar el inventario de recompensas
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      responses:
+        '200':
+          description: Inventario consultado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /v1/users/me/inventory/{id}/equip:
+    put:
+      tags: [Gamificación]
+      operationId: equipReward
+      summary: Equipar una recompensa del inventario
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      parameters:
+        - $ref: '#/components/parameters/InventoryId'
+      responses:
+        '200':
+          description: Recompensa equipada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /v1/users/me/inventory/{id}/unequip:
+    put:
+      tags: [Gamificación]
+      operationId: unequipReward
+      summary: Desequipar una recompensa del inventario
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      parameters:
+        - $ref: '#/components/parameters/InventoryId'
+      responses:
+        '200':
+          description: Recompensa desequipada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /users/me/inventory:
+    get:
+      tags: [Gamificación]
+      operationId: getMyInventoryLegacy
+      summary: Consultar el inventario de recompensas (ruta heredada)
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      responses:
+        '200':
+          description: Inventario consultado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /users/me/inventory/{id}/equip:
+    put:
+      tags: [Gamificación]
+      operationId: equipRewardLegacy
+      summary: Equipar una recompensa (ruta heredada)
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      parameters:
+        - $ref: '#/components/parameters/InventoryId'
+      responses:
+        '200':
+          description: Recompensa equipada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /users/me/inventory/{id}/unequip:
+    put:
+      tags: [Gamificación]
+      operationId: unequipRewardLegacy
+      summary: Desequipar una recompensa (ruta heredada)
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      parameters:
+        - $ref: '#/components/parameters/InventoryId'
+      responses:
+        '200':
+          description: Recompensa desequipada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /users/admin/users:
+    get:
+      tags: [Moderación, Administración]
+      operationId: adminListUsers
+      summary: Listar usuarios para administración
+      security:
+        - bearerAuth: []
+      x-required-roles: [admin, moderator]
+      responses:
+        '200':
+          description: Usuarios listados
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /users/admin/users/{id}/suspend:
+    patch:
+      tags: [Moderación, Administración]
+      operationId: suspendUser
+      summary: Suspender una cuenta
+      security:
+        - bearerAuth: []
+      x-required-roles: [admin, moderator]
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserModerationRequest'
+      responses:
+        '200':
+          description: Cuenta suspendida
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /users/admin/users/{id}/reactivate:
+    patch:
+      tags: [Moderación, Administración]
+      operationId: reactivateUser
+      summary: Reactivar una cuenta
+      security:
+        - bearerAuth: []
+      x-required-roles: [admin, moderator]
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserModerationRequest'
+      responses:
+        '200':
+          description: Cuenta reactivada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /users/admin/users/{id}/moderation:
+    patch:
+      tags: [Moderación, Administración]
+      operationId: updateModeratorRole
+      summary: Actualizar permisos de moderación
+      security:
+        - bearerAuth: []
+      x-required-roles: [admin, moderator]
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [moderador]
+              properties:
+                moderador:
+                  type: boolean
+      responses:
+        '200':
+          description: Permiso actualizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /friends:
+    get:
+      tags: [Social]
+      operationId: listFriends
+      summary: Listar amistades
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      responses:
+        '200':
+          description: Amistades listadas
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /friends/requests:
+    post:
+      tags: [Social]
+      operationId: sendFriendRequest
+      summary: Enviar una solicitud de amistad
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id_usuario]
+              properties:
+                id_usuario:
+                  type: string
+                  format: uuid
+      responses:
+        '201':
+          description: Solicitud creada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /friends/requests/received:
+    get:
+      tags: [Social]
+      operationId: listReceivedFriendRequests
+      summary: Listar solicitudes recibidas
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      responses:
+        '200':
+          description: Solicitudes listadas
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /friends/requests/sent:
+    get:
+      tags: [Social]
+      operationId: listSentFriendRequests
+      summary: Listar solicitudes enviadas
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      responses:
+        '200':
+          description: Solicitudes listadas
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /friends/requests/{id}/accept:
+    post:
+      tags: [Social]
+      operationId: acceptFriendRequest
+      summary: Aceptar una solicitud
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      parameters:
+        - $ref: '#/components/parameters/FriendshipId'
+      responses:
+        '200':
+          description: Solicitud aceptada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /friends/requests/{id}/reject:
+    post:
+      tags: [Social]
+      operationId: rejectFriendRequest
+      summary: Rechazar una solicitud
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      parameters:
+        - $ref: '#/components/parameters/FriendshipId'
+      responses:
+        '200':
+          description: Solicitud rechazada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /friends/requests/{id}/cancel:
+    post:
+      tags: [Social]
+      operationId: cancelFriendRequest
+      summary: Cancelar una solicitud enviada
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      parameters:
+        - $ref: '#/components/parameters/FriendshipId'
+      responses:
+        '200':
+          description: Solicitud cancelada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /friends/{id}:
+    delete:
+      tags: [Social]
+      operationId: removeFriend
+      summary: Eliminar una amistad
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      parameters:
+        - $ref: '#/components/parameters/FriendshipId'
+      responses:
+        '200':
+          description: Amistad eliminada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+              example:
+                success: true
+                data:
+                  mensaje: Amistad eliminada correctamente
+                error: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /friends/{id}/profile:
+    get:
+      tags: [Social]
+      operationId: getFriendProfile
+      summary: Consultar el perfil de una amistad
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          description: Perfil consultado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /friends/profile/{id}:
+    get:
+      tags: [Social]
+      operationId: getFriendProfileAlias
+      summary: Consultar el perfil de una amistad (alias)
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          description: Perfil consultado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /friends/blocks:
+    post:
+      tags: [Social]
+      operationId: blockUser
+      summary: Bloquear un usuario
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id_usuario]
+              properties:
+                id_usuario:
+                  type: string
+                  format: uuid
+      responses:
+        '200':
+          description: Usuario bloqueado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+              example:
+                success: true
+                data:
+                  mensaje: Usuario bloqueado correctamente
+                error: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /friends/block:
+    post:
+      tags: [Social]
+      operationId: blockUserAlias
+      summary: Bloquear un usuario (alias)
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id_usuario]
+              properties:
+                id_usuario:
+                  type: string
+                  format: uuid
+      responses:
+        '200':
+          description: Usuario bloqueado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /friends/validate-interaction:
+    get:
+      tags: [Social]
+      operationId: validateInteraction
+      summary: Comprobar si dos usuarios pueden interactuar
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      parameters:
+        - name: id_usuario
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: target_user_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Interacción permitida
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      tags: [Social]
+      operationId: validateInteractionPost
+      summary: Comprobar si dos usuarios pueden interactuar (POST)
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                id_usuario:
+                  type: string
+                  format: uuid
+      responses:
+        '200':
+          description: Interacción permitida
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /friends/blocks/exclude:
+    post:
+      tags: [Social]
+      operationId: excludeBlockedCandidates
+      summary: Excluir candidatos bloqueados
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExcludeBlockedRequest'
+      responses:
+        '200':
+          description: Candidatos filtrados
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /friends/suggestions:
+    get:
+      tags: [Social]
+      operationId: getFriendSuggestions
+      summary: Obtener sugerencias de amistad
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      responses:
+        '200':
+          description: Sugerencias devueltas
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /friends/recommendations:
+    get:
+      tags: [Social]
+      operationId: getFriendSuggestionsAlias
+      summary: Obtener sugerencias de amistad (alias)
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      responses:
+        '200':
+          description: Sugerencias devueltas
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /media/upload:
+    post:
+      tags: [Usuarios]
+      operationId: createPresignedUpload
+      summary: Obtener una URL prefirmada de carga multimedia
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PresignedUploadRequest'
+      responses:
+        '200':
+          description: URL prefirmada creada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+  /media/presigned-upload-url:
+    post:
+      tags: [Usuarios]
+      operationId: createPresignedUploadAlias
+      summary: Obtener URL prefirmada (alias)
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PresignedUploadRequest'
+      responses:
+        '200':
+          description: URL prefirmada creada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+  /media/verify:
+    get:
+      tags: [Usuarios]
+      operationId: verifyMediaGet
+      summary: Verificar la existencia de un objeto multimedia
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      parameters:
+        - name: key
+          in: query
+          schema:
+            type: string
+        - name: object_key
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Verificación completada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+    post:
+      tags: [Usuarios]
+      operationId: verifyMediaPost
+      summary: Verificar la existencia de un objeto multimedia (POST)
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                object_key:
+                  type: string
+      responses:
+        '200':
+          description: Verificación completada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+  /v1/media/upload:
+    post:
+      tags: [Usuarios]
+      operationId: createPresignedUploadV1
+      summary: Obtener una URL prefirmada de carga multimedia (v1)
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PresignedUploadRequest'
+      responses:
+        '200':
+          description: URL prefirmada creada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+  /v1/media/presigned-upload-url:
+    post:
+      tags: [Usuarios]
+      operationId: createPresignedUploadV1Alias
+      summary: Obtener URL prefirmada (v1, alias)
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PresignedUploadRequest'
+      responses:
+        '200':
+          description: URL prefirmada creada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+  /v1/media/verify:
+    get:
+      tags: [Usuarios]
+      operationId: verifyMediaV1Get
+      summary: Verificar objeto multimedia (v1)
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      parameters:
+        - name: key
+          in: query
+          schema:
+            type: string
+        - name: object_key
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Verificación completada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+    post:
+      tags: [Usuarios]
+      operationId: verifyMediaV1Post
+      summary: Verificar objeto multimedia (v1, POST)
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                object_key:
+                  type: string
+      responses:
+        '200':
+          description: Verificación completada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+
+  /recommendations/{user_id}:
+    get:
+      tags: [Social]
+      operationId: getRecommendations
+      summary: Obtener recomendaciones del usuario
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          description: UUID del usuario autenticado; debe coincidir con el token de sesión.
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+      responses:
+        '200':
+          description: Recomendaciones calculadas
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecommendationResponse'
+        '400':
+          $ref: '#/components/responses/RecommendationBadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '502':
+          $ref: '#/components/responses/RecommendationUnavailable'
+  /recommendations/{user_id}/music:
+    get:
+      tags: [Música, Social]
+      operationId: getMusicRecommendations
+      summary: Obtener recomendaciones musicales del usuario
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          description: UUID del usuario autenticado; debe coincidir con el token de sesión.
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+      responses:
+        '200':
+          description: Recomendaciones calculadas
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecommendationResponse'
+        '400':
+          $ref: '#/components/responses/RecommendationBadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '502':
+          $ref: '#/components/responses/RecommendationUnavailable'
+  /recommendations/{user_id}/friends:
+    get:
+      tags: [Social]
+      operationId: getFriendRecommendations
+      summary: Obtener recomendaciones de amistades
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          description: UUID del usuario autenticado; debe coincidir con el token de sesión.
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+      responses:
+        '200':
+          description: Recomendaciones calculadas
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecommendationResponse'
+        '400':
+          $ref: '#/components/responses/RecommendationBadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '502':
+          $ref: '#/components/responses/RecommendationUnavailable'
+  /recommendations/music/{user_id}:
+    get:
+      tags: [Música, Social]
+      operationId: getMusicRecommendationsAlias
+      summary: Obtener recomendaciones musicales (alias de ruta)
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          description: UUID del usuario autenticado; debe coincidir con el token de sesión.
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+      responses:
+        '200':
+          description: Recomendaciones calculadas
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecommendationResponse'
+        '400':
+          $ref: '#/components/responses/RecommendationBadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '502':
+          $ref: '#/components/responses/RecommendationUnavailable'
+  /recommendations/friends/{user_id}:
+    get:
+      tags: [Social]
+      operationId: getFriendRecommendationsAlias
+      summary: Obtener recomendaciones de amistades (alias de ruta)
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          description: UUID del usuario autenticado; debe coincidir con el token de sesión.
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+      responses:
+        '200':
+          description: Recomendaciones calculadas
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecommendationResponse'
+        '400':
+          $ref: '#/components/responses/RecommendationBadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '502':
+          $ref: '#/components/responses/RecommendationUnavailable'
+  /interactions:
+    post:
+      tags: [Social]
+      operationId: recordInteraction
+      summary: Registrar una interacción para recomendaciones
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_id, interaction]
+              properties:
+                user_id:
+                  type: string
+                  format: uuid
+                  description: Debe coincidir con el ID del usuario autenticado.
+                limit:
+                  type: integer
+                interaction:
+                  type: object
+                  required: [type, target_id]
+                  properties:
+                    type:
+                      type: string
+                    target_id:
+                      type: string
+                      format: uuid
+                      description: UUID del recurso asociado a la interacción.
+      responses:
+        '200':
+          description: Interacción registrada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecommendationResponse'
+        '400':
+          $ref: '#/components/responses/RecommendationBadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          description: Fallo al procesar la interacción
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /test/health:
+    get:
+      tags: [Administración]
+      operationId: testServiceHealth
+      summary: Comprobar el servicio de pruebas
+      description: Ruta de desarrollo del test-service, no destinada a producción.
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      responses:
+        '200':
+          description: Test-service disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+              example:
+                success: true
+                data:
+                  service: test-service
+                  status: ok
+                error: null
+  /test/validation-error:
+    get:
+      tags: [Administración]
+      operationId: testValidationError
+      summary: Generar error de validación de prueba
+      description: Ruta de desarrollo del test-service, no destinada a producción.
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /test/unauthorized:
+    get:
+      tags: [Administración]
+      operationId: testUnauthorized
+      summary: Generar error de autenticación de prueba
+      description: Ruta de desarrollo del test-service, no destinada a producción.
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /test/forbidden:
+    get:
+      tags: [Administración]
+      operationId: testForbidden
+      summary: Generar error de permisos de prueba
+      description: Ruta de desarrollo del test-service, no destinada a producción.
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      responses:
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /test/not-found:
+    get:
+      tags: [Administración]
+      operationId: testNotFound
+      summary: Generar error de recurso inexistente de prueba
+      description: Ruta de desarrollo del test-service, no destinada a producción.
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      responses:
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /test/internal-error:
+    get:
+      tags: [Administración]
+      operationId: testInternalError
+      summary: Generar error interno de prueba
+      description: Ruta de desarrollo del test-service, no destinada a producción.
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      responses:
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /test/panic:
+    get:
+      tags: [Administración]
+      operationId: testPanic
+      summary: Probar la recuperación de pánicos
+      description: Ruta de desarrollo del test-service, no destinada a producción.
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      responses:
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: session_token
+      description: Copia el campo data.session_token de la respuesta de login.
+  parameters:
+    UserId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    FriendshipId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    InventoryId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            details: {}
+    ErrorResponse:
+      allOf:
+        - $ref: '#/components/schemas/Error'
+        - type: object
+          required: [success, data]
+          properties:
+            success:
+              type: boolean
+              enum: [false]
+            data:
+              type: object
+              nullable: true
+    SuccessResponse:
+      type: object
+      required: [success, data, error]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        data: {}
+        error:
+          type: object
+          nullable: true
+    LoginResponse:
+      type: object
+      required: [success, data, error]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        data:
+          type: object
+          required: [session_token, expires_in, user]
+          properties:
+            session_token:
+              type: string
+            expires_in:
+              type: integer
+            user:
+              $ref: '#/components/schemas/AuthenticatedUser'
+        error:
+          type: object
+          nullable: true
+    ValidateSessionResponse:
+      type: object
+      required: [success, data, error]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        data:
+          $ref: '#/components/schemas/AuthenticatedUser'
+        error:
+          type: object
+          nullable: true
+    AuthenticatedUser:
+      type: object
+      required: [id, username, email, role]
+      properties:
+        id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [user, moderator, admin]
+    Pagination:
+      type: object
+      required: [limit, cursor, next_cursor]
+      properties:
+        limit:
+          type: integer
+          minimum: 1
+        cursor:
+          type: string
+          nullable: true
+        next_cursor:
+          type: string
+          nullable: true
+    UserSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        id_usuario:
+          type: string
+          format: uuid
+        username:
+          type: string
+        email:
+          type: string
+          format: email
+    Post:
+      type: object
+      description: Esquema reservado; no hay todavía rutas de publicaciones en el Gateway.
+      properties:
+        id:
+          type: string
+          format: uuid
+    Comment:
+      type: object
+      description: Esquema reservado; no hay todavía rutas de comentarios en el Gateway.
+      properties:
+        id:
+          type: string
+          format: uuid
+    RecommendationResponse:
+      type: object
+      required: [user_id, recommendations, model, model_version, interaction_count, from_backup]
+      properties:
+        user_id:
+          type: string
+          format: uuid
+          description: UUID del usuario propietario de las recomendaciones.
+        recommendations:
+          type: array
+          items:
+            type: object
+            properties:
+              item_id:
+                type: string
+                description: UUID del usuario o identificador string del elemento de catálogo.
+              item_key:
+                type: string
+              type:
+                type: string
+              name:
+                type: string
+              score:
+                type: number
+                format: double
+              reason:
+                type: string
+        model:
+          type: string
+        model_version:
+          type: string
+        interaction_count:
+          type: integer
+        calculated_at:
+          type: string
+          format: date-time
+        from_backup:
+          type: boolean
+    RegisterRequest:
+      type: object
+      required: [username, email, password]
+      properties:
+        username:
+          type: string
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+        fecha_nacimiento:
+          type: string
+          format: date
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+    PasswordRecoveryRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+    ResetPasswordRequest:
+      type: object
+      required: [token, new_password]
+      properties:
+        token:
+          type: string
+        new_password:
+          type: string
+          format: password
+    ChangePasswordRequest:
+      type: object
+      required: [current_password, new_password]
+      properties:
+        current_password:
+          type: string
+          format: password
+        new_password:
+          type: string
+          format: password
+    CreateUserRequest:
+      type: object
+      required: [username, email]
+      properties:
+        username:
+          type: string
+        email:
+          type: string
+          format: email
+    UpdateProfileRequest:
+      type: object
+      properties:
+        biografia:
+          type: string
+        bio:
+          type: string
+        foto_perfil:
+          type: string
+        avatar:
+          type: string
+        avatar_url:
+          type: string
+        banner:
+          type: string
+        banner_url:
+          type: string
+        tema:
+          type: string
+        theme:
+          type: string
+        colores:
+          type: object
+          additionalProperties: true
+        colors:
+          type: object
+          additionalProperties: true
+        informacion_musical:
+          type: object
+          properties:
+            generos:
+              type: array
+              items:
+                type: string
+            artistas:
+              type: array
+              items:
+                type: string
+            canciones:
+              type: array
+              items:
+                type: string
+        preferencias_musicales:
+          type: object
+          additionalProperties: true
+    UpdateNotificationsRequest:
+      type: object
+      properties:
+        configuraciones:
+          type: array
+          items:
+            $ref: '#/components/schemas/NotificationSetting'
+        settings:
+          type: array
+          items:
+            $ref: '#/components/schemas/NotificationSetting'
+    NotificationSetting:
+      type: object
+      required: [tipo_notificacion, habilitada]
+      properties:
+        tipo_notificacion:
+          type: string
+          enum: [SOLICITUD_AMISTAD, SOLICITUD_AMISTAD_ACEPTADA, LIKE, COMENTARIO, RESPUESTA, MENSAJE, SUBIDA_NIVEL, RECOMPENSA_DESBLOQUEADA, ACCION_MODERACION]
+        habilitada:
+          type: boolean
+    UserModerationRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+    ExcludeBlockedRequest:
+      type: object
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        id_usuario:
+          type: string
+          format: uuid
+        candidate_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        candidatos:
+          type: array
+          items:
+            type: string
+            format: uuid
+    PresignedUploadRequest:
+      type: object
+      properties:
+        resource_type:
+          type: string
+          enum: [profile_photo, banner]
+        tipo_recurso:
+          type: string
+        content_type:
+          type: string
+          example: image/jpeg
+        tipo_mime:
+          type: string
+        mime:
+          type: string
+        file_name:
+          type: string
+        nombre:
+          type: string
+        file_size:
+          type: integer
+          format: int64
+          maximum: 5242880
+        tamano_bytes:
+          type: integer
+          format: int64
+        size:
+          type: integer
+          format: int64
+  responses:
+    BadRequest:
+      description: Solicitud inválida
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            data: null
+            error:
+              code: VALIDATION_ERROR
+              message: El campo 'email' es obligatorio y debe ser un correo válido
+              details:
+                field: email
+                issue: invalid_format
+    Unauthorized:
+      description: Autenticación requerida o no válida
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            data: null
+            error:
+              code: UNAUTHORIZED
+              message: Token de autenticación vencido o inválido
+    Forbidden:
+      description: Permisos insuficientes
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            data: null
+            error:
+              code: FORBIDDEN
+              message: No tienes permisos para acceder a este recurso
+    NotFound:
+      description: Recurso no encontrado
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            data: null
+            error:
+              code: NOT_FOUND
+              message: El usuario con ID 123 no existe
+    Conflict:
+      description: Conflicto con el estado actual
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            data: null
+            error:
+              code: CONFLICT
+              message: El correo electrónico ya está registrado
+    UnprocessableEntity:
+      description: Entidad no procesable
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    TooManyRequests:
+      description: Límite de solicitudes excedido
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            data: null
+            error:
+              code: TOO_MANY_REQUESTS
+              message: Demasiados intentos fallidos de inicio de sesión. Cuenta bloqueada temporalmente.
+    InternalError:
+      description: Error interno del servidor
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            data: null
+            error:
+              code: INTERNAL_ERROR
+              message: Ha ocurrido un error interno
+    BadGateway:
+      description: Servicio de destino no disponible
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    RecommendationBadRequest:
+      description: Solicitud de recomendaciones inválida (el destino responde texto plano)
+      content:
+        text/plain:
+          schema:
+            type: string
+          example: invalid user id
+    RecommendationUnavailable:
+      description: Servicio de recomendaciones no disponible (el destino responde texto plano)
+      content:
+        text/plain:
+          schema:
+            type: string
+          example: recommendations unavailable

@@ -58,7 +58,7 @@ Para instrucciones detalladas, ve a [docs/setup/](docs/setup/).
 - [🔐 Redis](docs/redis.md) - Configuración de caché
 
 ### Especificaciones
-- [📖 OpenAPI](docs/openapi.yaml) - Especificación API
+- [📖 OpenAPI](docs/api/openapi.yaml) - Especificación REST del Gateway
 
 ---
 

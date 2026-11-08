@@ -4,6 +4,7 @@ import (
 	"os"
 
 	"github.com/gin-gonic/gin"
+	"github.com/meloop/api-gateway/controllers"
 	"github.com/meloop/api-gateway/routes"
 	"github.com/meloop/services/common/httpresponse"
 	"github.com/meloop/services/common/logging"
@@ -20,6 +21,7 @@ func main() {
 	router := gin.New()
 	router.Use(logging.GinMiddleware(logger))
 	router.Use(httpresponse.GinRecoveryWithLogger(logger))
+	router.Use(controllers.SwaggerUICORS())
 
 	routes.SetupRoutes(router)
 

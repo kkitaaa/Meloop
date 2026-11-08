@@ -31,6 +31,7 @@ services:
       TEST_SERVICE_URL: http://test-service:8081
       USER_SERVICE_URL: http://user-service:8082
       AUTH_SERVICE_URL: http://auth-service:8083
+      MEDIA_SERVICE_URL: http://media-service:8085
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/
       MINIO_ENDPOINT: http://minio:9000
@@ -44,6 +45,20 @@ services:
       - redis
       - rabbitmq
       - minio
+    networks:
+      - meloop-network
+
+  swagger-ui:
+    image: swaggerapi/swagger-ui:latest
+    profiles:
+      - dev
+    container_name: meloop-swagger-ui
+    ports:
+      - "8090:8080"
+    environment:
+      SWAGGER_JSON: /openapi.yaml
+    volumes:
+      - ./services/api-gateway/openapi.yaml:/openapi.yaml:ro
     networks:
       - meloop-network
 
