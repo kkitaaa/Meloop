@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/meloop/services/common/logging"
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -24,6 +25,14 @@ type CommentLikedEvent struct {
 	Event     string `json:"event"`
 	UserID    string `json:"userId"`
 	CommentID string `json:"commentId"`
+}
+
+// PostCreatedEvent define la estructura del evento (RF-16, REI-04)
+type PostCreatedEvent struct {
+	EventID   string `json:"event_id"`
+	UserID    string `json:"user_id"`
+	PostID    string `json:"post_id"`
+	CreatedAt string `json:"fecha"`
 }
 
 func rabbitURL() string {
@@ -172,5 +181,49 @@ func PublishCommentUnliked(userID string, commentID string) error {
 	}
 
 	logger.Info("event_published", "event", "like.deleted", "payload_bytes", len(body))
+	return nil
+}
+
+// PublishPostCreated publica el evento en RabbitMQ con reintentos básicos (RNF-05)
+func PublishPostCreated(userID, postID string) error {
+	logger := logging.New("post-service")
+
+	conn, err := amqp.Dial(rabbitURL())
+	if err != nil {
+		return fmt.Errorf("error conectando a RabbitMQ: %w", err)
+	}
+	defer conn.Close()
+
+	ch, err := conn.Channel()
+	if err != nil {
+		return fmt.Errorf("error creando canal: %w", err)
+	}
+	defer ch.Close()
+
+	if err = ch.ExchangeDeclare(exchange, exchangeType, true, false, false, false, nil); err != nil {
+		return fmt.Errorf("error declarando exchange: %w", err)
+	}
+
+	event := PostCreatedEvent{
+		EventID:   "evt-" + postID,
+		UserID:    userID,
+		PostID:    postID,
+		CreatedAt: time.Now().Format(time.RFC3339),
+	}
+
+	body, err := json.Marshal(event)
+	if err != nil {
+		return fmt.Errorf("error serializando evento: %w", err)
+	}
+
+	if err = ch.Publish(exchange, "post.created", false, false, amqp.Publishing{
+		ContentType:  "application/json",
+		DeliveryMode: amqp.Persistent, // Mensajes persistentes (RNF-05)
+		Body:         body,
+	}); err != nil {
+		return fmt.Errorf("error publicando evento post.created: %w", err)
+	}
+
+	logger.Info("event_published", "event", "post.created", "payload_bytes", len(body))
 	return nil
 }

@@ -1,10 +1,12 @@
 package controllers
 
 import (
+	"log"
 	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"github.com/meloop/post-service/messaging"
 	"github.com/meloop/post-service/services"
 )
 
@@ -44,7 +46,7 @@ func (ctrl *PostController) CreatePost(c *gin.Context) {
 		return
 	}
 
-	// 3. ENVIAR A GUARDAR (Si tu postService soporta el MusicID, lo puedes pasar aquí)
+	// 3. ENVIAR A GUARDAR
 	post, err := ctrl.postService.CreatePost(c.Request.Context(), authorID, req.Content, req.MediaURLs)
 	if err != nil {
 		println("ERROR AL GUARDAR POST:", err.Error())
@@ -52,7 +54,17 @@ func (ctrl *PostController) CreatePost(c *gin.Context) {
 		return
 	}
 
-	// 4. Responder 201 Created con el objeto ya guardado
+	// 4. PUBLICAR EVENTO ASÍNCRONAMENTE (RNF-05, RF-16)
+	go func() {
+		// Nota: Si tu struct de base de datos usa otro nombre para el ID (ej: IdPublicacion),
+		// cambia post.ID por el nombre correcto.
+		err := messaging.PublishPostCreated(authorID, post.ID)
+		if err != nil {
+			log.Printf("[Alerta] El post %s fue creado, pero falló la publicación en RabbitMQ: %v", post.ID, err)
+		}
+	}()
+
+	// 5. Responder 201 Created con el objeto ya guardado
 	c.JSON(http.StatusCreated, post)
 }
 
