@@ -195,24 +195,24 @@ func (r *SQLPostRepository) AddLike(ctx context.Context, postID string, userID s
 	if err := r.db.QueryRowContext(ctx, checkQuery, userID, postID).Scan(&count); err != nil {
 		return fmt.Errorf("error al verificar el estado del like: %w", err)
 	}
-	
+
 	if count > 0 {
 		return ErrAlreadyLiked
 	}
 
 	// 2. Generamos un ID simple para la interacción y la insertamos
 	interaccionID := fmt.Sprintf("like-%s-%d", userID, time.Now().UnixMilli())
-	
+
 	query := `
 		INSERT INTO interaccion (id_interaccion, id_usuario, id_publicacion, tipo, fecha_creacion)
 		VALUES ($1, $2, $3, 'like', NOW())
 	`
-	
+
 	_, err := r.db.ExecContext(ctx, query, interaccionID, userID, postID)
 	if err != nil {
 		return fmt.Errorf("error al registrar el like: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -222,7 +222,7 @@ func (r *SQLPostRepository) RemoveLike(ctx context.Context, postID string, userI
 		DELETE FROM interaccion 
 		WHERE id_publicacion = $1 AND id_usuario = $2 AND tipo = 'like'
 	`
-	
+
 	_, err := r.db.ExecContext(ctx, query, postID, userID)
 	if err != nil {
 		return fmt.Errorf("error al eliminar el like: %w", err)

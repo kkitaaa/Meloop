@@ -5,8 +5,8 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
-	"github.com/meloop/post-service/services"
 	"github.com/meloop/post-service/messaging"
+	"github.com/meloop/post-service/services"
 )
 
 type PostController struct {
