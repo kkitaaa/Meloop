@@ -18,19 +18,21 @@ func NewFeedController(service *services.FeedService) *FeedController {
 }
 
 func (c *FeedController) GetMainFeed(ctx *gin.Context) {
-	// Para pruebas locales, simulamos que el usuario logueado viene en un header.
-	// Más adelante, esto vendrá del middleware de autenticación (JWT).
 	userID := ctx.GetHeader("X-User-ID")
 	if userID == "" {
 		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "X-User-ID header es requerido para identificar al usuario"})
 		return
 	}
 
-	// Extraemos query params para la paginación (?page=1&limit=10)
+	// Extraemos query params para la paginación y personalización (RF-30)
 	page, _ := strconv.Atoi(ctx.DefaultQuery("page", "1"))
 	limit, _ := strconv.Atoi(ctx.DefaultQuery("limit", "10"))
 
-	feed, err := c.service.GetFeed(userID, page, limit)
+	// Permite al cliente decidir si quiere el feed cronológico o personalizado por algoritmo
+	algorithm := ctx.DefaultQuery("algorithm", "relevant")
+
+	// Pasamos el nuevo parámetro al servicio
+	feed, err := c.service.GetFeed(userID, page, limit, algorithm)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
 			"error":   "no se pudo cargar el feed",
@@ -39,14 +41,14 @@ func (c *FeedController) GetMainFeed(ctx *gin.Context) {
 		return
 	}
 
-	// Si no hay resultados, devolvemos un arreglo vacío en lugar de null
 	if feed == nil {
 		feed = []models.FeedPost{}
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{
-		"page":  page,
-		"limit": limit,
-		"data":  feed,
+		"page":      page,
+		"limit":     limit,
+		"algorithm": algorithm,
+		"data":      feed,
 	})
 }
