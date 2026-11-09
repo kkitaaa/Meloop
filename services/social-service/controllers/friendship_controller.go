@@ -3,7 +3,6 @@ package controllers
 import (
 	"errors"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -53,19 +52,19 @@ func (ctrl *FriendshipController) Sent(c *gin.Context) {
 }
 
 func (ctrl *FriendshipController) Accept(c *gin.Context) {
-	ctrl.process(c, func(id int, userID string) (*models.FriendRequest, error) {
+	ctrl.process(c, func(id string, userID string) (*models.FriendRequest, error) {
 		return ctrl.service.AcceptRequest(c, id, userID)
 	})
 }
 
 func (ctrl *FriendshipController) Reject(c *gin.Context) {
-	ctrl.process(c, func(id int, userID string) (*models.FriendRequest, error) {
+	ctrl.process(c, func(id string, userID string) (*models.FriendRequest, error) {
 		return ctrl.service.RejectRequest(c, id, userID)
 	})
 }
 
 func (ctrl *FriendshipController) Cancel(c *gin.Context) {
-	ctrl.process(c, func(id int, userID string) (*models.FriendRequest, error) {
+	ctrl.process(c, func(id string, userID string) (*models.FriendRequest, error) {
 		return ctrl.service.CancelRequest(c, id, userID)
 	})
 }
@@ -101,6 +100,10 @@ func (ctrl *FriendshipController) GetFriendProfile(c *gin.Context) {
 	}
 	result, err := ctrl.service.GetFriendProfile(c, c.GetString(ContextUserIDKey), targetID)
 	if err != nil {
+		if errors.Is(err, services.ErrBlocked) {
+			httpresponse.NotFoundGin(c, "Usuario no encontrado")
+			return
+		}
 		ctrl.handleError(c, err)
 		return
 	}
@@ -169,9 +172,60 @@ func (ctrl *FriendshipController) GetFriendSuggestions(c *gin.Context) {
 	httpresponse.SuccessGin(c, http.StatusOK, result)
 }
 
-func (ctrl *FriendshipController) process(c *gin.Context, action func(int, string) (*models.FriendRequest, error)) {
-	requestID, err := strconv.Atoi(c.Param("id"))
-	if err != nil || requestID <= 0 {
+func (ctrl *FriendshipController) ExcludeBlocked(c *gin.Context) {
+	var req models.ExcludeBlockedRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		httpresponse.BadRequestGin(c, "Payload JSON inválido: "+err.Error())
+		return
+	}
+
+	userID := strings.TrimSpace(req.UserID)
+	if userID == "" {
+		userID = strings.TrimSpace(req.IDUsuario)
+	}
+	if userID == "" {
+		userID = strings.TrimSpace(c.GetString(ContextUserIDKey))
+	}
+	if userID == "" {
+		httpresponse.BadRequestGin(c, "El identificador del usuario de referencia (user_id) es requerido")
+		return
+	}
+
+	candidateIDs := req.CandidateIDs
+	if len(candidateIDs) == 0 && len(req.Candidatos) > 0 {
+		candidateIDs = req.Candidatos
+	}
+	if candidateIDs == nil {
+		candidateIDs = []string{}
+	}
+
+	filtered, err := ctrl.service.ExcludeBlocked(c.Request.Context(), userID, candidateIDs)
+	if err != nil {
+		ctrl.handleError(c, err)
+		return
+	}
+	if filtered == nil {
+		filtered = []string{}
+	}
+
+	blocked, err := ctrl.service.GetBlockedCandidateIDs(c.Request.Context(), userID, candidateIDs)
+	if err != nil {
+		ctrl.handleError(c, err)
+		return
+	}
+	if blocked == nil {
+		blocked = []string{}
+	}
+
+	httpresponse.SuccessGin(c, http.StatusOK, models.ExcludeBlockedResponse{
+		CandidateIDs: filtered,
+		ExcludedIDs:  blocked,
+	})
+}
+
+func (ctrl *FriendshipController) process(c *gin.Context, action func(string, string) (*models.FriendRequest, error)) {
+	requestID := strings.TrimSpace(c.Param("id"))
+	if requestID == "" {
 		httpresponse.BadRequestGin(c, "El identificador de la solicitud no es válido")
 		return
 	}

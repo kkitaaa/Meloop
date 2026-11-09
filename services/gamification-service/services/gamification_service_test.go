@@ -32,6 +32,22 @@ func (f *fakeGamificationRepository) GetUserProgress(ctx context.Context, userID
 	return f.progress, nil
 }
 
+func (f *fakeGamificationRepository) ListRewards(ctx context.Context) ([]models.Reward, error) {
+	return nil, nil
+}
+
+func (f *fakeGamificationRepository) CreateReward(ctx context.Context, reward *models.RewardCreateRequest) (*models.Reward, error) {
+	return nil, nil
+}
+
+func (f *fakeGamificationRepository) UpdateReward(ctx context.Context, id string, reward *models.RewardUpdateRequest) (*models.Reward, error) {
+	return nil, nil
+}
+
+func (f *fakeGamificationRepository) DeleteReward(ctx context.Context, id string) error {
+	return nil
+}
+
 type fakeEventPublisher struct {
 	levelUpEvents        []models.LevelUpEvent
 	rewardUnlockedEvents []models.RewardUnlockedEvent

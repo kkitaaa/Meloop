@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strconv"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -29,9 +30,9 @@ type FriendshipRepository interface {
 	CreatePending(ctx context.Context, senderID, receiverID string) (*models.FriendRequest, error)
 	ListReceived(ctx context.Context, userID string) ([]models.FriendRequest, error)
 	ListSent(ctx context.Context, userID string) ([]models.FriendRequest, error)
-	Accept(ctx context.Context, requestID int, receiverID string) (*models.FriendRequest, error)
-	Reject(ctx context.Context, requestID int, receiverID string) (*models.FriendRequest, error)
-	Cancel(ctx context.Context, requestID int, senderID string) (*models.FriendRequest, error)
+	Accept(ctx context.Context, requestID string, receiverID string) (*models.FriendRequest, error)
+	Reject(ctx context.Context, requestID string, receiverID string) (*models.FriendRequest, error)
+	Cancel(ctx context.Context, requestID string, senderID string) (*models.FriendRequest, error)
 	ListFriends(ctx context.Context, userID string) ([]models.Friend, error)
 	RemoveFriend(ctx context.Context, userID, targetID string) error
 	GetFriendProfile(ctx context.Context, userID, friendID string) (*models.FriendProfile, error)
@@ -40,6 +41,8 @@ type FriendshipRepository interface {
 	ValidateInteraction(ctx context.Context, user1ID, user2ID string) error
 	GetEligibleCandidates(ctx context.Context, userID string) ([]models.CandidateUser, error)
 	GetMutualFriendsCount(ctx context.Context, userID string, candidateIDs []string) (map[string]int, error)
+	ExcludeBlocked(ctx context.Context, userID string, candidateIDs []string) ([]string, error)
+	GetBlockedCandidateIDs(ctx context.Context, userID string, candidateIDs []string) ([]string, error)
 }
 
 type postgresFriendshipRepository struct {
@@ -85,7 +88,7 @@ func (r *postgresFriendshipRepository) CreatePending(ctx context.Context, sender
 
 	var reception string
 	err = tx.QueryRow(ctx, `
-		SELECT COALESCE(recepcion_solicitudes_amistad, 'TODOS')
+		SELECT COALESCE(permitir_solicitudes_amistad, 'TODOS')
 		FROM configuracion_privacidad WHERE id_usuario = $1`, receiverID).Scan(&reception)
 	if errors.Is(err, pgx.ErrNoRows) {
 		reception = "TODOS"
@@ -96,26 +99,26 @@ func (r *postgresFriendshipRepository) CreatePending(ctx context.Context, sender
 		return nil, ErrBlocked
 	}
 
-	var request models.FriendRequest
+	var relationshipExists bool
 	err = tx.QueryRow(ctx, `
-		SELECT id_amistad, id_usuario_1::text, id_usuario_2::text, estado
-		FROM amistad
+		SELECT EXISTS (
+			SELECT 1
+			FROM amistad
 		WHERE ((id_usuario_1 = $1 AND id_usuario_2 = $2)
 		    OR (id_usuario_1 = $2 AND id_usuario_2 = $1))
 		  AND estado IN ('PENDIENTE', 'ACEPTADA')
-		LIMIT 1`, senderID, receiverID).Scan(
-		&request.ID, &request.SenderID, &request.ReceiverID, &request.Status,
-	)
-	if err == nil {
-		return nil, ErrRequestConflict
-	}
-	if !errors.Is(err, pgx.ErrNoRows) {
+		)`, senderID, receiverID).Scan(&relationshipExists)
+	if err != nil {
 		return nil, err
 	}
+	if relationshipExists {
+		return nil, ErrRequestConflict
+	}
 
+	var request models.FriendRequest
 	err = tx.QueryRow(ctx, `
-		INSERT INTO amistad (id_usuario_1, id_usuario_2, estado)
-		VALUES ($1, $2, 'PENDIENTE')
+		INSERT INTO amistad (id_amistad, id_usuario_1, id_usuario_2, estado)
+		VALUES (gen_random_uuid()::text, $1, $2, 'PENDIENTE')
 		RETURNING id_amistad, id_usuario_1::text, id_usuario_2::text, estado`, senderID, receiverID).Scan(
 		&request.ID, &request.SenderID, &request.ReceiverID, &request.Status,
 	)
@@ -159,19 +162,19 @@ func (r *postgresFriendshipRepository) list(ctx context.Context, condition, user
 	return requests, rows.Err()
 }
 
-func (r *postgresFriendshipRepository) Accept(ctx context.Context, requestID int, receiverID string) (*models.FriendRequest, error) {
+func (r *postgresFriendshipRepository) Accept(ctx context.Context, requestID string, receiverID string) (*models.FriendRequest, error) {
 	return r.process(ctx, requestID, receiverID, models.FriendshipAccepted, true)
 }
 
-func (r *postgresFriendshipRepository) Reject(ctx context.Context, requestID int, receiverID string) (*models.FriendRequest, error) {
+func (r *postgresFriendshipRepository) Reject(ctx context.Context, requestID string, receiverID string) (*models.FriendRequest, error) {
 	return r.process(ctx, requestID, receiverID, models.FriendshipRejected, true)
 }
 
-func (r *postgresFriendshipRepository) Cancel(ctx context.Context, requestID int, senderID string) (*models.FriendRequest, error) {
+func (r *postgresFriendshipRepository) Cancel(ctx context.Context, requestID string, senderID string) (*models.FriendRequest, error) {
 	return r.process(ctx, requestID, senderID, models.FriendshipCanceled, false)
 }
 
-func (r *postgresFriendshipRepository) process(ctx context.Context, requestID int, userID, newStatus string, receiver bool) (*models.FriendRequest, error) {
+func (r *postgresFriendshipRepository) process(ctx context.Context, requestID string, userID, newStatus string, receiver bool) (*models.FriendRequest, error) {
 	if r.pool == nil {
 		return nil, errors.New("database connection pool is not initialized")
 	}
@@ -267,7 +270,7 @@ func (r *postgresFriendshipRepository) RemoveFriend(ctx context.Context, userID,
 	}
 	defer tx.Rollback(ctx)
 
-	var friendshipID int
+	var friendshipID string
 	var u1, u2 string
 	var status string
 
@@ -276,15 +279,21 @@ func (r *postgresFriendshipRepository) RemoveFriend(ctx context.Context, userID,
 		err = tx.QueryRow(ctx, `
 			SELECT id_amistad, id_usuario_1::text, id_usuario_2::text, estado
 			FROM amistad
-			WHERE id_amistad = $1 FOR UPDATE`, idNum).Scan(&friendshipID, &u1, &u2, &status)
+			WHERE id_amistad = $1 FOR UPDATE`, targetID).Scan(&friendshipID, &u1, &u2, &status)
 	} else {
 		err = tx.QueryRow(ctx, `
 			SELECT id_amistad, id_usuario_1::text, id_usuario_2::text, estado
-			FROM amistad
-			WHERE ((id_usuario_1::text = $1 AND id_usuario_2::text = $2)
-			    OR (id_usuario_1::text = $2 AND id_usuario_2::text = $1))
-			  AND estado = 'ACEPTADA'
-			FOR UPDATE`, userID, targetID).Scan(&friendshipID, &u1, &u2, &status)
+			FROM amistad WHERE id_amistad = $1 AND estado = 'ACEPTADA'
+			FOR UPDATE`, targetID).Scan(&friendshipID, &u1, &u2, &status)
+		if errors.Is(err, pgx.ErrNoRows) {
+			err = tx.QueryRow(ctx, `
+				SELECT id_amistad, id_usuario_1::text, id_usuario_2::text, estado
+				FROM amistad
+				WHERE ((id_usuario_1::text = $1 AND id_usuario_2::text = $2)
+				    OR (id_usuario_1::text = $2 AND id_usuario_2::text = $1))
+				  AND estado = 'ACEPTADA'
+				FOR UPDATE`, userID, targetID).Scan(&friendshipID, &u1, &u2, &status)
+		}
 	}
 
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -418,22 +427,16 @@ func (r *postgresFriendshipRepository) GetFriendProfile(ctx context.Context, use
 		return nil, ErrBlocked
 	}
 
-	// 2. Verificar existencia de relación de amistad aceptada
-	var friendshipID int
+	// 2. Interpret the path as a friendship ID first, then as the other user's ID.
+	var friendshipID string
+	var u1, u2 string
 	var resolvedFriendID string
 	idNum, errConv := strconv.Atoi(friendID)
-	if errConv == nil && idNum > 0 {
-		var u1, u2 string
-		err = r.pool.QueryRow(ctx, `
-			SELECT id_amistad, id_usuario_1::text, id_usuario_2::text
-			FROM amistad
-			WHERE id_amistad = $1 AND estado = 'ACEPTADA'`, idNum).Scan(&friendshipID, &u1, &u2)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrFriendshipNotFound
-		}
-		if err != nil {
-			return nil, err
-		}
+	err = r.pool.QueryRow(ctx, `
+		SELECT id_amistad, id_usuario_1::text, id_usuario_2::text
+		FROM amistad
+		WHERE id_amistad = $1 AND estado = 'ACEPTADA'`, friendID).Scan(&friendshipID, &u1, &u2)
+	if err == nil {
 		if u1 != userID && u2 != userID {
 			return nil, ErrNotAuthorized
 		}
@@ -442,6 +445,10 @@ func (r *postgresFriendshipRepository) GetFriendProfile(ctx context.Context, use
 		} else {
 			resolvedFriendID = u1
 		}
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		return nil, err
+	} else if errConv == nil && idNum > 0 {
+		return nil, ErrFriendshipNotFound
 	} else {
 		resolvedFriendID = friendID
 		err = r.pool.QueryRow(ctx, `
@@ -459,24 +466,22 @@ func (r *postgresFriendshipRepository) GetFriendProfile(ctx context.Context, use
 	}
 
 	// Comprobar bloqueo bidireccional con el ID de usuario resuelto
-	if errConv == nil && idNum > 0 {
-		err = r.pool.QueryRow(ctx, `
-			SELECT EXISTS (
-				SELECT 1 FROM bloqueo
-				WHERE (id_usuario_bloqueador::text = $1 AND id_usuario_bloqueado::text = $2)
-				   OR (id_usuario_bloqueador::text = $2 AND id_usuario_bloqueado::text = $1)
-			)`, userID, resolvedFriendID).Scan(&blocked)
-		if err != nil {
-			return nil, err
-		}
-		if blocked {
-			return nil, ErrBlocked
-		}
+	err = r.pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM bloqueo
+			WHERE (id_usuario_bloqueador::text = $1 AND id_usuario_bloqueado::text = $2)
+			   OR (id_usuario_bloqueador::text = $2 AND id_usuario_bloqueado::text = $1)
+		)`, userID, resolvedFriendID).Scan(&blocked)
+	if err != nil {
+		return nil, err
+	}
+	if blocked {
+		return nil, ErrBlocked
 	}
 
 	// 3. Obtener datos de perfil del usuario amigo
 	var profile models.FriendProfile
-	profile.IDAmistad = friendshipID
+	profile.IDAmistad = models.FriendshipID(friendshipID)
 	err = r.pool.QueryRow(ctx, `
 		SELECT id_usuario::text, username, correo, id_nivel, experiencia
 		FROM usuario
@@ -592,4 +597,115 @@ func (r *postgresFriendshipRepository) GetMutualFriendsCount(ctx context.Context
 		result[candID] = count
 	}
 	return result, rows.Err()
+}
+
+func (r *postgresFriendshipRepository) findBlockedCandidateIDs(ctx context.Context, userID string, candidateIDs []string) (map[string]struct{}, error) {
+	if r.pool == nil {
+		return nil, errors.New("database connection pool is not initialized")
+	}
+
+	blockedMap := make(map[string]struct{})
+	userID = strings.TrimSpace(userID)
+	if userID == "" || len(candidateIDs) == 0 {
+		return blockedMap, nil
+	}
+
+	cleanCandidates := make([]string, 0, len(candidateIDs))
+	seenCandidates := make(map[string]struct{}, len(candidateIDs))
+	for _, id := range candidateIDs {
+		trimmed := strings.TrimSpace(id)
+		if trimmed != "" {
+			if _, exists := seenCandidates[trimmed]; !exists {
+				seenCandidates[trimmed] = struct{}{}
+				cleanCandidates = append(cleanCandidates, trimmed)
+			}
+		}
+	}
+
+	if len(cleanCandidates) == 0 {
+		return blockedMap, nil
+	}
+
+	query := `
+		SELECT DISTINCT
+			CASE 
+				WHEN id_usuario_bloqueador::text = $1 THEN id_usuario_bloqueado::text
+				ELSE id_usuario_bloqueador::text
+			END AS blocked_candidate_id
+		FROM bloqueo
+		WHERE (id_usuario_bloqueador::text = $1 AND id_usuario_bloqueado::text = ANY($2))
+		   OR (id_usuario_bloqueado::text = $1 AND id_usuario_bloqueador::text = ANY($2))`
+
+	rows, err := r.pool.Query(ctx, query, userID, cleanCandidates)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var blockedID string
+		if err := rows.Scan(&blockedID); err != nil {
+			return nil, err
+		}
+		blockedMap[blockedID] = struct{}{}
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return blockedMap, nil
+}
+
+// ExcludeBlocked filtra candidateIDs retornando aquellos que NO tienen una relación de bloqueo
+// bidireccional con userID. No altera el slice original candidateIDs.
+func (r *postgresFriendshipRepository) ExcludeBlocked(ctx context.Context, userID string, candidateIDs []string) ([]string, error) {
+	blockedMap, err := r.findBlockedCandidateIDs(ctx, userID, candidateIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]string, 0, len(candidateIDs))
+	seen := make(map[string]struct{}, len(candidateIDs))
+	for _, id := range candidateIDs {
+		trimmed := strings.TrimSpace(id)
+		if trimmed == "" {
+			continue
+		}
+		if _, isBlocked := blockedMap[trimmed]; isBlocked {
+			continue
+		}
+		if _, alreadyAdded := seen[trimmed]; !alreadyAdded {
+			seen[trimmed] = struct{}{}
+			result = append(result, trimmed)
+		}
+	}
+
+	return result, nil
+}
+
+// GetBlockedCandidateIDs identifica y retorna únicamente los IDs de los candidatos que tienen una relación
+// de bloqueo (en cualquiera de las dos direcciones) con el usuario de referencia. No altera el slice original.
+func (r *postgresFriendshipRepository) GetBlockedCandidateIDs(ctx context.Context, userID string, candidateIDs []string) ([]string, error) {
+	blockedMap, err := r.findBlockedCandidateIDs(ctx, userID, candidateIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]string, 0, len(blockedMap))
+	seen := make(map[string]struct{}, len(candidateIDs))
+	for _, id := range candidateIDs {
+		trimmed := strings.TrimSpace(id)
+		if trimmed == "" {
+			continue
+		}
+		if _, isBlocked := blockedMap[trimmed]; isBlocked {
+			if _, alreadyAdded := seen[trimmed]; !alreadyAdded {
+				seen[trimmed] = struct{}{}
+				result = append(result, trimmed)
+			}
+		}
+	}
+
+	return result, nil
 }

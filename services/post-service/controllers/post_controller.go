@@ -16,15 +16,51 @@ func NewPostController(postService *services.PostService) *PostController {
 	return &PostController{postService: postService}
 }
 
+// Estructura para recibir los datos de la nueva publicación
+type CreatePostRequest struct {
+	Content   string   `json:"content" binding:"required"`
+	MediaURLs []string `json:"media_urls"` // Opcional, si manejas imágenes
+	MusicID   string   `json:"music_id"`   // Agregado para usar el nuevo campo
+}
+
 // Estructura para recibir el nuevo contenido en formato JSON (Edición)
 type UpdatePostRequest struct {
 	Content string `json:"content" binding:"required"`
+}
+
+// CreatePost maneja la petición POST para crear una publicación y guardarla en BD
+func (ctrl *PostController) CreatePost(c *gin.Context) {
+	// 1. Obtener el ID del autor desde el token/contexto
+	authorID := c.GetString("userID")
+	if authorID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "usuario no autenticado"})
+		return
+	}
+
+	// 2. Validar el cuerpo de la petición (JSON)
+	var req CreatePostRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "datos inválidos o incompletos"})
+		return
+	}
+
+	// 3. ENVIAR A GUARDAR (Si tu postService soporta el MusicID, lo puedes pasar aquí)
+	post, err := ctrl.postService.CreatePost(c.Request.Context(), authorID, req.Content, req.MediaURLs)
+	if err != nil {
+		println("ERROR AL GUARDAR POST:", err.Error())
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "no se pudo guardar la publicación en la base de datos"})
+		return
+	}
+
+	// 4. Responder 201 Created con el objeto ya guardado
+	c.JSON(http.StatusCreated, post)
 }
 
 // UpdatePost maneja la petición PUT/PATCH para editar contenido (RF-17)
 func (ctrl *PostController) UpdatePost(c *gin.Context) {
 	postID := c.Param("id")
 
+	// IMPORTANTE: Obtenemos el ID del usuario directamente del contexto de Gin
 	authorID := c.GetString("userID")
 	if authorID == "" {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "usuario no autenticado"})

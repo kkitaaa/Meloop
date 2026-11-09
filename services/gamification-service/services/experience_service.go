@@ -4,38 +4,58 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/meloop/gamification-service/repositories"
 )
 
 type ExperienceService struct {
-	repo   *repositories.ExperienceRepository
+	repo   repositories.GamificationRepository
 	engine *GamificationEngine
 }
 
-func NewExperienceService(repo *repositories.ExperienceRepository, engine *GamificationEngine) *ExperienceService {
+// NewExperienceService inicializa la capa de servicio
+func NewExperienceService(repo repositories.GamificationRepository, engine *GamificationEngine) *ExperienceService {
 	return &ExperienceService{
 		repo:   repo,
 		engine: engine,
 	}
 }
 
+// AddUserExperience maneja la lógica de negocio y define las reglas de tolerancia a fallos
+func (s *ExperienceService) AddUserExperience(ctx context.Context, userID string, xpToAdd int) (int, error) {
+	// Definimos el número máximo de reintentos permitidos si hay fallos temporales en Supabase
+	maxRetries := 3
+	var lastErr error
+
+	// Ejecutamos la suma con la protección de reintentos adaptada a la nueva interfaz
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		result, err := s.repo.AddExperience(ctx, userID, xpToAdd)
+		if err == nil {
+			return result.CurrentXP, nil
+		}
+		lastErr = err
+		log.Printf("Intento %d fallido al agregar experiencia: %v", attempt, err)
+		time.Sleep(time.Millisecond * 500) // Breve pausa antes de reintentar
+	}
+
+	return 0, fmt.Errorf("después de %d intentos: %w", maxRetries, lastErr)
+}
+
 // HandleInteractionEvent es el punto de entrada cuando llega un evento (ej. desde RabbitMQ)
 func (s *ExperienceService) HandleInteractionEvent(ctx context.Context, event InteractionEvent) error {
-	// 1. Pasar el evento por los filtros anti-abuso y calcular XP[cite: 8]
+	// 1. Pasar el evento por los filtros anti-abuso y calcular XP
 	xp, err := s.engine.ProcessEvent(event)
 	if err != nil {
-		// Logueamos el rechazo (rate limit o auto-interacción) pero no devolvemos error fatal
-		// para que el sistema de mensajería no reintente procesar un evento abusivo.
 		log.Printf("Evento descartado por filtros anti-abuso: %v", err)
 		return nil
 	}
 
-	// 2. Si pasa las validaciones, asignar la experiencia exacta al usuario[cite: 8]
+	// 2. Si pasa las validaciones, asignar la experiencia exacta al usuario
 	log.Printf("Evento válido. Asignando +%d XP al usuario %s", xp, event.ActorID)
 
-	// Aquí llamaríamos a la función atómica que construimos anteriormente
-	err = s.repo.AddExperience(ctx, event.ActorID, xp)
+	// Llamamos a nuestra propia función de servicio que ya incluye la lógica de reintentos
+	_, err = s.AddUserExperience(ctx, event.ActorID, xp)
 	if err != nil {
 		return fmt.Errorf("error al guardar experiencia en BD: %w", err)
 	}

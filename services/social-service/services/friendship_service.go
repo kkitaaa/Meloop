@@ -37,15 +37,17 @@ type FriendshipService interface {
 	SendRequest(ctx context.Context, senderID, receiverID string) (*models.FriendRequest, error)
 	ReceivedRequests(ctx context.Context, userID string) ([]models.FriendRequest, error)
 	SentRequests(ctx context.Context, userID string) ([]models.FriendRequest, error)
-	AcceptRequest(ctx context.Context, requestID int, receiverID string) (*models.FriendRequest, error)
-	RejectRequest(ctx context.Context, requestID int, receiverID string) (*models.FriendRequest, error)
-	CancelRequest(ctx context.Context, requestID int, senderID string) (*models.FriendRequest, error)
+	AcceptRequest(ctx context.Context, requestID string, receiverID string) (*models.FriendRequest, error)
+	RejectRequest(ctx context.Context, requestID string, receiverID string) (*models.FriendRequest, error)
+	CancelRequest(ctx context.Context, requestID string, senderID string) (*models.FriendRequest, error)
 	ListFriends(ctx context.Context, userID string) ([]models.Friend, error)
 	RemoveFriend(ctx context.Context, userID, targetID string) error
 	GetFriendProfile(ctx context.Context, userID, friendID string) (*models.FriendProfile, error)
 	BlockUser(ctx context.Context, blockerID, blockedID string) error
 	ValidateInteraction(ctx context.Context, user1ID, user2ID string) error
 	GetFriendSuggestions(ctx context.Context, userID string) ([]models.FriendSuggestion, error)
+	ExcludeBlocked(ctx context.Context, userID string, candidateIDs []string) ([]string, error)
+	GetBlockedCandidateIDs(ctx context.Context, userID string, candidateIDs []string) ([]string, error)
 }
 
 type friendshipService struct {
@@ -89,7 +91,7 @@ func (s *friendshipService) SentRequests(ctx context.Context, userID string) ([]
 	return s.repo.ListSent(ctx, userID)
 }
 
-func (s *friendshipService) AcceptRequest(ctx context.Context, requestID int, receiverID string) (*models.FriendRequest, error) {
+func (s *friendshipService) AcceptRequest(ctx context.Context, requestID string, receiverID string) (*models.FriendRequest, error) {
 	request, err := s.repo.Accept(ctx, requestID, receiverID)
 	if err != nil {
 		return nil, mapRepositoryError(err)
@@ -100,12 +102,12 @@ func (s *friendshipService) AcceptRequest(ctx context.Context, requestID int, re
 	return request, nil
 }
 
-func (s *friendshipService) RejectRequest(ctx context.Context, requestID int, receiverID string) (*models.FriendRequest, error) {
+func (s *friendshipService) RejectRequest(ctx context.Context, requestID string, receiverID string) (*models.FriendRequest, error) {
 	request, err := s.repo.Reject(ctx, requestID, receiverID)
 	return request, mapRepositoryError(err)
 }
 
-func (s *friendshipService) CancelRequest(ctx context.Context, requestID int, senderID string) (*models.FriendRequest, error) {
+func (s *friendshipService) CancelRequest(ctx context.Context, requestID string, senderID string) (*models.FriendRequest, error) {
 	request, err := s.repo.Cancel(ctx, requestID, senderID)
 	return request, mapRepositoryError(err)
 }
@@ -166,6 +168,78 @@ func (s *friendshipService) ValidateInteraction(ctx context.Context, user1ID, us
 	}
 	err := s.repo.ValidateInteraction(ctx, user1ID, user2ID)
 	return mapRepositoryError(err)
+}
+
+// ExcludeBlocked filtra candidateIDs retornando los candidatos sin relación de bloqueo
+// bidireccional con el usuario de referencia. No modifica el slice original y gestiona listas vacías.
+func (s *friendshipService) ExcludeBlocked(ctx context.Context, userID string, candidateIDs []string) ([]string, error) {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return nil, ErrInvalidUser
+	}
+	if len(candidateIDs) == 0 {
+		return []string{}, nil
+	}
+
+	result, err := s.repo.ExcludeBlocked(ctx, userID, candidateIDs)
+	if err != nil {
+		return nil, mapRepositoryError(err)
+	}
+	if result == nil {
+		return []string{}, nil
+	}
+	return result, nil
+}
+
+// GetBlockedCandidateIDs identifica y retorna los IDs de los candidatos que presentan una relación de bloqueo
+// (en cualquiera de las dos direcciones) con el usuario de referencia.
+func (s *friendshipService) GetBlockedCandidateIDs(ctx context.Context, userID string, candidateIDs []string) ([]string, error) {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return nil, ErrInvalidUser
+	}
+	if len(candidateIDs) == 0 {
+		return []string{}, nil
+	}
+
+	result, err := s.repo.GetBlockedCandidateIDs(ctx, userID, candidateIDs)
+	if err != nil {
+		return nil, mapRepositoryError(err)
+	}
+	if result == nil {
+		return []string{}, nil
+	}
+	return result, nil
+}
+
+// FilterBlockedCandidates es una función pura que filtra originalCandidates excluyendo
+// aquellos identificados en blockedIDs, garantizando la no mutación del slice original.
+func FilterBlockedCandidates(candidateIDs []string, blockedIDs []string) []string {
+	if len(candidateIDs) == 0 {
+		return []string{}
+	}
+	blockedSet := make(map[string]struct{}, len(blockedIDs))
+	for _, id := range blockedIDs {
+		trimmed := strings.TrimSpace(id)
+		if trimmed != "" {
+			blockedSet[trimmed] = struct{}{}
+		}
+	}
+	result := make([]string, 0, len(candidateIDs))
+	seen := make(map[string]struct{}, len(candidateIDs))
+	for _, id := range candidateIDs {
+		trimmed := strings.TrimSpace(id)
+		if trimmed == "" {
+			continue
+		}
+		if _, blocked := blockedSet[trimmed]; !blocked {
+			if _, alreadyAdded := seen[trimmed]; !alreadyAdded {
+				seen[trimmed] = struct{}{}
+				result = append(result, trimmed)
+			}
+		}
+	}
+	return result
 }
 
 func mapRepositoryError(err error) error {

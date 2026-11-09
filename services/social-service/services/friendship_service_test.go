@@ -26,6 +26,8 @@ type friendshipRepositoryFake struct {
 	removedFriend     bool
 	blockedUser       bool
 	removedFriendship bool
+	excludeBlockedErr error
+	blockedPairs      map[string]map[string]bool
 }
 
 func (f *friendshipRepositoryFake) CreatePending(context.Context, string, string) (*models.FriendRequest, error) {
@@ -44,21 +46,21 @@ func (f *friendshipRepositoryFake) ListSent(context.Context, string) ([]models.F
 	return []models.FriendRequest{}, nil
 }
 
-func (f *friendshipRepositoryFake) Accept(context.Context, int, string) (*models.FriendRequest, error) {
+func (f *friendshipRepositoryFake) Accept(context.Context, string, string) (*models.FriendRequest, error) {
 	if f.acceptErr != nil {
 		return nil, f.acceptErr
 	}
 	return f.request, nil
 }
 
-func (f *friendshipRepositoryFake) Reject(context.Context, int, string) (*models.FriendRequest, error) {
+func (f *friendshipRepositoryFake) Reject(context.Context, string, string) (*models.FriendRequest, error) {
 	if f.rejectErr != nil {
 		return nil, f.rejectErr
 	}
 	return f.request, nil
 }
 
-func (f *friendshipRepositoryFake) Cancel(context.Context, int, string) (*models.FriendRequest, error) {
+func (f *friendshipRepositoryFake) Cancel(context.Context, string, string) (*models.FriendRequest, error) {
 	if f.cancelErr != nil {
 		return nil, f.cancelErr
 	}
@@ -121,6 +123,36 @@ func (f *friendshipRepositoryFake) GetMutualFriendsCount(ctx context.Context, us
 	return map[string]int{}, nil
 }
 
+func (f *friendshipRepositoryFake) ExcludeBlocked(ctx context.Context, userID string, candidateIDs []string) ([]string, error) {
+	if f.excludeBlockedErr != nil {
+		return nil, f.excludeBlockedErr
+	}
+	result := make([]string, 0, len(candidateIDs))
+	for _, cand := range candidateIDs {
+		blocked := (f.blockedPairs != nil && f.blockedPairs[userID] != nil && f.blockedPairs[userID][cand]) ||
+			(f.blockedPairs != nil && f.blockedPairs[cand] != nil && f.blockedPairs[cand][userID])
+		if !blocked {
+			result = append(result, cand)
+		}
+	}
+	return result, nil
+}
+
+func (f *friendshipRepositoryFake) GetBlockedCandidateIDs(ctx context.Context, userID string, candidateIDs []string) ([]string, error) {
+	if f.excludeBlockedErr != nil {
+		return nil, f.excludeBlockedErr
+	}
+	result := make([]string, 0)
+	for _, cand := range candidateIDs {
+		blocked := (f.blockedPairs != nil && f.blockedPairs[userID] != nil && f.blockedPairs[userID][cand]) ||
+			(f.blockedPairs != nil && f.blockedPairs[cand] != nil && f.blockedPairs[cand][userID])
+		if blocked {
+			result = append(result, cand)
+		}
+	}
+	return result, nil
+}
+
 type eventPublisherFake struct {
 	called bool
 }
@@ -148,7 +180,7 @@ func TestFriendshipServiceSendRequest(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			repo := &friendshipRepositoryFake{
 				createErr: test.err,
-				request:   &models.FriendRequest{ID: 1, SenderID: "a", ReceiverID: "b", Status: models.FriendshipPending},
+				request:   &models.FriendRequest{ID: "1", SenderID: "a", ReceiverID: "b", Status: models.FriendshipPending},
 			}
 			service := NewFriendshipService(repo, nil)
 			_, err := service.SendRequest(context.Background(), "a", map[bool]string{true: "a", false: "b"}[test.name == "self request"])
@@ -169,35 +201,35 @@ func TestFriendshipServiceActionsEnforceAuthorizationAndState(t *testing.T) {
 		call func(FriendshipService) error
 	}{
 		{name: "accept valid", call: func(s FriendshipService) error {
-			_, err := s.AcceptRequest(context.Background(), 1, "receiver")
+			_, err := s.AcceptRequest(context.Background(), "1", "receiver")
 			return err
 		}},
 		{name: "reject valid", call: func(s FriendshipService) error {
-			_, err := s.RejectRequest(context.Background(), 1, "receiver")
+			_, err := s.RejectRequest(context.Background(), "1", "receiver")
 			return err
 		}},
 		{name: "cancel valid", call: func(s FriendshipService) error {
-			_, err := s.CancelRequest(context.Background(), 1, "sender")
+			_, err := s.CancelRequest(context.Background(), "1", "sender")
 			return err
 		}},
 		{name: "accept non receiver", err: ErrNotReceiver, call: func(s FriendshipService) error {
-			_, err := s.AcceptRequest(context.Background(), 1, "other")
+			_, err := s.AcceptRequest(context.Background(), "1", "other")
 			return err
 		}},
 		{name: "reject non receiver", err: ErrNotReceiver, call: func(s FriendshipService) error {
-			_, err := s.RejectRequest(context.Background(), 1, "other")
+			_, err := s.RejectRequest(context.Background(), "1", "other")
 			return err
 		}},
 		{name: "cancel non sender", err: ErrNotSender, call: func(s FriendshipService) error {
-			_, err := s.CancelRequest(context.Background(), 1, "other")
+			_, err := s.CancelRequest(context.Background(), "1", "other")
 			return err
 		}},
 		{name: "missing request", err: ErrRequestNotFound, call: func(s FriendshipService) error {
-			_, err := s.AcceptRequest(context.Background(), 99, "receiver")
+			_, err := s.AcceptRequest(context.Background(), "99", "receiver")
 			return err
 		}},
 		{name: "already processed", err: ErrRequestProcessed, call: func(s FriendshipService) error {
-			_, err := s.RejectRequest(context.Background(), 1, "receiver")
+			_, err := s.RejectRequest(context.Background(), "1", "receiver")
 			return err
 		}},
 	}
@@ -205,7 +237,7 @@ func TestFriendshipServiceActionsEnforceAuthorizationAndState(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			repo := &friendshipRepositoryFake{
-				request: &models.FriendRequest{ID: 1, SenderID: "sender", ReceiverID: "receiver", Status: models.FriendshipAccepted},
+				request: &models.FriendRequest{ID: "1", SenderID: "sender", ReceiverID: "receiver", Status: models.FriendshipAccepted},
 			}
 			switch test.name {
 			case "accept non receiver", "reject non receiver":
@@ -227,12 +259,12 @@ func TestFriendshipServiceActionsEnforceAuthorizationAndState(t *testing.T) {
 
 func TestFriendshipServiceAcceptPublishesEventAfterRepositoryAction(t *testing.T) {
 	repo := &friendshipRepositoryFake{
-		request: &models.FriendRequest{ID: 1, SenderID: "sender", ReceiverID: "receiver", Status: models.FriendshipAccepted},
+		request: &models.FriendRequest{ID: "1", SenderID: "sender", ReceiverID: "receiver", Status: models.FriendshipAccepted},
 	}
 	publisher := &eventPublisherFake{}
 	service := NewFriendshipService(repo, publisher)
 
-	request, err := service.AcceptRequest(context.Background(), 1, "receiver")
+	request, err := service.AcceptRequest(context.Background(), "1", "receiver")
 	if err != nil {
 		t.Fatalf("AcceptRequest() error = %v", err)
 	}
@@ -252,8 +284,8 @@ func TestFriendshipServiceListFriends(t *testing.T) {
 	t.Run("successful list with friends", func(t *testing.T) {
 		repo := &friendshipRepositoryFake{
 			friends: []models.Friend{
-				{IDAmistad: 1, IDUsuario: "user-2", Username: "carlos", Estado: models.FriendshipAccepted},
-				{IDAmistad: 2, IDUsuario: "user-3", Username: "maria", Estado: models.FriendshipAccepted},
+				{IDAmistad: "1", IDUsuario: "user-2", Username: "carlos", Estado: models.FriendshipAccepted},
+				{IDAmistad: "2", IDUsuario: "user-3", Username: "maria", Estado: models.FriendshipAccepted},
 			},
 		}
 		service := NewFriendshipService(repo, nil)
@@ -357,7 +389,7 @@ func TestFriendshipServiceGetFriendProfile(t *testing.T) {
 				Correo:      "carlos@example.com",
 				IDNivel:     &nivel,
 				Experiencia: 2500,
-				IDAmistad:   1,
+				IDAmistad:   "1",
 			},
 		}
 		service := NewFriendshipService(repo, nil)
@@ -498,4 +530,178 @@ func TestFriendshipServiceValidateInteraction(t *testing.T) {
 			t.Fatalf("expected ErrBlocked, got %v", err)
 		}
 	})
+}
+
+func TestFriendshipService_ExcludeBlocked(t *testing.T) {
+	ctx := context.Background()
+	refUser := "usr-ref"
+
+	// Configurar pares de bloqueo:
+	// 1. usr-ref bloqueó a cand-blocked-by-ref
+	// 2. cand-blocked-ref bloqueó a usr-ref
+	// 3. usr-ref y cand-mutual se bloquearon mutuamente
+	// 4. cand-third bloqueó a third-party-user (no debe afectar a usr-ref)
+	blockedPairs := map[string]map[string]bool{
+		"usr-ref": {
+			"cand-blocked-by-ref": true,
+			"cand-mutual":         true,
+		},
+		"cand-blocked-ref": {
+			"usr-ref": true,
+		},
+		"cand-mutual": {
+			"usr-ref": true,
+		},
+		"cand-third": {
+			"unrelated-user": true,
+		},
+	}
+
+	repo := &friendshipRepositoryFake{
+		blockedPairs: blockedPairs,
+	}
+	service := NewFriendshipService(repo, nil)
+
+	t.Run("Excluye candidato cuando el usuario de referencia lo bloqueó (unilateral A -> B)", func(t *testing.T) {
+		candidates := []string{"cand-blocked-by-ref", "cand-clean-1"}
+		filtered, err := service.ExcludeBlocked(ctx, refUser, candidates)
+		if err != nil {
+			t.Fatalf("error inesperado: %v", err)
+		}
+
+		for _, id := range filtered {
+			if id == "cand-blocked-by-ref" {
+				t.Errorf("se esperaba que 'cand-blocked-by-ref' fuera excluido de la lista")
+			}
+		}
+		if len(filtered) != 1 || filtered[0] != "cand-clean-1" {
+			t.Errorf("se esperaba conservar únicamente 'cand-clean-1', se obtuvo: %v", filtered)
+		}
+	})
+
+	t.Run("Excluye candidato cuando este bloqueó al usuario de referencia (unilateral B -> A)", func(t *testing.T) {
+		candidates := []string{"cand-blocked-ref", "cand-clean-1"}
+		filtered, err := service.ExcludeBlocked(ctx, refUser, candidates)
+		if err != nil {
+			t.Fatalf("error inesperado: %v", err)
+		}
+
+		for _, id := range filtered {
+			if id == "cand-blocked-ref" {
+				t.Errorf("se esperaba que 'cand-blocked-ref' fuera excluido de la lista")
+			}
+		}
+		if len(filtered) != 1 || filtered[0] != "cand-clean-1" {
+			t.Errorf("se esperaba conservar únicamente 'cand-clean-1', se obtuvo: %v", filtered)
+		}
+	})
+
+	t.Run("Conserva los candidatos sin bloqueos mutuos entre ambos usuarios", func(t *testing.T) {
+		candidates := []string{"cand-clean-1", "cand-clean-2", "cand-clean-3"}
+		filtered, err := service.ExcludeBlocked(ctx, refUser, candidates)
+		if err != nil {
+			t.Fatalf("error inesperado: %v", err)
+		}
+
+		if len(filtered) != 3 {
+			t.Fatalf("se esperaban 3 candidatos conservados, se obtuvieron %d", len(filtered))
+		}
+		expected := []string{"cand-clean-1", "cand-clean-2", "cand-clean-3"}
+		for i, id := range filtered {
+			if id != expected[i] {
+				t.Errorf("en posición %d se esperaba %s, se obtuvo %s", i, expected[i], id)
+			}
+		}
+	})
+
+	t.Run("Gestiona correctamente una lista vacía", func(t *testing.T) {
+		filtered, err := service.ExcludeBlocked(ctx, refUser, []string{})
+		if err != nil {
+			t.Fatalf("error inesperado con lista vacía: %v", err)
+		}
+		if filtered == nil || len(filtered) != 0 {
+			t.Errorf("se esperaba slice vacío no nulo, se obtuvo: %v", filtered)
+		}
+	})
+
+	t.Run("No altera la lista original de candidatos (inmutabilidad)", func(t *testing.T) {
+		original := []string{"cand-blocked-by-ref", "cand-clean-1", "cand-blocked-ref"}
+		// Copia para verificación posterior
+		originalBackup := make([]string, len(original))
+		copy(originalBackup, original)
+
+		filtered, err := service.ExcludeBlocked(ctx, refUser, original)
+		if err != nil {
+			t.Fatalf("error inesperado: %v", err)
+		}
+
+		// Verificar que el slice original no haya cambiado en tamaño ni contenido
+		if len(original) != len(originalBackup) {
+			t.Fatalf("la longitud de la lista original fue alterada: antes %d, después %d", len(originalBackup), len(original))
+		}
+		for i := range original {
+			if original[i] != originalBackup[i] {
+				t.Errorf("elemento %d de la lista original fue alterado: antes '%s', después '%s'", i, originalBackup[i], original[i])
+			}
+		}
+
+		// Y que el resultado contenga solo el candidato no bloqueado
+		if len(filtered) != 1 || filtered[0] != "cand-clean-1" {
+			t.Errorf("resultado inesperado: %v", filtered)
+		}
+	})
+
+	t.Run("Ausencia de falsos positivos por bloqueos con terceros o sólo en una dirección", func(t *testing.T) {
+		// cand-third tiene un bloqueo registrado, pero con 'unrelated-user', no con refUser
+		candidates := []string{"cand-third", "cand-clean-1"}
+		filtered, err := service.ExcludeBlocked(ctx, refUser, candidates)
+		if err != nil {
+			t.Fatalf("error inesperado: %v", err)
+		}
+
+		if len(filtered) != 2 {
+			t.Fatalf("cand-third no debió ser excluido por falsos positivos con terceros. Obtenido: %v", filtered)
+		}
+	})
+
+	t.Run("Identifica correctamente los IDs excluidos por bloqueo", func(t *testing.T) {
+		candidates := []string{"cand-blocked-by-ref", "cand-clean-1", "cand-blocked-ref", "cand-mutual"}
+		blockedIDs, err := service.GetBlockedCandidateIDs(ctx, refUser, candidates)
+		if err != nil {
+			t.Fatalf("error inesperado: %v", err)
+		}
+
+		if len(blockedIDs) != 3 {
+			t.Fatalf("se esperaban 3 IDs bloqueados, se obtuvieron %d: %v", len(blockedIDs), blockedIDs)
+		}
+	})
+
+	t.Run("Error cuando el usuario de referencia está vacío", func(t *testing.T) {
+		_, err := service.ExcludeBlocked(ctx, "   ", []string{"cand-1"})
+		if !errors.Is(err, ErrInvalidUser) {
+			t.Errorf("se esperaba ErrInvalidUser cuando userID está vacío, se obtuvo: %v", err)
+		}
+	})
+}
+
+func TestFilterBlockedCandidates(t *testing.T) {
+	candidates := []string{"u1", "u2", "u3", "u4"}
+	blocked := []string{"u2", "u4"}
+
+	result := FilterBlockedCandidates(candidates, blocked)
+
+	if len(result) != 2 || result[0] != "u1" || result[1] != "u3" {
+		t.Errorf("resultado inesperado en FilterBlockedCandidates: %v", result)
+	}
+
+	// Inmutabilidad de la lista original
+	if len(candidates) != 4 || candidates[1] != "u2" {
+		t.Errorf("la lista original fue modificada: %v", candidates)
+	}
+
+	// Lista vacía
+	emptyRes := FilterBlockedCandidates([]string{}, blocked)
+	if emptyRes == nil || len(emptyRes) != 0 {
+		t.Errorf("se esperaba slice vacío")
+	}
 }

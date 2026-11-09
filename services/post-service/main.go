@@ -1,50 +1,110 @@
 package main
 
 import (
-	"database/sql"
 	"log"
+	"os"
 
 	"github.com/gin-gonic/gin"
-	_ "github.com/lib/pq" // Driver de PostgreSQL
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 
+	infraMinio "github.com/meloop/infrastructure/minio"
 	"github.com/meloop/post-service/controllers"
+	"github.com/meloop/post-service/messaging"
+	"github.com/meloop/post-service/models"
 	"github.com/meloop/post-service/repositories"
 	"github.com/meloop/post-service/routes"
 	"github.com/meloop/post-service/services"
+	"github.com/meloop/services/common/logging"
 )
 
 func main() {
-	log.Println("Iniciando post-service (Módulo de Lectura)...")
+	// 1. Inicializar el logger
+	logger := logging.New("post-service")
+	logger.Info("service_started")
 
-	// 1. Conexión a la base de datos (Supabase)
-	connStr := "postgresql://postgres:postgres@127.0.0.1:15422/postgres?sslmode=disable"
-	db, err := sql.Open("postgres", connStr)
+	// 2. Inicializar el cliente de MinIO
+	minioClient, err := infraMinio.InitClient()
 	if err != nil {
-		log.Fatalf("Error conectando a la BD: %v", err)
+		log.Printf("Advertencia: No se pudo conectar a MinIO: %v", err)
 	}
-	defer db.Close()
 
-	// 2. Inicializar las capas (Repositorio, Servicio, Controlador)
-	postRepo := repositories.NewPostRepository(db)
+	// 3. Conectar a Supabase Local (PostgreSQL)
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		dbURL = os.Getenv("DB_URL")
+	}
+	if dbURL == "" {
+		dbURL = "postgresql://postgres:postgres@127.0.0.1:15422/postgres"
+	}
+
+	db, err := gorm.Open(postgres.Open(dbURL), &gorm.Config{})
+	if err != nil {
+		log.Fatalf("Error crítico: No se pudo conectar a la base de datos: %v", err)
+	}
+
+	// 4. Auto-migrar las tablas del módulo de likes, comentarios y publicaciones
+	err = db.AutoMigrate(&models.Like{}, &models.Comment{}, &models.Post{})
+	if err != nil {
+		log.Fatalf("Error migrando la base de datos: %v", err)
+	}
+
+	// 5. Publicar un evento de prueba si RabbitMQ está disponible
+	if err := messaging.PublishPostLiked("user-123", "post-456"); err != nil {
+		logger.Error("event_publish_failed", "event", "post.liked", "error", err)
+		log.Printf("Advertencia: RabbitMQ falló, pero el servidor web seguirá iniciando: %v\n", err)
+	} else {
+		logger.Info("event_published", "event", "post.liked")
+	}
+
+	// 6. Inyectar dependencias de Likes y Comentarios
+	likeRepo := repositories.NewPostgresLikeRepository(db)
+	likeService := services.NewLikeService(likeRepo)
+	likeController := controllers.NewLikeController(likeService)
+
+	commentRepo := repositories.NewPostgresCommentRepository(db)
+	commentService := services.NewCommentService(commentRepo)
+	commentController := controllers.NewCommentController(commentService)
+
+	// 7. Inyectar dependencias de Publicaciones (Post)
+	// Extraemos la conexión base de SQL desde GORM para inyectarla en tu SQLPostRepository
+	sqlDB, err := db.DB()
+	if err != nil {
+		log.Fatalf("Error crítico al obtener la conexión SQL: %v", err)
+	}
+
+	postRepo := repositories.NewPostRepository(sqlDB)
 	postService := services.NewPostService(postRepo)
 	postController := controllers.NewPostController(postService)
 
-	// 3. Inicializar el servidor HTTP con Gin
-	r := gin.Default()
-	api := r.Group("/api/v1")
+	// 8. Inyectar dependencias del nuevo FEED PRINCIPAL
+	feedRepo := repositories.NewPostgresFeedRepository(db)
+	feedService := services.NewFeedService(feedRepo)
+	feedController := controllers.NewFeedController(feedService)
 
-	// Middleware simulado de autenticación (inyecta el userID del solicitante)
-	api.Use(func(c *gin.Context) {
-		c.Set("userID", "user-123") // Simulamos que el usuario "user-123" está navegando
+	// 9. Configurar Rutas
+	router := gin.Default()
+
+	// --- MIDDLEWARE DE PRUEBAS ---
+	// Extrae el ID del usuario desde el header para simular que pasó por el API Gateway
+	router.Use(func(c *gin.Context) {
+		userID := c.GetHeader("X-User-ID")
+		if userID != "" {
+			c.Set("userID", userID)
+		}
 		c.Next()
 	})
+	// ------------------------------
 
-	// 4. Conectar las rutas
-	routes.SetupPostRoutes(api, postController)
+	// Rutas de módulos (Mezclado: con middleware de tu rama y likeController de la rama main)
+	routes.SetupRoutes(router, likeController, commentController, postController, minioClient)
 
-	// 5. Iniciar el servidor
-	log.Println("Servidor escuchando en el puerto 8080")
-	if err := r.Run(":8080"); err != nil {
-		log.Fatalf("Error al iniciar el servidor: %v", err)
+	// Nueva ruta del Feed (directo en el main para no modificar el archivo routes por ahora)
+	router.GET("/v1/feed", feedController.GetMainFeed)
+
+	// Nota: Tu puerto actual en este archivo es 8084
+	logger.Info("http_server_started", "port", "8084")
+	if err := router.Run(":8084"); err != nil {
+		log.Fatalf("Error al iniciar el servidor web: %v", err)
 	}
 }

@@ -28,10 +28,17 @@ func SetupRoutes(router *gin.Engine, controller *controllers.FriendshipControlle
 		protected.POST("/block", controller.BlockUser)
 		protected.GET("/validate-interaction", controller.ValidateInteraction)
 		protected.POST("/validate-interaction", controller.ValidateInteraction)
+		protected.POST("/blocks/exclude", controller.ExcludeBlocked)
 
 		// RF-14: Sugerencias de amistad
 		protected.GET("/suggestions", controller.GetFriendSuggestions)
 		protected.GET("/recommendations", controller.GetFriendSuggestions)
+	}
+
+	// Endpoint interno para comunicación entre microservicios (no requiere sesión JWT de usuario final)
+	internal := router.Group("/internal")
+	{
+		internal.POST("/blocks/exclude", controller.ExcludeBlocked)
 	}
 
 	// Acceso directo a sugerencias de amistad

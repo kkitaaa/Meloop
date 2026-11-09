@@ -3,18 +3,63 @@ package services
 import (
 	"context"
 	"errors"
+	"fmt"
+	"regexp"
 
-	// Cambia esto si el nombre del módulo en tu go.mod es distinto
-
+	"github.com/meloop/post-service/models"
 	"github.com/meloop/post-service/repositories"
 )
 
-type PostService struct {
-	repo *repositories.PostRepository
+// spotifyIDRegex valida que el ID sea alfanumérico y de exactamente 22 caracteres
+var spotifyIDRegex = regexp.MustCompile(`^[a-zA-Z0-9]{22}$`)
+
+// ValidateMusicReferences encapsula la lógica de negocio para validar los metadatos musicales
+func ValidateMusicReferences(refs []models.MusicReference) error {
+	for _, ref := range refs {
+		if ref.ReferenceType != models.TrackReference &&
+			ref.ReferenceType != models.ArtistReference &&
+			ref.ReferenceType != models.AlbumReference {
+			return fmt.Errorf("tipo de referencia inválido: %s", ref.ReferenceType)
+		}
+
+		if ref.Provider != "spotify" && ref.Provider != "youtube" {
+			return fmt.Errorf("proveedor no soportado: %s", ref.Provider)
+		}
+
+		if ref.ReferenceID == "" {
+			return errors.New("el reference_id no puede estar vacío")
+		}
+
+		// Validación estricta del formato del ID según el proveedor
+		if ref.Provider == "spotify" {
+			if !spotifyIDRegex.MatchString(ref.ReferenceID) {
+				return fmt.Errorf("formato de spotify_id inválido: %s", ref.ReferenceID)
+			}
+		}
+	}
+	return nil
 }
 
-func NewPostService(repo *repositories.PostRepository) *PostService {
+type PostService struct {
+	repo *repositories.SQLPostRepository // <- Cambiado a SQLPostRepository
+}
+
+func NewPostService(repo *repositories.SQLPostRepository) *PostService {
 	return &PostService{repo: repo}
+}
+
+// CreatePost valida y envía la nueva publicación al repositorio
+func (s *PostService) CreatePost(ctx context.Context, authorID string, content string, mediaURLs []string) (*repositories.Post, error) {
+	if content == "" {
+		return nil, errors.New("el contenido de la publicación no puede estar vacío")
+	}
+
+	var url *string
+	if len(mediaURLs) > 0 && mediaURLs[0] != "" {
+		url = &mediaURLs[0]
+	}
+
+	return s.repo.CreatePost(ctx, authorID, content, url)
 }
 
 // EditPost valida los datos antes de enviarlos a la base de datos (RF-17)

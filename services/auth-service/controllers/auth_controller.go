@@ -98,9 +98,23 @@ func (ctrl *AuthController) Login(c *gin.Context) {
 			return
 		}
 
+		if errors.Is(err, services.ErrTooManyAttempts) {
+			httpresponse.ErrorWithDetailsGin(
+				c,
+				http.StatusTooManyRequests,
+				"TOO_MANY_REQUESTS",
+				"Demasiados intentos fallidos de inicio de sesión. Cuenta bloqueada temporalmente.",
+				map[string]string{
+					"issue": "too_many_attempts",
+				},
+			)
+			return
+		}
+
 		httpcall := httpresponse.InternalErrorGin
 		httpcall(c)
 		return
+
 	}
 
 	httpresponse.SuccessGin(c, http.StatusOK, res)

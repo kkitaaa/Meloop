@@ -119,7 +119,6 @@ class _FriendsScreenState extends State<FriendsScreen> {
           Image.asset(
             'assets/imagenes/meloop.png',
             height: 24,
-            color: Colors.white,
             fit: BoxFit.contain,
           ),
           if (isDesktop) ...[

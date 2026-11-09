@@ -17,6 +17,22 @@ type mockUserRepository struct {
 	updateUsernameFunc func(ctx context.Context, id string, newUsername string) (*models.Usuario, error)
 }
 
+func (m *mockUserRepository) ListUsers(ctx context.Context) ([]models.AdminUserSummary, error) {
+	return nil, nil
+}
+
+func (m *mockUserRepository) SuspendUser(ctx context.Context, id string, reason string) (*models.AdminUserSummary, error) {
+	return nil, nil
+}
+
+func (m *mockUserRepository) ReactivateUser(ctx context.Context, id string) (*models.AdminUserSummary, error) {
+	return nil, nil
+}
+
+func (m *mockUserRepository) SetModeratorRole(ctx context.Context, id string, moderator bool) (*models.AdminUserSummary, error) {
+	return nil, nil
+}
+
 func (m *mockUserRepository) GetByID(ctx context.Context, id string) (*models.Usuario, error) {
 	if m.getByIDFunc != nil {
 		return m.getByIDFunc(ctx, id)
