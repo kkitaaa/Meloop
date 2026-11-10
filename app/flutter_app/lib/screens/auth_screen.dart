@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter/foundation.dart';
 
 import '../features/admin/presentation/admin_dashboard_screen.dart';
+import '../core/navigation/responsive_navigation_shell.dart';
 import '../features/moderation/data/moderation_models.dart';
+import '../features/notifications/presentation/notification_scope.dart';
 import 'feed_screen.dart';
 
 class AuthScreen extends StatefulWidget {
@@ -197,9 +200,21 @@ class _AuthScreenState extends State<AuthScreen> {
                   _emailController.text.trim().toLowerCase() ==
                       'admin@admin.com' &&
                   _passwordController.text == 'ADMIN';
-              final Widget destination = isAdminDemoLogin
-                  ? const AdminDashboardScreen(role: ModerationRole.admin)
-                  : const FeedScreen();
+              final isAndroidMobile =
+                  defaultTargetPlatform == TargetPlatform.android;
+              final userRole = isAdminDemoLogin
+                  ? ModerationRole.admin
+                  : ModerationRole.user;
+              final Widget destination;
+              if (isAdminDemoLogin) {
+                destination = AdminDashboardScreen(role: userRole);
+              } else if (isAndroidMobile) {
+                NotificationScope.maybeOf(context)?.start();
+                destination = ResponsiveNavigationShell(userRole: userRole);
+              } else {
+                NotificationScope.maybeOf(context)?.start();
+                destination = FeedScreen(userRole: userRole);
+              }
               Navigator.pushReplacement(
                 context,
                 MaterialPageRoute(builder: (context) => destination),

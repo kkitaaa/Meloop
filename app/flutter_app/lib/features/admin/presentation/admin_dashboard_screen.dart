@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../moderation/data/moderation_models.dart';
 import '../../moderation/presentation/moderation_queue_screen.dart';
+import '../../notifications/presentation/notification_scope.dart';
 import '../../../screens/auth_screen.dart';
 import '../../../screens/api_test_screen.dart';
 import '../data/admin_repository.dart';
@@ -167,6 +168,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   void _logout() {
+    NotificationScope.maybeOf(context)?.stop();
     Navigator.of(context).pushAndRemoveUntil<void>(
       MaterialPageRoute<void>(builder: (_) => const AuthScreen()),
       (route) => false,

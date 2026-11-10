@@ -2,12 +2,15 @@ import 'dart:async';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_app/core/navigation/artists_and_songs_screen.dart';
+import 'package:flutter_app/screens/friends_screen.dart';
 import 'package:flutter_app/features/music/presentation/music_track_detail_screen.dart';
 import 'package:flutter_app/features/music/presentation/music_track_tile.dart';
 import 'package:flutter_app/features/profile/presentation/profile_screen.dart';
 import 'package:flutter_app/models/global_search.dart';
 import 'package:flutter_app/models/music_track.dart';
 import 'package:flutter_app/services/api_client.dart';
+import 'package:flutter_app/widgets/desktop_app_header.dart';
 import 'package:flutter_app/widgets/post_card.dart';
 
 enum _SearchSource { users, posts, music }
@@ -565,6 +568,66 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen>
   }
 
   PreferredSizeWidget _buildBrandedAppBar() {
+    if (MediaQuery.sizeOf(context).width > 900) {
+      return PreferredSize(
+        preferredSize: const Size.fromHeight(82),
+        child: DesktopAppHeader(
+          activeSection: DesktopNavigationSection.none,
+          onHomeTap: () => navigateToDesktopHome(context),
+          onFriendsTap: () =>
+              navigateToDesktopSection(context, (_) => const FriendsScreen()),
+          onArtistsTap: () => navigateToDesktopSection(
+            context,
+            (_) => const ArtistsAndSongsScreen(),
+          ),
+          onProfileTap: () => navigateToDesktopSection(
+            context,
+            (_) => ProfileScreen(apiClient: _apiClient),
+          ),
+          searchOpen: true,
+          searchController: _queryController,
+          onSearchBack: () => navigateToDesktopHome(context),
+        ),
+      );
+    }
+
+    if (Theme.of(context).platform == TargetPlatform.android) {
+      final topInset = MediaQuery.viewPaddingOf(context).top;
+      return PreferredSize(
+        preferredSize: Size.fromHeight(55 + topInset),
+        child: Container(
+          color: const Color(0xFF1ABC9C),
+          child: SafeArea(
+            bottom: false,
+            child: Container(
+              height: 55,
+              color: const Color(0xFF1ABC9C),
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Row(
+                children: [
+                  IconButton(
+                    tooltip: 'Volver',
+                    onPressed: () => Navigator.maybePop(context),
+                    icon: const Icon(Icons.arrow_back, color: Colors.white),
+                  ),
+                  Expanded(
+                    child: Center(
+                      child: Image.asset(
+                        'assets/imagenes/meloop.png',
+                        height: 24,
+                        fit: BoxFit.contain,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 48),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     return PreferredSize(
       preferredSize: const Size.fromHeight(55),
       child: Container(
@@ -573,6 +636,18 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen>
         padding: const EdgeInsets.symmetric(horizontal: 24),
         child: Row(
           children: [
+            IconButton(
+              tooltip: 'Volver',
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+              onPressed: () => Navigator.maybePop(context),
+              icon: const Icon(
+                Icons.arrow_back_rounded,
+                color: Colors.white,
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 16),
             IconButton(
               tooltip: 'Volver',
               padding: EdgeInsets.zero,
@@ -723,49 +798,54 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen>
   @override
   Widget build(BuildContext context) {
     final queryTooShort = _queryController.text.trim().length < 2;
+    final isDesktop = MediaQuery.sizeOf(context).width > 900;
     return Scaffold(
-      backgroundColor: const Color(0xFF0D5C5E),
+      backgroundColor: Colors.transparent,
       appBar: _buildBrandedAppBar(),
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 920),
-            child: Container(
-              color: Colors.white,
-              child: Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(24, 20, 24, 12),
-                    child: _buildSearchInput(),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
-                    child: _buildTabs(),
-                  ),
-                  if (!queryTooShort &&
-                      _tabController.index == 1 &&
-                      _activeQuery.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(24, 10, 24, 0),
-                      child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: _buildPostFilter(),
+      body: SafeArea(
+        top: false,
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 920),
+              child: Container(
+                color: Colors.white,
+                child: Column(
+                  children: [
+                    if (!isDesktop)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(24, 20, 24, 12),
+                        child: _buildSearchInput(),
                       ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      child: _buildTabs(),
                     ),
-                  Expanded(
-                    child: queryTooShort
-                        ? _buildRecentSearches()
-                        : TabBarView(
-                            controller: _tabController,
-                            children: [
-                              _buildSourceTab(_SearchSource.users),
-                              _buildSourceTab(_SearchSource.posts),
-                              _buildSourceTab(_SearchSource.music),
-                            ],
-                          ),
-                  ),
-                ],
+                    if (!queryTooShort &&
+                        _tabController.index == 1 &&
+                        _activeQuery.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(24, 10, 24, 0),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: _buildPostFilter(),
+                        ),
+                      ),
+                    Expanded(
+                      child: queryTooShort
+                          ? _buildRecentSearches()
+                          : TabBarView(
+                              controller: _tabController,
+                              children: [
+                                _buildSourceTab(_SearchSource.users),
+                                _buildSourceTab(_SearchSource.posts),
+                                _buildSourceTab(_SearchSource.music),
+                              ],
+                            ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

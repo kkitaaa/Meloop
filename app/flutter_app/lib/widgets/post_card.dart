@@ -3,12 +3,15 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
 import '../../features/comments/presentation/comments_screen.dart';
+import '../../features/moderation/data/moderation_models.dart';
+import '../../features/moderation/presentation/report_sheet.dart';
 import '../../features/profile/presentation/profile_screen.dart';
 import '../../features/music/presentation/music_track_detail_screen.dart';
 import '../features/posts/presentation/post_editor_dialog.dart';
 import '../features/posts/presentation/share_post_sheet.dart';
 import '../services/api_client.dart';
 import 'post_audio_controls.dart';
+import 'post_interactions/post_interaction_demo.dart';
 import '../services/post_audio_playback.dart';
 
 class PostCard extends StatefulWidget {
@@ -363,13 +366,11 @@ class _PostCardState extends State<PostCard> {
                     } else if (value == 'save') {
                       _toggleSaved(postId);
                     } else if (value == 'report') {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text(
-                            "Publicación reportada a los administradores.",
-                          ),
-                          backgroundColor: Colors.orange,
-                        ),
+                      await showReportSheet(
+                        context,
+                        targetType: ModerationTargetType.post,
+                        targetId: postId,
+                        targetUsername: user,
                       );
                     }
                   },
@@ -493,15 +494,14 @@ class _PostCardState extends State<PostCard> {
 
           Row(
             children: [
-              Row(
-                children: [
-                  const Icon(Icons.favorite, color: Colors.red, size: 16),
-                  const SizedBox(width: 4),
-                  Text(
-                    "$likes Likes",
-                    style: const TextStyle(color: Colors.grey, fontSize: 11),
-                  ),
-                ],
+              DemoLikeButton(
+                postId: postId,
+                likes: likes,
+                initiallyLiked: widget.postData['is_liked'] == true,
+                onLikesChanged: (count) {
+                  widget.postData['likes'] = count;
+                },
+                onLikedChanged: (liked) => widget.postData['is_liked'] = liked,
               ),
               const SizedBox(width: 16),
               InkWell(
@@ -518,13 +518,16 @@ class _PostCardState extends State<PostCard> {
                   children: [
                     const Icon(
                       Icons.mode_comment_outlined,
-                      color: Colors.grey,
-                      size: 16,
+                      color: Color(0xFF00AF92),
+                      size: 20,
                     ),
                     const SizedBox(width: 4),
                     Text(
                       "$comments Comentarios",
-                      style: const TextStyle(color: Colors.grey, fontSize: 11),
+                      style: const TextStyle(
+                        color: Color(0xFF00AF92),
+                        fontSize: 11,
+                      ),
                     ),
                   ],
                 ),

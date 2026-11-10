@@ -2,30 +2,43 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'package:flutter/foundation.dart';
+
 import '../services/api_client.dart';
 import 'friends_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
 import '../features/posts/presentation/post_editor_dialog.dart';
 import '../features/search/presentation/global_search_screen.dart';
-import '../features/music/presentation/music_preferences_screen.dart';
-import '../widgets/app_background.dart';
+import '../widgets/app_settings_menu.dart';
+import '../widgets/desktop_app_header.dart';
+import '../widgets/desktop_chat.dart';
+import '../widgets/mobile_app_header.dart';
+import '../features/moderation/data/moderation_models.dart';
+import '../features/moderation/presentation/moderation_queue_screen.dart';
+import '../core/navigation/artists_and_songs_screen.dart';
+import '../features/gamification/presentation/gamification_demo_controller.dart';
+import '../widgets/level_progress/level_progress.dart';
 import '../../widgets/post_card.dart';
 import '../../widgets/rumi_xp_notice.dart';
 import '../../widgets/states/loading_state.dart';
 import '../../widgets/states/empty_state.dart';
 import '../../widgets/states/error_state.dart';
-import '../features/profile/presentation/blocked_users_screen.dart';
 
 class FeedScreen extends StatefulWidget {
   final ApiClient? apiClient;
+  final ModerationRole userRole;
 
-  const FeedScreen({super.key, this.apiClient});
+  const FeedScreen({
+    super.key,
+    this.apiClient,
+    this.userRole = ModerationRole.user,
+  });
 
   @override
-  State<FeedScreen> createState() => _FeedScreenState();
+  State<FeedScreen> createState() => FeedScreenState();
 }
 
-class _FeedScreenState extends State<FeedScreen> {
+class FeedScreenState extends State<FeedScreen> {
   static const int _pageSize = 5;
 
   final Color _tealAccent = const Color(0xFF1ABC9C);
@@ -194,6 +207,26 @@ class _FeedScreenState extends State<FeedScreen> {
     );
   }
 
+  Future<void> createPost() => _createPost();
+
+  void _openModerationQueue() {
+    Navigator.push(
+      context,
+      MaterialPageRoute<void>(
+        builder: (_) => ModerationQueueScreen(role: widget.userRole),
+      ),
+    );
+  }
+
+  void _openSearch() {
+    Navigator.push(
+      context,
+      MaterialPageRoute<void>(
+        builder: (_) => GlobalSearchScreen(apiClient: _apiClient),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final double screenWidth = MediaQuery.of(context).size.width;
@@ -203,7 +236,6 @@ class _FeedScreenState extends State<FeedScreen> {
       backgroundColor: Colors.transparent,
       body: Stack(
         children: [
-          const Positioned.fill(child: AppBackground()),
           Column(
             children: [
               _buildTopBar(isDesktop),
@@ -212,80 +244,57 @@ class _FeedScreenState extends State<FeedScreen> {
               ),
             ],
           ),
+          if (isDesktop)
+            const Positioned(right: 24, bottom: 0, child: DesktopChat()),
         ],
       ),
     );
   }
 
   Widget _buildTopBar(bool isDesktop) {
-    return Container(
-      height: isDesktop ? 82 : 55,
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Color(0xFF59E5C9), Color(0xFF00AF92)],
+    final canModerate = widget.userRole != ModerationRole.user;
+    if (isDesktop) {
+      return DesktopAppHeader(
+        activeSection: DesktopNavigationSection.home,
+        onHomeTap: () {},
+        onFriendsTap: () =>
+            navigateToDesktopSection(context, (_) => const FriendsScreen()),
+        onArtistsTap: () => navigateToDesktopSection(
+          context,
+          (_) => const ArtistsAndSongsScreen(),
         ),
-        borderRadius: BorderRadius.vertical(bottom: Radius.circular(24)),
-      ),
-      padding: EdgeInsets.symmetric(horizontal: isDesktop ? 24 : 16),
+        onProfileTap: () => Navigator.push(
+          context,
+          MaterialPageRoute<void>(
+            builder: (_) => ProfileScreen(apiClient: _apiClient),
+          ),
+        ),
+        onModerationTap: canModerate ? _openModerationQueue : null,
+        onSearchTap: _openSearch,
+        apiClient: _apiClient,
+      );
+    }
+
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      return MobileAppHeader(
+        onSearchTap: _openSearch,
+        onModerationTap: canModerate ? _openModerationQueue : null,
+        apiClient: _apiClient,
+      );
+    }
+
+    return Container(
+      height: 55,
+      color: _tealAccent,
+      padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Image.asset(
             'assets/imagenes/meloop.png',
-            height: isDesktop ? 38 : 24,
+            height: 24,
             fit: BoxFit.contain,
           ),
-          if (isDesktop) ...[
-            Row(
-              children: [
-                _navLink('Inicio', isActive: true),
-                _navLink(
-                  'Amigos',
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const FriendsScreen(),
-                      ),
-                    );
-                  },
-                ),
-                _navLink(
-                  'Perfil',
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) =>
-                            ProfileScreen(apiClient: _apiClient),
-                      ),
-                    );
-                  },
-                ),
-              ],
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Row(
-                children: const [
-                  Icon(Icons.play_circle_fill, color: Colors.white, size: 18),
-                  SizedBox(width: 8),
-                  Text(
-                    "Playing... DJ Gouz",
-                    style: TextStyle(color: Colors.white, fontSize: 12),
-                  ),
-                  SizedBox(width: 8),
-                  Icon(Icons.graphic_eq, color: Colors.white, size: 16),
-                ],
-              ),
-            ),
-          ],
           Row(
             children: [
               IconButton(
@@ -293,50 +302,10 @@ class _FeedScreenState extends State<FeedScreen> {
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
                 icon: const Icon(Icons.search, color: Colors.white, size: 20),
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute<void>(
-                      builder: (_) => GlobalSearchScreen(apiClient: _apiClient),
-                    ),
-                  );
-                },
+                onPressed: _openSearch,
               ),
               const SizedBox(width: 16),
-              PopupMenuButton<_FeedSettingsAction>(
-                tooltip: 'Ajustes',
-                icon: const Icon(Icons.settings, color: Colors.white, size: 20),
-                onSelected: (action) {
-                  final screen = switch (action) {
-                    _FeedSettingsAction.musicPreferences =>
-                      MusicPreferencesScreen(apiClient: _apiClient),
-                    _FeedSettingsAction.blockedUsers =>
-                      const BlockedUsersScreen(),
-                  };
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => screen),
-                  );
-                },
-                itemBuilder: (context) => const [
-                  PopupMenuItem(
-                    value: _FeedSettingsAction.musicPreferences,
-                    child: ListTile(
-                      leading: Icon(Icons.queue_music_rounded),
-                      title: Text('Preferencias musicales'),
-                      contentPadding: EdgeInsets.zero,
-                    ),
-                  ),
-                  PopupMenuItem(
-                    value: _FeedSettingsAction.blockedUsers,
-                    child: ListTile(
-                      leading: Icon(Icons.block_rounded),
-                      title: Text('Usuarios bloqueados'),
-                      contentPadding: EdgeInsets.zero,
-                    ),
-                  ),
-                ],
-              ),
+              AppSettingsMenu(apiClient: _apiClient),
               const SizedBox(width: 16),
               const Icon(Icons.notifications, color: Colors.white, size: 20),
               const SizedBox(width: 16),
@@ -359,29 +328,6 @@ class _FeedScreenState extends State<FeedScreen> {
             ],
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _navLink(String text, {bool isActive = false, VoidCallback? onTap}) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 4.0),
-        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 6.0),
-        decoration: BoxDecoration(
-          color: isActive ? Colors.white : Colors.transparent,
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Text(
-          text,
-          style: TextStyle(
-            color: isActive ? _tealAccent : Colors.white,
-            fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-            fontSize: 12,
-          ),
-        ),
       ),
     );
   }
@@ -544,38 +490,13 @@ class _FeedScreenState extends State<FeedScreen> {
   }
 
   Widget _buildLevelCard() {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              Icon(Icons.star, color: _tealAccent, size: 14),
-              const SizedBox(width: 4),
-              const Text(
-                "Nivel 3 -> Buen progreso",
-                style: TextStyle(
-                  color: Colors.black87,
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          LinearProgressIndicator(
-            value: 0.6,
-            backgroundColor: Colors.grey[200],
-            valueColor: AlwaysStoppedAnimation<Color>(_tealAccent),
-            minHeight: 6,
-            borderRadius: BorderRadius.circular(3),
-          ),
-        ],
-      ),
+    final progress = GamificationDemoController.instance;
+    return LevelProgress(
+      level: progress.level,
+      xp: progress.xp,
+      xpNeeded: progress.experienceNeeded,
+      compact: true,
+      demoController: progress,
     );
   }
 
@@ -803,5 +724,3 @@ class _FeedScreenState extends State<FeedScreen> {
     );
   }
 }
-
-enum _FeedSettingsAction { musicPreferences, blockedUsers }

@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_app/features/gamification/presentation/level_up_feedback_overlay.dart';
+import 'package:flutter_app/features/gamification/presentation/gamification_demo_controller.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:flutter_app/widgets/post_card.dart';
@@ -16,6 +18,8 @@ void main() {
     VoidCallback? onDelete,
   }) {
     return MaterialApp(
+      builder: (context, child) =>
+          LevelUpFeedbackOverlay(onEquip: () {}, child: child!),
       home: Scaffold(
         body: SingleChildScrollView(
           child: PostCard(
@@ -75,6 +79,73 @@ void main() {
       expect(find.byType(Image), findsOneWidget);
     });
 
+    testWidgets('like demo actualiza el contador y muestra la XP animada', (
+      tester,
+    ) async {
+      final postData = {
+        "id": 20,
+        "user": "Camila",
+        "content": "Post con interacción demo",
+        "likes": 4,
+        "isAuthor": false,
+      };
+      final xpBefore = GamificationDemoController.instance.xp;
+
+      await tester.pumpWidget(createWidgetUnderTest(postData));
+      await tester.tap(find.byTooltip('Dar like'));
+      await tester.pump(const Duration(milliseconds: 200));
+
+      expect(find.text('5 Likes'), findsOneWidget);
+      expect(find.text('+10 XP'), findsOneWidget);
+      expect(postData['is_liked'], isTrue);
+      expect(GamificationDemoController.instance.xp, xpBefore + 10);
+    });
+
+    testWidgets('al completar XP muestra alerta de nivel y permite equipar', (
+      tester,
+    ) async {
+      final postData = {
+        "id": 21,
+        "user": "Camila",
+        "content": "Post de subida de nivel",
+        "likes": 0,
+        "isAuthor": false,
+      };
+      final progress = GamificationDemoController.instance;
+      final startingLevel = progress.level;
+
+      await tester.pumpWidget(createWidgetUnderTest(postData));
+      for (
+        var attempt = 0;
+        attempt < 12 && progress.level == startingLevel;
+        attempt++
+      ) {
+        await tester.tap(find.byTooltip('Dar like'));
+        await tester.pump(const Duration(milliseconds: 200));
+        if (progress.level > startingLevel) break;
+
+        await tester.tap(find.byTooltip('Quitar like'));
+        await tester.pump(const Duration(milliseconds: 200));
+      }
+
+      expect(find.byKey(const ValueKey('level-up-confetti')), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('level-up-confetti')),
+          matching: find.byType(IgnorePointer),
+        ),
+        findsOneWidget,
+      );
+      expect(find.byType(Dialog), findsNothing);
+      await tester.pump(const Duration(milliseconds: 3200));
+      expect(find.text('Marco RGB'), findsOneWidget);
+      expect(find.text('Marco de perfil'), findsOneWidget);
+      expect(find.byType(LinearProgressIndicator), findsOneWidget);
+      await tester.tap(find.text('Equipar'));
+      await tester.pumpAndSettle();
+      expect(progress.rgbFrameEquipped, isTrue);
+    });
+
     testWidgets(
       'Muestra opciones correctas en el menú según el ROL (No Autor = Guardar/Reportar)',
       (WidgetTester tester) async {
@@ -109,7 +180,7 @@ void main() {
       };
 
       await tester.pumpWidget(
-        createWidgetUnderTest(postData, onDelete: mockOnDelete),
+        createWidgetUnderTest(postData, onDelete: mockOnDelete.call),
       );
 
       await tester.tap(find.byIcon(Icons.more_horiz));

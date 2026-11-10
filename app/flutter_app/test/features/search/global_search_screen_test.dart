@@ -52,6 +52,43 @@ void main() {
     expect(find.text('Nivel 4'), findsOneWidget);
   });
 
+  testWidgets('Android search header and content respect system insets', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(400, 800);
+    tester.view.devicePixelRatio = 1;
+    tester.view.viewPadding = const FakeViewPadding(top: 24, bottom: 24);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetViewPadding);
+    final apiClient = ApiClient(
+      dio: Dio()..httpClientAdapter = _SearchAdapter(),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(platform: TargetPlatform.android),
+        home: GlobalSearchScreen(apiClient: apiClient),
+      ),
+    );
+
+    final appBar = tester.widget<PreferredSize>(
+      find.byType(PreferredSize).first,
+    );
+    expect(appBar.preferredSize.height, 79);
+    final headerSafeArea = tester.widget<SafeArea>(
+      find.descendant(
+        of: find.byType(PreferredSize).first,
+        matching: find.byType(SafeArea),
+      ),
+    );
+    expect(headerSafeArea.top, isTrue);
+    final screenScaffold = tester.widget<Scaffold>(find.byType(Scaffold));
+    final bodySafeArea = screenScaffold.body! as SafeArea;
+    expect(bodySafeArea.top, isFalse);
+    expect(bodySafeArea.bottom, isTrue);
+  });
+
   testWidgets('muestra sugerencia, recent searches y límite de cinco', (
     tester,
   ) async {

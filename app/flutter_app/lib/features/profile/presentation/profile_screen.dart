@@ -1,26 +1,39 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 
 import 'dart:async';
 
+import '../../../core/navigation/artists_and_songs_screen.dart';
 import '../../social/presentation/mutual_friends_row.dart';
 import '../../../screens/friends_screen.dart';
+import '../../../widgets/desktop_app_header.dart';
+import '../../../widgets/mobile_app_header.dart';
 import '../../../widgets/post_card.dart';
+import '../../../widgets/level_progress/level_progress.dart';
 import '../../../services/api_client.dart';
 import '../../posts/presentation/saved_posts_screen.dart';
+import '../../search/presentation/global_search_route.dart';
+import '../../gamification/presentation/gamification_demo_controller.dart';
 
 class ProfileScreen extends StatefulWidget {
   final String? username;
   final String? userId;
   final ApiClient? apiClient;
+  final bool openInventory;
 
-  const ProfileScreen({super.key, this.username, this.userId, this.apiClient});
+  const ProfileScreen({
+    super.key,
+    this.username,
+    this.userId,
+    this.apiClient,
+    this.openInventory = false,
+  });
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-  final Color _bgColor = const Color(0xFF0D5C5E);
   final Color _tealAccent = const Color(0xFF1ABC9C);
 
   final ScrollController _scrollController = ScrollController();
@@ -287,7 +300,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final bool isDesktop = screenWidth > 900;
 
     return Scaffold(
-      backgroundColor: _bgColor,
+      backgroundColor: Colors.transparent,
       body: Column(
         children: [
           _buildTopBar(isDesktop, context),
@@ -300,6 +313,29 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildTopBar(bool isDesktop, BuildContext context) {
+    if (!isDesktop && defaultTargetPlatform == TargetPlatform.android) {
+      return MobileAppHeader(
+        onSearchTap: () => openGlobalSearch(context),
+        apiClient: widget.apiClient,
+      );
+    }
+
+    if (isDesktop) {
+      return DesktopAppHeader(
+        activeSection: DesktopNavigationSection.none,
+        onHomeTap: () => navigateToDesktopHome(context),
+        onFriendsTap: () =>
+            navigateToDesktopSection(context, (_) => const FriendsScreen()),
+        onArtistsTap: () => navigateToDesktopSection(
+          context,
+          (_) => const ArtistsAndSongsScreen(),
+        ),
+        onProfileTap: () {},
+        onSearchTap: () => openGlobalSearch(context),
+        apiClient: widget.apiClient,
+      );
+    }
+
     return Container(
       height: 55,
       color: _tealAccent,
@@ -578,38 +614,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildLevelCard() {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              Icon(Icons.star, color: _tealAccent, size: 14),
-              const SizedBox(width: 4),
-              const Text(
-                "Nivel 5 -> Buen progreso",
-                style: TextStyle(
-                  color: Colors.black87,
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          LinearProgressIndicator(
-            value: 0.8,
-            backgroundColor: Colors.grey[200],
-            valueColor: AlwaysStoppedAnimation<Color>(_tealAccent),
-            minHeight: 6,
-            borderRadius: BorderRadius.circular(3),
-          ),
-        ],
-      ),
+    final progress = GamificationDemoController.instance;
+    return LevelProgress(
+      level: progress.level,
+      xp: progress.xp,
+      xpNeeded: progress.experienceNeeded,
+      compact: true,
+      demoController: progress,
     );
   }
 
@@ -999,6 +1010,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ),
       child: DefaultTabController(
         length: isOwn ? 2 : 1,
+        initialIndex: isOwn && widget.openInventory ? 1 : 0,
         child: Column(
           children: [
             TabBar(

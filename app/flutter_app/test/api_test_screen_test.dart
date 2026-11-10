@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_app/widgets/app_background.dart';
 import 'package:flutter_app/screens/api_test_screen.dart';
 import 'package:flutter_app/services/api_client.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -37,6 +38,17 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(home: ApiTestScreen(apiClient: client)),
+    );
+    expect(find.byType(AppBackground), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is Image &&
+            widget.image is AssetImage &&
+            (widget.image as AssetImage).assetName ==
+                'assets/imagenes/FondoAdmin.png',
+      ),
+      findsOneWidget,
     );
     await tester.pumpAndSettle();
 
