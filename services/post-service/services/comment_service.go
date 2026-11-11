@@ -1,64 +1,42 @@
 package services
 
 import (
-	"errors"
-	"strings"
+	"time"
 
 	"github.com/meloop/post-service/models"
 	"github.com/meloop/post-service/repositories"
 )
 
 type CommentService struct {
-	repository repositories.CommentRepository
+	repo repositories.CommentRepository
 }
 
-func NewCommentService(repository repositories.CommentRepository) *CommentService {
-	return &CommentService{
-		repository: repository,
-	}
+func NewCommentService(repo repositories.CommentRepository) *CommentService {
+	return &CommentService{repo: repo}
 }
 
-func (s *CommentService) CreateComment(
-	postID string,
-	request models.CreateCommentRequest,
-) (models.Comment, error) {
-
-	if strings.TrimSpace(postID) == "" {
-		return models.Comment{}, errors.New("post id is required")
-	}
-
-	if strings.TrimSpace(request.AuthorID) == "" {
-		return models.Comment{}, errors.New("author id is required")
-	}
-
-	if strings.TrimSpace(request.Content) == "" {
-		return models.Comment{}, errors.New("content is required")
-	}
-
+// CreateComment para comentarios principales
+func (s *CommentService) CreateComment(postID string, req models.CreateCommentRequest) (models.Comment, error) {
 	comment := models.Comment{
 		PostID:   postID,
-		AuthorID: request.AuthorID,
-		Content:  request.Content,
+		AuthorID: req.AuthorID,
+		Content:  req.Content,
 	}
-
-	return s.repository.Create(comment)
+	return s.repo.Create(comment)
 }
 
-func (s *CommentService) GetComments(postID string) ([]models.Comment, error) {
-	if strings.TrimSpace(postID) == "" {
-		return nil, errors.New("post id is required")
+// CreateReply para respuestas a un comentario existente
+func (s *CommentService) CreateReply(parentCommentID string, postID string, req models.CreateCommentRequest) (models.Comment, error) {
+	comment := models.Comment{
+		PostID:          postID,
+		AuthorID:        req.AuthorID,
+		Content:         req.Content,
+		ParentCommentID: &parentCommentID,
 	}
-
-	comments, err := s.repository.GetByPostID(postID)
-	if err != nil {
-		return nil, err
-	}
-
-	// Devolvemos los comentarios directamente ya que no usamos el árbol
-	return comments, nil
+	return s.repo.Create(comment)
 }
 
-func (s *CommentService) GetCommentByID(commentID string) (models.Comment, error) {
-	// Cambiamos s.repo por s.repository
-	return s.repository.GetByID(commentID)
+// GetThreadedComments llama al repositorio con los filtros
+func (s *CommentService) GetThreadedComments(postID string, cursor time.Time, limit int, excludedUserIDs []string) ([]models.Comment, error) {
+	return s.repo.GetThreadedComments(postID, cursor, limit, excludedUserIDs)
 }
