@@ -46,7 +46,7 @@ func (controller *CommentController) CreateComment(c *gin.Context) {
 	// PUBLICAR EVENTO ASÍNCRONAMENTE (RNF-05, RF-21)
 	go func() {
 		targetAuthorID := "placeholder_post_author_id"
-		
+
 		event := messaging.CommentCreatedEvent{
 			EventID:         uuid.New().String(),
 			CommentID:       created.ID,
@@ -90,7 +90,7 @@ func (controller *CommentController) CreateReply(c *gin.Context) {
 	// PUBLICAR EVENTO ASÍNCRONAMENTE (RNF-05, RF-22)
 	go func() {
 		targetAuthorID := "placeholder_comment_author_id"
-		
+
 		event := messaging.CommentCreatedEvent{
 			EventID:         uuid.New().String(),
 			CommentID:       created.ID,
@@ -148,9 +148,9 @@ func (controller *CommentController) GetComments(c *gin.Context) {
 		parentDTO := mapToCommentResponse(c)
 		parentDTO.Replies = repliesDTO
 		responseComments = append(responseComments, parentDTO)
-		
+
 		// El cursor será el CreatedAt del último comentario
-		nextCursor = c.CreatedAt.Format(time.RFC3339) 
+		nextCursor = c.CreatedAt.Format(time.RFC3339)
 	}
 
 	// Si trajimos menos del límite, ya no hay más páginas
@@ -182,5 +182,5 @@ func mapToCommentResponse(c models.Comment) models.CommentResponse {
 // getExcludedUsers simula la llamada al servicio de usuarios para cumplir RF-64, RN-17, RN-05
 func getExcludedUsers(userID string) []string {
 	// Lógica futura: Llamar a UserService vía gRPC o HTTP para traer bloqueados
-	return []string{"user-bloqueado-1", "user-inactivo-2"} 
+	return []string{"user-bloqueado-1", "user-inactivo-2"}
 }
