@@ -99,3 +99,13 @@ func (s *PostService) SearchPosts(ctx context.Context, query string, requesterID
 	}
 	return s.repo.SearchPosts(ctx, query, requesterID, limit, offset)
 }
+
+// RF-20: Agregar Me gusta
+func (s *PostService) AddLike(ctx context.Context, postID string, userID string) error {
+	return s.repo.AddLike(ctx, postID, userID)
+}
+
+// RF-20: Quitar Me gusta
+func (s *PostService) RemoveLike(ctx context.Context, postID string, userID string) error {
+	return s.repo.RemoveLike(ctx, postID, userID)
+}
