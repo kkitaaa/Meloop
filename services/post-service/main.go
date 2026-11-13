@@ -121,6 +121,8 @@ func main() {
 	// Nueva ruta del Feed
 	router.GET("/v1/feed", feedController.GetMainFeed)
 
+	router.POST("/v1/posts/:id/like", postController.LikePost)
+	router.DELETE("/v1/posts/:id/like", postController.UnlikePost)
 	logger.Info("http_server_started", "port", "8084")
 	if err := router.Run(":8084"); err != nil {
 		log.Fatalf("Error al iniciar el servidor web: %v", err)

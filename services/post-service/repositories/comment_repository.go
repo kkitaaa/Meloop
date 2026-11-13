@@ -1,71 +1,62 @@
 package repositories
 
 import (
-	"errors"
-	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/meloop/post-service/models"
+	"gorm.io/gorm"
 )
 
 type CommentRepository interface {
 	Create(comment models.Comment) (models.Comment, error)
-	GetByPostID(postID string) ([]models.Comment, error)
-	GetByID(commentID string) (models.Comment, error)
+	GetThreadedComments(postID string, cursor time.Time, limit int, excludedUserIDs []string) ([]models.Comment, error)
 }
 
-type InMemoryCommentRepository struct {
-	comments []models.Comment
-	mu       sync.Mutex
+type PostgresCommentRepository struct {
+	db *gorm.DB
 }
 
-func NewInMemoryCommentRepository() *InMemoryCommentRepository {
-	return &InMemoryCommentRepository{
-		comments: make([]models.Comment, 0),
+func NewPostgresCommentRepository(db *gorm.DB) *PostgresCommentRepository {
+	return &PostgresCommentRepository{db: db}
+}
+
+func (r *PostgresCommentRepository) Create(comment models.Comment) (models.Comment, error) {
+	if err := r.db.Create(&comment).Error; err != nil {
+		return models.Comment{}, err
 	}
-}
-
-func (r *InMemoryCommentRepository) Create(comment models.Comment) (models.Comment, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	if comment.Content == "" {
-		return models.Comment{}, errors.New("comment content cannot be empty")
-	}
-
-	comment.ID = uuid.New().String()
-	comment.CreatedAt = time.Now().UTC()
-
-	r.comments = append(r.comments, comment)
-
 	return comment, nil
 }
 
-func (r *InMemoryCommentRepository) GetByPostID(postID string) ([]models.Comment, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+// GetThreadedComments obtiene comentarios principales con sus respuestas anidadas
+func (r *PostgresCommentRepository) GetThreadedComments(postID string, cursor time.Time, limit int, excludedUserIDs []string) ([]models.Comment, error) {
+	var comments []models.Comment
 
-	result := make([]models.Comment, 0)
+	// Query base: Solo comentarios principales (ParentCommentID IS NULL) del Post
+	query := r.db.Where("id_publicacion = ? AND id_comentario_padre IS NULL", postID)
 
-	for _, comment := range r.comments {
-		if comment.PostID == postID {
-			result = append(result, comment)
-		}
+	// Paginación por cursor (fecha de creación)
+	if !cursor.IsZero() {
+		query = query.Where("fecha_creacion < ?", cursor)
 	}
 
-	return result, nil
-}
-
-func (r *InMemoryCommentRepository) GetByID(commentID string) (models.Comment, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	for _, comment := range r.comments {
-		if comment.ID == commentID {
-			return comment, nil
-		}
+	// Exclusión de usuarios (bloqueados o inactivos) (RF-64, RN-17, RN-05)
+	if len(excludedUserIDs) > 0 {
+		query = query.Where("id_usuario NOT IN ?", excludedUserIDs)
 	}
 
-	return models.Comment{}, errors.New("comment not found")
+	// Ejecutar consulta principal y hacer Preload de las respuestas (también filtrando respuestas de usuarios excluidos)
+	preloadQuery := func(db *gorm.DB) *gorm.DB {
+		if len(excludedUserIDs) > 0 {
+			return db.Where("id_usuario NOT IN ?", excludedUserIDs).Order("fecha_creacion ASC")
+		}
+		return db.Order("fecha_creacion ASC")
+	}
+
+	err := query.
+		Preload("Replies", preloadQuery). // Magia de GORM: trae las respuestas anidadas automáticamente
+		Order("fecha_creacion DESC").
+		Limit(limit).
+		Find(&comments).Error
+
+	return comments, err
 }
