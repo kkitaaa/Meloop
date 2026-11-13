@@ -3,6 +3,7 @@ package middlewares
 import (
 	"context"
 	"fmt"
+	"log" // Añadimos log para registrar el error
 	"net/http"
 	"time"
 
@@ -48,7 +49,11 @@ func AntiSpamMiddleware(rdb *redis.Client) gin.HandlerFunc {
 		// 2. Incrementar el contador de interacciones
 		count, err := rdb.Incr(ctx, countKey).Result()
 		if err != nil {
-			c.Next() // Fallback: si Redis falla, no bloqueamos la app
+			// FIX: Bloqueamos en lugar de hacer c.Next() si Redis falla
+			log.Printf("[AntiSpam] Error conectando a Redis: %v", err)
+			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
+				"error": "Error interno validando cuota de interacciones",
+			})
 			return
 		}
 

@@ -84,10 +84,16 @@ func main() {
 	feedService := services.NewFeedService(feedRepo)
 	feedController := controllers.NewFeedController(feedService)
 
-	// 8.5 Inicializar conexión a Redis
+	// 8.5 Inicializar conexión a Redis leyendo variables de entorno para Docker
+	redisAddr := os.Getenv("REDIS_ADDR")
+	if redisAddr == "" {
+		redisAddr = "localhost:6379"
+	}
+	redisPassword := os.Getenv("REDIS_PASSWORD")
+
 	rdb := redis.NewClient(&redis.Options{
-		Addr:     "localhost:6379",
-		Password: "", // Sin contraseña por defecto en local
+		Addr:     redisAddr,
+		Password: redisPassword, // Ahora lee correctamente la contraseña
 		DB:       0,
 	})
 	if _, err := rdb.Ping(context.Background()).Result(); err != nil {
