@@ -25,6 +25,12 @@ func NewCommentController(service *services.CommentService) *CommentController {
 // CreateComment crea un comentario principal en una publicación.
 func (controller *CommentController) CreateComment(c *gin.Context) {
 	postID := c.Param("id")
+	authorID := c.GetString("userID") // Obtenemos el ID del autor desde el contexto
+
+	if authorID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "usuario no autenticado"})
+		return
+	}
 
 	var request models.CreateCommentRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
@@ -32,10 +38,8 @@ func (controller *CommentController) CreateComment(c *gin.Context) {
 		return
 	}
 
-	if request.AuthorID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "author id is required"})
-		return
-	}
+	// Sobrescribimos el AuthorID de la request con el ID autenticado para mayor seguridad
+	request.AuthorID = authorID
 
 	created, err := controller.service.CreateComment(postID, request)
 	if err != nil {
@@ -45,12 +49,15 @@ func (controller *CommentController) CreateComment(c *gin.Context) {
 
 	// PUBLICAR EVENTO ASÍNCRONAMENTE (RNF-05, RF-21)
 	go func() {
+		// En un caso real, necesitarías obtener el ID del autor del post (TargetAuthorID)
+		// desde tu base de datos o servicio. Aquí usaremos un placeholder temporal
+		// hasta que tengas implementada la lógica para recuperar el autor del post original.
 		targetAuthorID := "placeholder_post_author_id"
 
 		event := messaging.CommentCreatedEvent{
 			EventID:         uuid.New().String(),
 			CommentID:       created.ID,
-			CommentAuthorID: request.AuthorID,
+			CommentAuthorID: authorID,
 			TargetAuthorID:  targetAuthorID,
 			TargetType:      "post",
 			TargetID:        postID,
@@ -58,7 +65,7 @@ func (controller *CommentController) CreateComment(c *gin.Context) {
 		}
 
 		if err := messaging.PublishCommentCreated(event); err != nil {
-			log.Printf("[Alerta] El comentario %s fue creado, pero falló RabbitMQ: %v", created.ID, err)
+			log.Printf("[Alerta] El comentario %s fue creado, pero falló la publicación en RabbitMQ: %v", created.ID, err)
 		}
 	}()
 
@@ -69,6 +76,12 @@ func (controller *CommentController) CreateComment(c *gin.Context) {
 func (controller *CommentController) CreateReply(c *gin.Context) {
 	postID := c.Param("id")           // ID del post en la URL (ej: /posts/:id/comments/:commentId/replies)
 	commentID := c.Param("commentId") // Asumimos que agregas commentId a la ruta
+	authorID := c.GetString("userID")
+
+	if authorID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "usuario no autenticado"})
+		return
+	}
 
 	var request models.CreateCommentRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
@@ -76,10 +89,8 @@ func (controller *CommentController) CreateReply(c *gin.Context) {
 		return
 	}
 
-	if request.AuthorID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "author id is required"})
-		return
-	}
+	// Sobrescribimos el AuthorID con el ID autenticado
+	request.AuthorID = authorID
 
 	created, err := controller.service.CreateReply(commentID, postID, request)
 	if err != nil {
@@ -89,12 +100,13 @@ func (controller *CommentController) CreateReply(c *gin.Context) {
 
 	// PUBLICAR EVENTO ASÍNCRONAMENTE (RNF-05, RF-22)
 	go func() {
+		// En un caso real, necesitarías obtener el ID del autor del comentario padre (TargetAuthorID)
 		targetAuthorID := "placeholder_comment_author_id"
 
 		event := messaging.CommentCreatedEvent{
 			EventID:         uuid.New().String(),
 			CommentID:       created.ID,
-			CommentAuthorID: request.AuthorID,
+			CommentAuthorID: authorID,
 			TargetAuthorID:  targetAuthorID,
 			TargetType:      "comment",
 			TargetID:        commentID,
@@ -102,7 +114,7 @@ func (controller *CommentController) CreateReply(c *gin.Context) {
 		}
 
 		if err := messaging.PublishCommentCreated(event); err != nil {
-			log.Printf("[Alerta] La respuesta %s fue creada, pero falló RabbitMQ: %v", created.ID, err)
+			log.Printf("[Alerta] La respuesta %s fue creada, pero falló la publicación en RabbitMQ: %v", created.ID, err)
 		}
 	}()
 
