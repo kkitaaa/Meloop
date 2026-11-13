@@ -35,6 +35,17 @@ type PostCreatedEvent struct {
 	CreatedAt string `json:"fecha"`
 }
 
+// CommentCreatedEvent define la estructura del evento (RF-21, RF-22)
+type CommentCreatedEvent struct {
+	EventID         string `json:"event_id"`
+	CommentID       string `json:"comment_id"`
+	CommentAuthorID string `json:"comment_author_id"` // Quien comenta (3 XP)
+	TargetAuthorID  string `json:"target_author_id"`  // Quien recibe el comentario (4 XP)
+	TargetType      string `json:"target_type"`       // "post" o "comment"
+	TargetID        string `json:"target_id"`         // ID del post o comentario padre
+	CreatedAt       string `json:"fecha"`
+}
+
 func rabbitURL() string {
 	if u := os.Getenv("RABBITMQ_URL"); u != "" {
 		return u
@@ -114,6 +125,50 @@ func PublishPostUnliked(userID, postID string) error {
 	return publishPostEvent("PostUnliked", "post.unliked", userID, postID)
 }
 
+// PublishPostCreated publica el evento de creación de post en RabbitMQ (RF-16, REI-04)
+func PublishPostCreated(userID, postID string) error {
+	logger := logging.New("post-service")
+
+	conn, err := amqp.Dial(rabbitURL())
+	if err != nil {
+		return fmt.Errorf("error conectando a RabbitMQ: %w", err)
+	}
+	defer conn.Close()
+
+	ch, err := conn.Channel()
+	if err != nil {
+		return fmt.Errorf("error creando canal: %w", err)
+	}
+	defer ch.Close()
+
+	if err = ch.ExchangeDeclare(exchange, exchangeType, true, false, false, false, nil); err != nil {
+		return fmt.Errorf("error declarando exchange: %w", err)
+	}
+
+	event := PostCreatedEvent{
+		EventID:   "evt-" + postID,
+		UserID:    userID,
+		PostID:    postID,
+		CreatedAt: time.Now().Format(time.RFC3339),
+	}
+
+	body, err := json.Marshal(event)
+	if err != nil {
+		return fmt.Errorf("error serializando evento: %w", err)
+	}
+
+	if err = ch.Publish(exchange, "post.created", false, false, amqp.Publishing{
+		ContentType:  "application/json",
+		DeliveryMode: amqp.Persistent,
+		Body:         body,
+	}); err != nil {
+		return fmt.Errorf("error publicando evento post.created: %w", err)
+	}
+
+	logger.Info("event_published", "event", "post.created", "payload_bytes", len(body))
+	return nil
+}
+
 func PublishCommentLiked(userID string, commentID string) error {
 	logger := logging.New("post-service")
 	conn, err := amqp.Dial(rabbitURL())
@@ -184,8 +239,8 @@ func PublishCommentUnliked(userID string, commentID string) error {
 	return nil
 }
 
-// PublishPostCreated publica el evento en RabbitMQ con reintentos básicos (RNF-05)
-func PublishPostCreated(userID, postID string) error {
+// PublishCommentCreated publica el evento en RabbitMQ con reintentos básicos (RNF-05)
+func PublishCommentCreated(event CommentCreatedEvent) error {
 	logger := logging.New("post-service")
 
 	conn, err := amqp.Dial(rabbitURL())
@@ -204,26 +259,19 @@ func PublishPostCreated(userID, postID string) error {
 		return fmt.Errorf("error declarando exchange: %w", err)
 	}
 
-	event := PostCreatedEvent{
-		EventID:   "evt-" + postID,
-		UserID:    userID,
-		PostID:    postID,
-		CreatedAt: time.Now().Format(time.RFC3339),
-	}
-
 	body, err := json.Marshal(event)
 	if err != nil {
 		return fmt.Errorf("error serializando evento: %w", err)
 	}
 
-	if err = ch.Publish(exchange, "post.created", false, false, amqp.Publishing{
+	if err = ch.Publish(exchange, "comment.created", false, false, amqp.Publishing{
 		ContentType:  "application/json",
 		DeliveryMode: amqp.Persistent, // Mensajes persistentes (RNF-05)
 		Body:         body,
 	}); err != nil {
-		return fmt.Errorf("error publicando evento post.created: %w", err)
+		return fmt.Errorf("error publicando evento comment.created: %w", err)
 	}
 
-	logger.Info("event_published", "event", "post.created", "payload_bytes", len(body))
+	logger.Info("event_published", "event", "comment.created", "payload_bytes", len(body))
 	return nil
 }

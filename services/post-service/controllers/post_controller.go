@@ -175,3 +175,59 @@ func (ctrl *PostController) Search(c *gin.Context) {
 
 	c.JSON(http.StatusOK, posts)
 }
+
+// LikePost maneja la petición POST para dar me gusta a una publicación y emite un evento (RF-20)
+func (ctrl *PostController) LikePost(c *gin.Context) {
+	postID := c.Param("id")
+	userID := c.GetString("userID")
+
+	if userID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "usuario no autenticado"})
+		return
+	}
+
+	err := ctrl.postService.AddLike(c.Request.Context(), postID, userID)
+	if err != nil {
+		if err.Error() == "el usuario ya dio me gusta a esta publicación" {
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()}) // 409 Conflict si ya existe
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "error interno al registrar el like"})
+		return
+	}
+
+	// Emitir evento a RabbitMQ de forma asíncrona
+	go func(uID, pID string) {
+		if pubErr := messaging.PublishPostLiked(uID, pID); pubErr != nil {
+			println("ERROR: No se pudo publicar el evento de Like en RabbitMQ:", pubErr.Error())
+		}
+	}(userID, postID)
+
+	c.JSON(http.StatusOK, gin.H{"message": "like registrado correctamente"})
+}
+
+// UnlikePost maneja la petición DELETE para quitar el me gusta de una publicación y emite un evento (RF-20)
+func (ctrl *PostController) UnlikePost(c *gin.Context) {
+	postID := c.Param("id")
+	userID := c.GetString("userID")
+
+	if userID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "usuario no autenticado"})
+		return
+	}
+
+	err := ctrl.postService.RemoveLike(c.Request.Context(), postID, userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "error interno al eliminar el like"})
+		return
+	}
+
+	// Emitir evento a RabbitMQ de forma asíncrona
+	go func(uID, pID string) {
+		if pubErr := messaging.PublishPostUnliked(uID, pID); pubErr != nil {
+			println("ERROR: No se pudo publicar el evento de Unlike en RabbitMQ:", pubErr.Error())
+		}
+	}(userID, postID)
+
+	c.JSON(http.StatusOK, gin.H{"message": "like eliminado correctamente"})
+}

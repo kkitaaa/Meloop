@@ -6,6 +6,7 @@ on:
     paths:
       - 'services/api-gateway/**'
       - 'services/recommendation-service/**'
+      - 'services/notification-service/**'
       - 'services/common/**'
       - 'ml-service/**'
       - '.dockerignore'
@@ -15,6 +16,7 @@ on:
     paths:
       - 'services/api-gateway/**'
       - 'services/recommendation-service/**'
+      - 'services/notification-service/**'
       - 'services/common/**'
       - 'ml-service/**'
       - '.dockerignore'
@@ -38,6 +40,9 @@ jobs:
           - name: recommendation-service
             context: .
             file: services/recommendation-service/Dockerfile
+          - name: notification-service
+            context: .
+            file: services/notification-service/Dockerfile
           - name: ml-service
             context: ml-service
             file: ml-service/Dockerfile
