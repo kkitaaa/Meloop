@@ -1,16 +1,19 @@
 package main
 
 import (
+	"context"
 	"log"
 	"os"
 
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
 	infraMinio "github.com/meloop/infrastructure/minio"
 	"github.com/meloop/post-service/controllers"
 	"github.com/meloop/post-service/messaging"
+	"github.com/meloop/post-service/middlewares"
 	"github.com/meloop/post-service/models"
 	"github.com/meloop/post-service/repositories"
 	"github.com/meloop/post-service/routes"
@@ -67,7 +70,6 @@ func main() {
 	commentController := controllers.NewCommentController(commentService)
 
 	// 7. Inyectar dependencias de Publicaciones (Post)
-	// Extraemos la conexión base de SQL desde GORM para inyectarla en tu SQLPostRepository
 	sqlDB, err := db.DB()
 	if err != nil {
 		log.Fatalf("Error crítico al obtener la conexión SQL: %v", err)
@@ -82,11 +84,26 @@ func main() {
 	feedService := services.NewFeedService(feedRepo)
 	feedController := controllers.NewFeedController(feedService)
 
-	// 9. Configurar Rutas
+	// 8.5 Inicializar conexión a Redis leyendo variables de entorno para Docker
+	redisAddr := os.Getenv("REDIS_ADDR")
+	if redisAddr == "" {
+		redisAddr = "localhost:6379"
+	}
+	redisPassword := os.Getenv("REDIS_PASSWORD")
+
+	rdb := redis.NewClient(&redis.Options{
+		Addr:     redisAddr,
+		Password: redisPassword, // Ahora lee correctamente la contraseña
+		DB:       0,
+	})
+	if _, err := rdb.Ping(context.Background()).Result(); err != nil {
+		log.Printf("Advertencia: No se pudo conectar a Redis: %v", err)
+	}
+
+	// 9. Configurar Rutas y Middlewares
 	router := gin.Default()
 
-	// --- MIDDLEWARE DE PRUEBAS ---
-	// Extrae el ID del usuario desde el header para simular que pasó por el API Gateway
+	// --- MIDDLEWARE DE PRUEBAS (Simula API Gateway) ---
 	router.Use(func(c *gin.Context) {
 		userID := c.GetHeader("X-User-ID")
 		if userID != "" {
@@ -94,19 +111,18 @@ func main() {
 		}
 		c.Next()
 	})
-	// ------------------------------
 
-	// Rutas de módulos (Mezclado: con middleware de tu rama y likeController de la rama main)
+	// --- MIDDLEWARE ANTI-SPAM (Redis) ---
+	router.Use(middlewares.AntiSpamMiddleware(rdb))
+
+	// Rutas de módulos
 	routes.SetupRoutes(router, likeController, commentController, postController, minioClient)
 
-	// Nueva ruta del Feed (directo en el main para no modificar el archivo routes por ahora)
+	// Nueva ruta del Feed
 	router.GET("/v1/feed", feedController.GetMainFeed)
 
-	// Nuevas rutas para el sistema de Likes (RF-20)
 	router.POST("/v1/posts/:id/like", postController.LikePost)
 	router.DELETE("/v1/posts/:id/like", postController.UnlikePost)
-
-	// Nota: Tu puerto actual en este archivo es 8084
 	logger.Info("http_server_started", "port", "8084")
 	if err := router.Run(":8084"); err != nil {
 		log.Fatalf("Error al iniciar el servidor web: %v", err)
