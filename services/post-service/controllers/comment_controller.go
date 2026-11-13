@@ -34,17 +34,16 @@ func (controller *CommentController) CreateComment(c *gin.Context) {
 
 	var request models.CreateCommentRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "invalid request body",
-		})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 		return
 	}
 
+	// Sobrescribimos el AuthorID de la request con el ID autenticado para mayor seguridad
+	request.AuthorID = authorID
+
 	created, err := controller.service.CreateComment(postID, request)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": err.Error(),
-		})
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -57,7 +56,7 @@ func (controller *CommentController) CreateComment(c *gin.Context) {
 
 		event := messaging.CommentCreatedEvent{
 			EventID:         uuid.New().String(),
-			CommentID:       created.ID, // Ajusta si el campo en tu modelo se llama distinto
+			CommentID:       created.ID,
 			CommentAuthorID: authorID,
 			TargetAuthorID:  targetAuthorID,
 			TargetType:      "post",
@@ -73,23 +72,10 @@ func (controller *CommentController) CreateComment(c *gin.Context) {
 	c.JSON(http.StatusCreated, created)
 }
 
-func (controller *CommentController) GetComments(c *gin.Context) {
-	postID := c.Param("id")
-
-	comments, err := controller.service.GetComments(postID)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, comments)
-}
-
 // CreateReply crea una respuesta asociada a un comentario.
 func (controller *CommentController) CreateReply(c *gin.Context) {
-	commentID := c.Param("id") // Asumimos que la ruta es /:id/comments/:commentId/replies
+	postID := c.Param("id")           // ID del post en la URL (ej: /posts/:id/comments/:commentId/replies)
+	commentID := c.Param("commentId") // Asumimos que agregas commentId a la ruta
 	authorID := c.GetString("userID")
 
 	if authorID == "" {
@@ -99,17 +85,16 @@ func (controller *CommentController) CreateReply(c *gin.Context) {
 
 	var request models.CreateCommentRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "invalid request body",
-		})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 		return
 	}
 
-	created, err := controller.service.CreateComment(commentID, request)
+	// Sobrescribimos el AuthorID con el ID autenticado
+	request.AuthorID = authorID
+
+	created, err := controller.service.CreateReply(commentID, postID, request)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": err.Error(),
-		})
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -120,7 +105,7 @@ func (controller *CommentController) CreateReply(c *gin.Context) {
 
 		event := messaging.CommentCreatedEvent{
 			EventID:         uuid.New().String(),
-			CommentID:       created.ID, // Ajusta si el campo en tu modelo se llama distinto
+			CommentID:       created.ID,
 			CommentAuthorID: authorID,
 			TargetAuthorID:  targetAuthorID,
 			TargetType:      "comment",
@@ -134,4 +119,80 @@ func (controller *CommentController) CreateReply(c *gin.Context) {
 	}()
 
 	c.JSON(http.StatusCreated, created)
+}
+
+// GetComments maneja la obtención del listado paginado y anidado
+func (controller *CommentController) GetComments(c *gin.Context) {
+	postID := c.Param("id")
+	requestingUserID := c.GetString("userID") // Idealmente viene del token JWT
+
+	// 1. Leer parámetros de paginación
+	limit := 10 // Por defecto
+	cursorStr := c.Query("cursor")
+	var cursor time.Time
+	if cursorStr != "" {
+		parsedCursor, err := time.Parse(time.RFC3339, cursorStr)
+		if err == nil {
+			cursor = parsedCursor
+		}
+	}
+
+	// 2. Obtener lista de usuarios excluidos (bloqueados o inactivos)
+	excludedUserIDs := getExcludedUsers(requestingUserID)
+
+	// 3. Consultar a la Base de Datos
+	comments, err := controller.service.GetThreadedComments(postID, cursor, limit, excludedUserIDs)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "error fetching comments"})
+		return
+	}
+
+	// 4. Mapear a DTO (JSON listo para pintar en Frontend)
+	var responseComments []models.CommentResponse
+	var nextCursor string
+
+	for _, c := range comments {
+		var repliesDTO []models.CommentResponse
+		for _, r := range c.Replies {
+			repliesDTO = append(repliesDTO, mapToCommentResponse(r))
+		}
+
+		parentDTO := mapToCommentResponse(c)
+		parentDTO.Replies = repliesDTO
+		responseComments = append(responseComments, parentDTO)
+
+		// El cursor será el CreatedAt del último comentario
+		nextCursor = c.CreatedAt.Format(time.RFC3339)
+	}
+
+	// Si trajimos menos del límite, ya no hay más páginas
+	if len(comments) < limit {
+		nextCursor = ""
+	}
+
+	c.JSON(http.StatusOK, models.PaginatedCommentsResponse{
+		Comments:   responseComments,
+		NextCursor: nextCursor,
+	})
+}
+
+// mapToCommentResponse es un helper para formatear el DTO
+func mapToCommentResponse(c models.Comment) models.CommentResponse {
+	return models.CommentResponse{
+		ID:        c.ID,
+		Content:   c.Content,
+		CreatedAt: c.CreatedAt,
+		Likes:     0, // Placeholder para el contador real
+		Author: models.AuthorInfo{
+			ID:       c.AuthorID,
+			Username: c.AuthorID, // Usamos el ID directamente como nombre de usuario por ahora
+			Avatar:   "https://avatar.placeholder.com/150",
+		},
+	}
+}
+
+// getExcludedUsers simula la llamada al servicio de usuarios para cumplir RF-64, RN-17, RN-05
+func getExcludedUsers(userID string) []string {
+	// Lógica futura: Llamar a UserService vía gRPC o HTTP para traer bloqueados
+	return []string{"user-bloqueado-1", "user-inactivo-2"}
 }
