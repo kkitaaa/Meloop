@@ -102,6 +102,10 @@ func main() {
 	// Nueva ruta del Feed (directo en el main para no modificar el archivo routes por ahora)
 	router.GET("/v1/feed", feedController.GetMainFeed)
 
+	// Nuevas rutas para el sistema de Likes (RF-20)
+	router.POST("/v1/posts/:id/like", postController.LikePost)
+	router.DELETE("/v1/posts/:id/like", postController.UnlikePost)
+
 	// Nota: Tu puerto actual en este archivo es 8084
 	logger.Info("http_server_started", "port", "8084")
 	if err := router.Run(":8084"); err != nil {

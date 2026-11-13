@@ -9,8 +9,10 @@ import (
 )
 
 var (
-	ErrPostNotFound = errors.New("publicación no encontrada")
-	ErrUnauthorized = errors.New("no tienes permisos para modificar esta publicación")
+	ErrPostNotFound               = errors.New("publicación no encontrada")
+	ErrUnauthorized               = errors.New("no tienes permisos para modificar esta publicación")
+	ErrPostNotFoundOrUnauthorized = errors.New("publicación no encontrada o no tienes permisos de autor")
+	ErrAlreadyLiked               = errors.New("el usuario ya dio me gusta a esta publicación")
 )
 
 // Post representa una publicación basada estrictamente en el MER
@@ -23,12 +25,12 @@ type Post struct {
 	CreatedAt     time.Time `json:"created_at"`
 }
 
-// Cambiamos el nombre de la estructura a SQLPostRepository para evitar el conflicto
+// SQLPostRepository maneja la persistencia de las publicaciones
 type SQLPostRepository struct {
 	db *sql.DB
 }
 
-// Mantenemos NewPostRepository para no romper las inyecciones en main.go
+// NewPostRepository crea una nueva instancia del repositorio
 func NewPostRepository(db *sql.DB) *SQLPostRepository {
 	return &SQLPostRepository{db: db}
 }
@@ -171,7 +173,6 @@ func (r *SQLPostRepository) SearchPosts(ctx context.Context, searchTerm string, 
 
 // CreatePost inserta una nueva publicación en la base de datos
 func (r *SQLPostRepository) CreatePost(ctx context.Context, authorID string, content string, urlMultimedia *string) (*Post, error) {
-	// Generamos un ID simple basado en el timestamp actual (puedes cambiarlo a UUID si tu BD lo usa)
 	newID := fmt.Sprintf("post-%d", time.Now().UnixMilli())
 
 	query := `
@@ -189,4 +190,46 @@ func (r *SQLPostRepository) CreatePost(ctx context.Context, authorID string, con
 	}
 
 	return &post, nil
+}
+
+// AddLike inserta una interacción de tipo 'like' validando que no exista previamente (RF-20)
+func (r *SQLPostRepository) AddLike(ctx context.Context, postID string, userID string) error {
+	checkQuery := `SELECT COUNT(1) FROM interaccion WHERE id_usuario = $1 AND id_publicacion = $2 AND tipo = 'like'`
+	var count int
+	if err := r.db.QueryRowContext(ctx, checkQuery, userID, postID).Scan(&count); err != nil {
+		return fmt.Errorf("error al verificar el estado del like: %w", err)
+	}
+
+	if count > 0 {
+		return ErrAlreadyLiked
+	}
+
+	interaccionID := fmt.Sprintf("like-%s-%d", userID, time.Now().UnixMilli())
+
+	query := `
+		INSERT INTO interaccion (id_interaccion, id_usuario, id_publicacion, tipo, fecha_creacion)
+		VALUES ($1, $2, $3, 'like', NOW())
+	`
+
+	_, err := r.db.ExecContext(ctx, query, interaccionID, userID, postID)
+	if err != nil {
+		return fmt.Errorf("error al registrar el like: %w", err)
+	}
+
+	return nil
+}
+
+// RemoveLike elimina una interacción de tipo 'like' de la base de datos (RF-20)
+func (r *SQLPostRepository) RemoveLike(ctx context.Context, postID string, userID string) error {
+	query := `
+		DELETE FROM interaccion 
+		WHERE id_publicacion = $1 AND id_usuario = $2 AND tipo = 'like'
+	`
+
+	_, err := r.db.ExecContext(ctx, query, postID, userID)
+	if err != nil {
+		return fmt.Errorf("error al eliminar el like: %w", err)
+	}
+
+	return nil
 }
