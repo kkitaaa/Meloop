@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"errors"
 	"log"
 	"net/http"
 	"time"
@@ -9,73 +10,25 @@ import (
 	"github.com/google/uuid"
 	"github.com/meloop/post-service/messaging"
 	"github.com/meloop/post-service/models"
+	"github.com/meloop/post-service/repositories"
 	"github.com/meloop/post-service/services"
 )
 
 type CommentController struct {
-	service *services.CommentService
+	service      *services.CommentService
+	publishEvent func(messaging.CommentCreatedEvent) error
 }
 
 func NewCommentController(service *services.CommentService) *CommentController {
 	return &CommentController{
-		service: service,
+		service:      service,
+		publishEvent: messaging.PublishCommentCreated,
 	}
 }
 
-// CreateComment crea un comentario principal en una publicación.
+// CreateComment crea un comentario principal en una publicación y publica el evento con el autor real
 func (controller *CommentController) CreateComment(c *gin.Context) {
 	postID := c.Param("id")
-	authorID := c.GetString("userID") // Obtenemos el ID del autor desde el contexto
-
-	if authorID == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "usuario no autenticado"})
-		return
-	}
-
-	var request models.CreateCommentRequest
-	if err := c.ShouldBindJSON(&request); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
-		return
-	}
-
-	// Sobrescribimos el AuthorID de la request con el ID autenticado para mayor seguridad
-	request.AuthorID = authorID
-
-	created, err := controller.service.CreateComment(postID, request)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	// PUBLICAR EVENTO ASÍNCRONAMENTE (RNF-05, RF-21)
-	go func() {
-		// En un caso real, necesitarías obtener el ID del autor del post (TargetAuthorID)
-		// desde tu base de datos o servicio. Aquí usaremos un placeholder temporal
-		// hasta que tengas implementada la lógica para recuperar el autor del post original.
-		targetAuthorID := "placeholder_post_author_id"
-
-		event := messaging.CommentCreatedEvent{
-			EventID:         uuid.New().String(),
-			CommentID:       created.ID,
-			CommentAuthorID: authorID,
-			TargetAuthorID:  targetAuthorID,
-			TargetType:      "post",
-			TargetID:        postID,
-			CreatedAt:       time.Now().Format(time.RFC3339),
-		}
-
-		if err := messaging.PublishCommentCreated(event); err != nil {
-			log.Printf("[Alerta] El comentario %s fue creado, pero falló la publicación en RabbitMQ: %v", created.ID, err)
-		}
-	}()
-
-	c.JSON(http.StatusCreated, created)
-}
-
-// CreateReply crea una respuesta asociada a un comentario.
-func (controller *CommentController) CreateReply(c *gin.Context) {
-	postID := c.Param("id")           // ID del post en la URL (ej: /posts/:id/comments/:commentId/replies)
-	commentID := c.Param("commentId") // Asumimos que agregas commentId a la ruta
 	authorID := c.GetString("userID")
 
 	if authorID == "" {
@@ -89,8 +42,80 @@ func (controller *CommentController) CreateReply(c *gin.Context) {
 		return
 	}
 
-	// Sobrescribimos el AuthorID con el ID autenticado
 	request.AuthorID = authorID
+
+	// Obtener el autor real de la publicación (elimina placeholder)
+	targetAuthorID, err := controller.service.GetPostAuthorID(postID)
+	if err != nil {
+		if errors.Is(err, repositories.ErrParentPostNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "error verificando publicación destino"})
+		return
+	}
+
+	created, err := controller.service.CreateComment(postID, request)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	nowStr := time.Now().UTC().Format(time.RFC3339)
+	event := messaging.CommentCreatedEvent{
+		EventID:         uuid.New().String(),
+		Event:           "comment.created",
+		ActionType:      "COMMENT",
+		CommentID:       created.ID,
+		ActorID:         authorID,
+		UserID:          authorID,
+		CommentAuthorID: authorID,
+		TargetOwnerID:   targetAuthorID,
+		TargetAuthorID:  targetAuthorID,
+		TargetType:      "post",
+		TargetID:        postID,
+		Timestamp:       nowStr,
+		CreatedAt:       nowStr,
+	}
+
+	go func(ev messaging.CommentCreatedEvent) {
+		if err := controller.publishEvent(ev); err != nil {
+			log.Printf("[Alerta] El comentario %s fue creado, pero falló la entrega confirmada en RabbitMQ: %v", ev.CommentID, err)
+		}
+	}(event)
+
+	c.JSON(http.StatusCreated, created)
+}
+
+// CreateReply crea una respuesta asociada a un comentario y publica el evento con el autor real del comentario padre
+func (controller *CommentController) CreateReply(c *gin.Context) {
+	postID := c.Param("id")
+	commentID := c.Param("commentId")
+	authorID := c.GetString("userID")
+
+	if authorID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "usuario no autenticado"})
+		return
+	}
+
+	var request models.CreateCommentRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	request.AuthorID = authorID
+
+	// Obtener el autor real del comentario padre (elimina placeholder)
+	targetAuthorID, err := controller.service.GetCommentAuthorID(commentID)
+	if err != nil {
+		if errors.Is(err, repositories.ErrParentCommentNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "error verificando comentario destino"})
+		return
+	}
 
 	created, err := controller.service.CreateReply(commentID, postID, request)
 	if err != nil {
@@ -98,36 +123,58 @@ func (controller *CommentController) CreateReply(c *gin.Context) {
 		return
 	}
 
-	// PUBLICAR EVENTO ASÍNCRONAMENTE (RNF-05, RF-22)
-	go func() {
-		// En un caso real, necesitarías obtener el ID del autor del comentario padre (TargetAuthorID)
-		targetAuthorID := "placeholder_comment_author_id"
+	nowStr := time.Now().UTC().Format(time.RFC3339)
+	event := messaging.CommentCreatedEvent{
+		EventID:         uuid.New().String(),
+		Event:           "comment.created",
+		ActionType:      "COMMENT",
+		CommentID:       created.ID,
+		ActorID:         authorID,
+		UserID:          authorID,
+		CommentAuthorID: authorID,
+		TargetOwnerID:   targetAuthorID,
+		TargetAuthorID:  targetAuthorID,
+		TargetType:      "comment",
+		TargetID:        commentID,
+		Timestamp:       nowStr,
+		CreatedAt:       nowStr,
+	}
 
-		event := messaging.CommentCreatedEvent{
-			EventID:         uuid.New().String(),
-			CommentID:       created.ID,
-			CommentAuthorID: authorID,
-			TargetAuthorID:  targetAuthorID,
-			TargetType:      "comment",
-			TargetID:        commentID,
-			CreatedAt:       time.Now().Format(time.RFC3339),
+	go func(ev messaging.CommentCreatedEvent) {
+		if err := controller.publishEvent(ev); err != nil {
+			log.Printf("[Alerta] La respuesta %s fue creada, pero falló la entrega confirmada en RabbitMQ: %v", ev.CommentID, err)
 		}
-
-		if err := messaging.PublishCommentCreated(event); err != nil {
-			log.Printf("[Alerta] La respuesta %s fue creada, pero falló la publicación en RabbitMQ: %v", created.ID, err)
-		}
-	}()
+	}(event)
 
 	c.JSON(http.StatusCreated, created)
 }
 
-// GetComments maneja la obtención del listado paginado y anidado
+// DeleteComment elimina un comentario propio
+func (controller *CommentController) DeleteComment(c *gin.Context) {
+	commentID := c.Param("commentId")
+	authorID := c.GetString("userID")
+	if authorID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "usuario no autenticado"})
+		return
+	}
+
+	if err := controller.service.DeleteComment(commentID, authorID); err != nil {
+		if errors.Is(err, repositories.ErrCommentNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "error al eliminar comentario"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "comentario eliminado correctamente"})
+}
+
 func (controller *CommentController) GetComments(c *gin.Context) {
 	postID := c.Param("id")
-	requestingUserID := c.GetString("userID") // Idealmente viene del token JWT
+	requestingUserID := c.GetString("userID")
 
-	// 1. Leer parámetros de paginación
-	limit := 10 // Por defecto
+	limit := 10
 	cursorStr := c.Query("cursor")
 	var cursor time.Time
 	if cursorStr != "" {
@@ -137,17 +184,14 @@ func (controller *CommentController) GetComments(c *gin.Context) {
 		}
 	}
 
-	// 2. Obtener lista de usuarios excluidos (bloqueados o inactivos)
 	excludedUserIDs := getExcludedUsers(requestingUserID)
 
-	// 3. Consultar a la Base de Datos
 	comments, err := controller.service.GetThreadedComments(postID, cursor, limit, excludedUserIDs)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "error fetching comments"})
 		return
 	}
 
-	// 4. Mapear a DTO (JSON listo para pintar en Frontend)
 	var responseComments []models.CommentResponse
 	var nextCursor string
 
@@ -161,11 +205,9 @@ func (controller *CommentController) GetComments(c *gin.Context) {
 		parentDTO.Replies = repliesDTO
 		responseComments = append(responseComments, parentDTO)
 
-		// El cursor será el CreatedAt del último comentario
 		nextCursor = c.CreatedAt.Format(time.RFC3339)
 	}
 
-	// Si trajimos menos del límite, ya no hay más páginas
 	if len(comments) < limit {
 		nextCursor = ""
 	}
@@ -176,23 +218,20 @@ func (controller *CommentController) GetComments(c *gin.Context) {
 	})
 }
 
-// mapToCommentResponse es un helper para formatear el DTO
 func mapToCommentResponse(c models.Comment) models.CommentResponse {
 	return models.CommentResponse{
 		ID:        c.ID,
 		Content:   c.Content,
 		CreatedAt: c.CreatedAt,
-		Likes:     0, // Placeholder para el contador real
+		Likes:     0,
 		Author: models.AuthorInfo{
 			ID:       c.AuthorID,
-			Username: c.AuthorID, // Usamos el ID directamente como nombre de usuario por ahora
+			Username: c.AuthorID,
 			Avatar:   "https://avatar.placeholder.com/150",
 		},
 	}
 }
 
-// getExcludedUsers simula la llamada al servicio de usuarios para cumplir RF-64, RN-17, RN-05
 func getExcludedUsers(userID string) []string {
-	// Lógica futura: Llamar a UserService vía gRPC o HTTP para traer bloqueados
 	return []string{"user-bloqueado-1", "user-inactivo-2"}
 }

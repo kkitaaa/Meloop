@@ -42,5 +42,6 @@ func SetupRoutes(
 		api.POST("/:id/comments", commentController.CreateComment)
 		api.GET("/:id/comments", commentController.GetComments)
 		api.POST("/:id/comments/:commentId/replies", commentController.CreateReply)
+		api.DELETE("/:id/comments/:commentId", commentController.DeleteComment)
 	}
 }

@@ -1,15 +1,25 @@
 package repositories
 
 import (
+	"errors"
 	"time"
 
 	"github.com/meloop/post-service/models"
 	"gorm.io/gorm"
 )
 
+var (
+	ErrParentPostNotFound    = errors.New("publicación no encontrada")
+	ErrParentCommentNotFound = errors.New("comentario padre no encontrado")
+	ErrCommentNotFound       = errors.New("comentario no encontrado o sin permisos")
+)
+
 type CommentRepository interface {
 	Create(comment models.Comment) (models.Comment, error)
 	GetThreadedComments(postID string, cursor time.Time, limit int, excludedUserIDs []string) ([]models.Comment, error)
+	GetPostAuthorID(postID string) (string, error)
+	GetCommentAuthorID(commentID string) (string, error)
+	Delete(commentID, authorID string) error
 }
 
 type PostgresCommentRepository struct {
@@ -27,24 +37,64 @@ func (r *PostgresCommentRepository) Create(comment models.Comment) (models.Comme
 	return comment, nil
 }
 
+// GetPostAuthorID recupera el id_usuario dueño de la publicación
+func (r *PostgresCommentRepository) GetPostAuthorID(postID string) (string, error) {
+	var authorID string
+	err := r.db.Table("publicacion").
+		Select("id_usuario").
+		Where("id_publicacion = ?", postID).
+		Scan(&authorID).Error
+	if err != nil {
+		return "", err
+	}
+	if authorID == "" {
+		return "", ErrParentPostNotFound
+	}
+	return authorID, nil
+}
+
+// GetCommentAuthorID recupera el id_usuario dueño del comentario padre
+func (r *PostgresCommentRepository) GetCommentAuthorID(commentID string) (string, error) {
+	var authorID string
+	err := r.db.Table("comentario").
+		Select("id_usuario").
+		Where("id_comentario = ?", commentID).
+		Scan(&authorID).Error
+	if err != nil {
+		return "", err
+	}
+	if authorID == "" {
+		return "", ErrParentCommentNotFound
+	}
+	return authorID, nil
+}
+
+// Delete elimina un comentario verificando autoría
+func (r *PostgresCommentRepository) Delete(commentID, authorID string) error {
+	res := r.db.Where("id_comentario = ? AND id_usuario = ?", commentID, authorID).Delete(&models.Comment{})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrCommentNotFound
+	}
+	return nil
+}
+
 // GetThreadedComments obtiene comentarios principales con sus respuestas anidadas
 func (r *PostgresCommentRepository) GetThreadedComments(postID string, cursor time.Time, limit int, excludedUserIDs []string) ([]models.Comment, error) {
 	var comments []models.Comment
 
-	// Query base: Solo comentarios principales (ParentCommentID IS NULL) del Post
 	query := r.db.Where("id_publicacion = ? AND id_comentario_padre IS NULL", postID)
 
-	// Paginación por cursor (fecha de creación)
 	if !cursor.IsZero() {
 		query = query.Where("fecha_creacion < ?", cursor)
 	}
 
-	// Exclusión de usuarios (bloqueados o inactivos) (RF-64, RN-17, RN-05)
 	if len(excludedUserIDs) > 0 {
 		query = query.Where("id_usuario NOT IN ?", excludedUserIDs)
 	}
 
-	// Ejecutar consulta principal y hacer Preload de las respuestas (también filtrando respuestas de usuarios excluidos)
 	preloadQuery := func(db *gorm.DB) *gorm.DB {
 		if len(excludedUserIDs) > 0 {
 			return db.Where("id_usuario NOT IN ?", excludedUserIDs).Order("fecha_creacion ASC")
@@ -53,7 +103,7 @@ func (r *PostgresCommentRepository) GetThreadedComments(postID string, cursor ti
 	}
 
 	err := query.
-		Preload("Replies", preloadQuery). // Magia de GORM: trae las respuestas anidadas automáticamente
+		Preload("Replies", preloadQuery).
 		Order("fecha_creacion DESC").
 		Limit(limit).
 		Find(&comments).Error

@@ -198,24 +198,73 @@ func StartConsumer(ctx context.Context, rabbitURL string, processor ExperiencePr
 			}
 			logger.Info("event_consumed", "event", msg.RoutingKey, "payload_bytes", len(msg.Body))
 
-			if processor != nil {
-				var payload struct {
-					UserID string `json:"userId"`
-					IDUser string `json:"user_id"`
-				}
-				if err := json.Unmarshal(msg.Body, &payload); err == nil {
-					targetUser := payload.UserID
-					if targetUser == "" {
-						targetUser = payload.IDUser
-					}
-					if targetUser != "" {
-						xpToAdd := 10 // Experiencia base por interacción
-						_, _ = processor.ProcessExperience(ctx, targetUser, xpToAdd)
-					}
-				}
+			if err := handleConsumedMessage(ctx, msg.RoutingKey, msg.Body, processor); err != nil {
+				logger.Error("event_consume_failed", "event", msg.RoutingKey, "error", err)
+				_ = msg.Nack(false, false)
+				continue
 			}
 
 			_ = msg.Ack(false)
 		}
 	}
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if strings.TrimSpace(v) != "" {
+			return strings.TrimSpace(v)
+		}
+	}
+	return ""
+}
+
+func handleConsumedMessage(ctx context.Context, routingKey string, body []byte, processor ExperienceProcessor) error {
+	var payload struct {
+		ActorID         string `json:"actor_id"`
+		CommentAuthorID string `json:"comment_author_id"`
+		UserID          string `json:"userId"`
+		UserIDSnake     string `json:"user_id"`
+		TargetOwnerID   string `json:"target_owner_id"`
+		TargetAuthorID  string `json:"target_author_id"`
+	}
+
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return fmt.Errorf("error deserializando evento %s: %w", routingKey, err)
+	}
+
+	actorID := firstNonEmpty(payload.ActorID, payload.CommentAuthorID, payload.UserIDSnake, payload.UserID)
+	if actorID == "" {
+		return fmt.Errorf("evento %s sin identificador de actor/usuario válido", routingKey)
+	}
+
+	if processor == nil {
+		return nil
+	}
+
+	if routingKey == "comment.created" {
+		targetOwnerID := firstNonEmpty(payload.TargetOwnerID, payload.TargetAuthorID)
+
+		// Regla anti-autofarmeo (RN-20): no se otorga XP por comentar contenido propio
+		if targetOwnerID != "" && actorID == targetOwnerID {
+			logging.New("gamification-service").Info("self_comment_ignored", "actor_id", actorID)
+			return nil
+		}
+
+		// +3 XP para quien comenta (RF-21/RF-22)
+		if _, err := processor.ProcessExperience(ctx, actorID, 3); err != nil {
+			return fmt.Errorf("error asignando XP al autor del comentario: %w", err)
+		}
+
+		// +4 XP para el autor de la publicación o comentario padre
+		if targetOwnerID != "" {
+			if _, err := processor.ProcessExperience(ctx, targetOwnerID, 4); err != nil {
+				return fmt.Errorf("error asignando XP al destinatario del comentario: %w", err)
+			}
+		}
+		return nil
+	}
+
+	// Eventos de interacción simples (ej. post.liked)
+	_, err := processor.ProcessExperience(ctx, actorID, 10)
+	return err
 }
