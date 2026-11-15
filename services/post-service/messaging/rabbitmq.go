@@ -32,7 +32,7 @@ type CommentLikedEvent struct {
 type CommentCreatedEvent struct {
 	EventID         string `json:"event_id"`
 	Event           string `json:"event"`
-	ActionType      string `json:"action_type"` // "COMMENT"
+	ActionType      string `json:"action_type"`       // "COMMENT"
 	CommentID       string `json:"comment_id"`
 	ActorID         string `json:"actor_id"`          // Quien comenta (estándar GamificationEngine)
 	UserID          string `json:"user_id"`           // Compatibilidad consumidor
