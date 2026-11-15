@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/meloop/services/common/logging"
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -24,6 +25,25 @@ type CommentLikedEvent struct {
 	Event     string `json:"event"`
 	UserID    string `json:"userId"`
 	CommentID string `json:"commentId"`
+}
+
+// PostCreatedEvent define la estructura del evento (RF-16, REI-04)
+type PostCreatedEvent struct {
+	EventID   string `json:"event_id"`
+	UserID    string `json:"user_id"`
+	PostID    string `json:"post_id"`
+	CreatedAt string `json:"fecha"`
+}
+
+// CommentCreatedEvent define la estructura del evento (RF-21, RF-22)
+type CommentCreatedEvent struct {
+	EventID         string `json:"event_id"`
+	CommentID       string `json:"comment_id"`
+	CommentAuthorID string `json:"comment_author_id"` // Quien comenta (3 XP)
+	TargetAuthorID  string `json:"target_author_id"`  // Quien recibe el comentario (4 XP)
+	TargetType      string `json:"target_type"`       // "post" o "comment"
+	TargetID        string `json:"target_id"`         // ID del post o comentario padre
+	CreatedAt       string `json:"fecha"`
 }
 
 func rabbitURL() string {
@@ -105,6 +125,50 @@ func PublishPostUnliked(userID, postID string) error {
 	return publishPostEvent("PostUnliked", "post.unliked", userID, postID)
 }
 
+// PublishPostCreated publica el evento de creación de post en RabbitMQ (RF-16, REI-04)
+func PublishPostCreated(userID, postID string) error {
+	logger := logging.New("post-service")
+
+	conn, err := amqp.Dial(rabbitURL())
+	if err != nil {
+		return fmt.Errorf("error conectando a RabbitMQ: %w", err)
+	}
+	defer conn.Close()
+
+	ch, err := conn.Channel()
+	if err != nil {
+		return fmt.Errorf("error creando canal: %w", err)
+	}
+	defer ch.Close()
+
+	if err = ch.ExchangeDeclare(exchange, exchangeType, true, false, false, false, nil); err != nil {
+		return fmt.Errorf("error declarando exchange: %w", err)
+	}
+
+	event := PostCreatedEvent{
+		EventID:   "evt-" + postID,
+		UserID:    userID,
+		PostID:    postID,
+		CreatedAt: time.Now().Format(time.RFC3339),
+	}
+
+	body, err := json.Marshal(event)
+	if err != nil {
+		return fmt.Errorf("error serializando evento: %w", err)
+	}
+
+	if err = ch.Publish(exchange, "post.created", false, false, amqp.Publishing{
+		ContentType:  "application/json",
+		DeliveryMode: amqp.Persistent,
+		Body:         body,
+	}); err != nil {
+		return fmt.Errorf("error publicando evento post.created: %w", err)
+	}
+
+	logger.Info("event_published", "event", "post.created", "payload_bytes", len(body))
+	return nil
+}
+
 func PublishCommentLiked(userID string, commentID string) error {
 	logger := logging.New("post-service")
 	conn, err := amqp.Dial(rabbitURL())
@@ -173,17 +237,6 @@ func PublishCommentUnliked(userID string, commentID string) error {
 
 	logger.Info("event_published", "event", "like.deleted", "payload_bytes", len(body))
 	return nil
-}
-
-// CommentCreatedEvent define la estructura del evento (RF-21, RF-22)
-type CommentCreatedEvent struct {
-	EventID         string `json:"event_id"`
-	CommentID       string `json:"comment_id"`
-	CommentAuthorID string `json:"comment_author_id"` // Quien comenta (3 XP)
-	TargetAuthorID  string `json:"target_author_id"`  // Quien recibe el comentario (4 XP)
-	TargetType      string `json:"target_type"`       // "post" o "comment"
-	TargetID        string `json:"target_id"`         // ID del post o comentario padre
-	CreatedAt       string `json:"fecha"`
 }
 
 // PublishCommentCreated publica el evento en RabbitMQ con reintentos básicos (RNF-05)
