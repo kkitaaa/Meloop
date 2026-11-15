@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -24,16 +25,33 @@ func (c *FeedController) GetMainFeed(ctx *gin.Context) {
 		return
 	}
 
-	// Extraemos query params para la paginación y personalización (RF-30)
-	page, _ := strconv.Atoi(ctx.DefaultQuery("page", "1"))
-	limit, _ := strconv.Atoi(ctx.DefaultQuery("limit", "10"))
+	// Validar page
+	page, err := strconv.Atoi(ctx.DefaultQuery("page", "1"))
+	if err != nil || page < 1 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "el parámetro 'page' debe ser un entero mayor o igual a 1"})
+		return
+	}
 
-	// Permite al cliente decidir si quiere el feed cronológico o personalizado por algoritmo
+	// Validar limit
+	limit, err := strconv.Atoi(ctx.DefaultQuery("limit", "10"))
+	if err != nil || limit < 1 || limit > 100 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "el parámetro 'limit' debe ser un entero entre 1 y 100"})
+		return
+	}
+
+	// Validar algorithm
 	algorithm := ctx.DefaultQuery("algorithm", "relevant")
+	if algorithm != "recent" && algorithm != "relevant" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "el parámetro 'algorithm' debe ser 'recent' o 'relevant'"})
+		return
+	}
 
-	// Pasamos el nuevo parámetro al servicio
 	feed, err := c.service.GetFeed(userID, page, limit, algorithm)
 	if err != nil {
+		if errors.Is(err, services.ErrInvalidAlgorithm) || errors.Is(err, services.ErrInvalidPagination) {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 		ctx.JSON(http.StatusInternalServerError, gin.H{
 			"error":   "no se pudo cargar el feed",
 			"detalle": err.Error(),
