@@ -5,6 +5,7 @@ import '../../moderation/presentation/moderation_queue_screen.dart';
 import '../../notifications/presentation/notification_scope.dart';
 import '../../../screens/auth_screen.dart';
 import '../../../screens/api_test_screen.dart';
+import '../../../services/api_client.dart';
 import '../data/admin_repository.dart';
 import 'admin_moderators_screen.dart';
 import 'admin_rewards_screen.dart';
@@ -23,10 +24,16 @@ enum _AdminSection {
 }
 
 class AdminDashboardScreen extends StatefulWidget {
-  const AdminDashboardScreen({super.key, required this.role, this.repository});
+  const AdminDashboardScreen({
+    super.key,
+    required this.role,
+    this.repository,
+    this.apiClient,
+  });
 
   final ModerationRole role;
   final AdminRepository? repository;
+  final ApiClient? apiClient;
 
   @override
   State<AdminDashboardScreen> createState() => _AdminDashboardScreenState();
@@ -89,12 +96,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             ),
           ),
           actions: [
-            IconButton(
-              tooltip: 'Probar conexión con API',
+            TextButton.icon(
+              key: const ValueKey('admin-api-test'),
+              style: TextButton.styleFrom(foregroundColor: Colors.white),
               onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(builder: (_) => const ApiTestScreen()),
+                MaterialPageRoute<void>(
+                  builder: (_) => ApiTestScreen(apiClient: widget.apiClient),
+                ),
               ),
-              icon: const Icon(Icons.cloud_outlined),
+              icon: const Icon(Icons.cloud_outlined, size: 18),
+              label: const Text('Probar API'),
             ),
             if (!wide)
               IconButton(

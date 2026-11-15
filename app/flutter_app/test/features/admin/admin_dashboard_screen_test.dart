@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_app/screens/api_test_screen.dart';
 import 'package:flutter_app/features/admin/data/admin_models.dart';
 import 'package:flutter_app/features/admin/data/admin_repository.dart';
 import 'package:flutter_app/features/admin/presentation/admin_dashboard_screen.dart';
@@ -7,6 +10,9 @@ import 'package:flutter_app/features/admin/presentation/admin_rewards_screen.dar
 import 'package:flutter_app/features/admin/presentation/admin_users_screen.dart';
 import 'package:flutter_app/features/moderation/data/moderation_models.dart';
 import 'package:flutter_app/screens/auth_screen.dart';
+import 'package:flutter_app/services/api_client.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -33,6 +39,46 @@ void main() {
       findsOneWidget,
     );
     expect(find.byType(AdminUsersScreen), findsNothing);
+  });
+
+  testWidgets('admin dashboard opens API connection test', (tester) async {
+    final apiClient = ApiClient(
+      httpClient: MockClient((request) async {
+        expect(request.method, 'GET');
+        expect(request.url.path, '/api/demo');
+        return http.Response(
+          jsonEncode({
+            'success': true,
+            'data': {
+              'message': 'Conexión con el API Gateway funcionando.',
+              'timestamp': '2026-11-15T12:00:00Z',
+            },
+            'error': null,
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+    addTearDown(apiClient.close);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AdminDashboardScreen(
+          role: ModerationRole.admin,
+          apiClient: apiClient,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('admin-api-test')));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(ApiTestScreen), findsOneWidget);
+    expect(
+      find.text('Conexión con el API Gateway funcionando.'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('mobile admin logout action returns to login', (tester) async {
@@ -161,7 +207,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.byTooltip('Probar conexión con API'), findsOneWidget);
+    expect(find.byKey(const ValueKey('admin-api-test')), findsOneWidget);
+    expect(find.text('Probar API'), findsOneWidget);
   });
 
   testWidgets(
