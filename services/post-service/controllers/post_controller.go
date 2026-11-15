@@ -1,12 +1,14 @@
 package controllers
 
 import (
+	"errors"
 	"log"
 	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/meloop/post-service/messaging"
+	"github.com/meloop/post-service/repositories"
 	"github.com/meloop/post-service/services"
 )
 
@@ -18,53 +20,43 @@ func NewPostController(postService *services.PostService) *PostController {
 	return &PostController{postService: postService}
 }
 
-// Estructura para recibir los datos de la nueva publicación
 type CreatePostRequest struct {
 	Content   string   `json:"content" binding:"required"`
-	MediaURLs []string `json:"media_urls"` // Opcional, si manejas imágenes
-	MusicID   string   `json:"music_id"`   // Agregado para usar el nuevo campo
+	MediaURLs []string `json:"media_urls"`
+	MusicID   string   `json:"music_id"`
 }
 
-// Estructura para recibir el nuevo contenido en formato JSON (Edición)
 type UpdatePostRequest struct {
 	Content string `json:"content" binding:"required"`
 }
 
 // CreatePost maneja la petición POST para crear una publicación y guardarla en BD
 func (ctrl *PostController) CreatePost(c *gin.Context) {
-	// 1. Obtener el ID del autor desde el token/contexto
 	authorID := c.GetString("userID")
 	if authorID == "" {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "usuario no autenticado"})
 		return
 	}
 
-	// 2. Validar el cuerpo de la petición (JSON)
 	var req CreatePostRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "datos inválidos o incompletos"})
 		return
 	}
 
-	// 3. ENVIAR A GUARDAR
 	post, err := ctrl.postService.CreatePost(c.Request.Context(), authorID, req.Content, req.MediaURLs)
 	if err != nil {
-		println("ERROR AL GUARDAR POST:", err.Error())
+		log.Printf("ERROR AL GUARDAR POST: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "no se pudo guardar la publicación en la base de datos"})
 		return
 	}
 
-	// 4. PUBLICAR EVENTO ASÍNCRONAMENTE (RNF-05, RF-16)
 	go func() {
-		// Nota: Si tu struct de base de datos usa otro nombre para el ID (ej: IdPublicacion),
-		// cambia post.ID por el nombre correcto.
-		err := messaging.PublishPostCreated(authorID, post.ID)
-		if err != nil {
+		if err := messaging.PublishPostCreated(authorID, post.ID); err != nil {
 			log.Printf("[Alerta] El post %s fue creado, pero falló la publicación en RabbitMQ: %v", post.ID, err)
 		}
 	}()
 
-	// 5. Responder 201 Created con el objeto ya guardado
 	c.JSON(http.StatusCreated, post)
 }
 
@@ -72,7 +64,6 @@ func (ctrl *PostController) CreatePost(c *gin.Context) {
 func (ctrl *PostController) UpdatePost(c *gin.Context) {
 	postID := c.Param("id")
 
-	// IMPORTANTE: Obtenemos el ID del usuario directamente del contexto de Gin
 	authorID := c.GetString("userID")
 	if authorID == "" {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "usuario no autenticado"})
@@ -87,12 +78,12 @@ func (ctrl *PostController) UpdatePost(c *gin.Context) {
 
 	err := ctrl.postService.EditPost(c.Request.Context(), postID, authorID, req.Content)
 	if err != nil {
-		if err.Error() == "publicación no encontrada" {
-			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()}) // 404 Not Found
+		if errors.Is(err, repositories.ErrPostNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 			return
 		}
-		if err.Error() == "no tienes permisos para modificar esta publicación" {
-			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()}) // 403 Forbidden
+		if errors.Is(err, repositories.ErrUnauthorized) {
+			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "error interno al actualizar"})
@@ -114,12 +105,12 @@ func (ctrl *PostController) DeletePost(c *gin.Context) {
 
 	err := ctrl.postService.DeletePost(c.Request.Context(), postID, authorID)
 	if err != nil {
-		if err.Error() == "publicación no encontrada" {
-			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()}) // 404 Not Found
+		if errors.Is(err, repositories.ErrPostNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 			return
 		}
-		if err.Error() == "no tienes permisos para modificar esta publicación" {
-			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()}) // 403 Forbidden
+		if errors.Is(err, repositories.ErrUnauthorized) {
+			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "error interno al eliminar"})
@@ -129,29 +120,29 @@ func (ctrl *PostController) DeletePost(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "publicación eliminada correctamente"})
 }
 
-// helper para extraer limit y offset de la URL de forma segura
 func getPaginationParams(c *gin.Context) (int, int) {
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "10"))
 	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
 	return limit, offset
 }
 
-// GetPostByID devuelve un único post validando bloqueos
 func (ctrl *PostController) GetPostByID(c *gin.Context) {
 	postID := c.Param("id")
 	requesterID := c.GetString("userID")
 
 	post, err := ctrl.postService.GetPost(c.Request.Context(), postID, requesterID)
 	if err != nil {
-		println("ERROR REAL DE BD (GetPostByID):", err.Error())
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		if errors.Is(err, repositories.ErrPostNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
 	c.JSON(http.StatusOK, post)
 }
 
-// GetPostsByAuthor devuelve los posts de un usuario específico (paginado)
 func (ctrl *PostController) GetPostsByAuthor(c *gin.Context) {
 	authorID := c.Param("authorId")
 	requesterID := c.GetString("userID")
@@ -159,7 +150,6 @@ func (ctrl *PostController) GetPostsByAuthor(c *gin.Context) {
 
 	posts, err := ctrl.postService.GetAuthorPosts(c.Request.Context(), authorID, requesterID, limit, offset)
 	if err != nil {
-		println("ERROR REAL DE BD (GetPostsByAuthor):", err.Error())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -167,7 +157,6 @@ func (ctrl *PostController) GetPostsByAuthor(c *gin.Context) {
 	c.JSON(http.StatusOK, posts)
 }
 
-// Search busca posts por texto (paginado)
 func (ctrl *PostController) Search(c *gin.Context) {
 	query := c.Query("q")
 	requesterID := c.GetString("userID")
@@ -175,7 +164,6 @@ func (ctrl *PostController) Search(c *gin.Context) {
 
 	posts, err := ctrl.postService.SearchPosts(c.Request.Context(), query, requesterID, limit, offset)
 	if err != nil {
-		println("ERROR REAL DE BD (Search):", err.Error())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -183,7 +171,6 @@ func (ctrl *PostController) Search(c *gin.Context) {
 	c.JSON(http.StatusOK, posts)
 }
 
-// LikePost maneja la petición POST para dar me gusta a una publicación y emite un evento (RF-20)
 func (ctrl *PostController) LikePost(c *gin.Context) {
 	postID := c.Param("id")
 	userID := c.GetString("userID")
@@ -195,25 +182,23 @@ func (ctrl *PostController) LikePost(c *gin.Context) {
 
 	err := ctrl.postService.AddLike(c.Request.Context(), postID, userID)
 	if err != nil {
-		if err.Error() == "el usuario ya dio me gusta a esta publicación" {
-			c.JSON(http.StatusConflict, gin.H{"error": err.Error()}) // 409 Conflict si ya existe
+		if errors.Is(err, repositories.ErrAlreadyLiked) {
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "error interno al registrar el like"})
 		return
 	}
 
-	// Emitir evento a RabbitMQ de forma asíncrona
 	go func(uID, pID string) {
 		if pubErr := messaging.PublishPostLiked(uID, pID); pubErr != nil {
-			println("ERROR: No se pudo publicar el evento de Like en RabbitMQ:", pubErr.Error())
+			log.Printf("ERROR: No se pudo publicar el evento de Like en RabbitMQ: %v", pubErr)
 		}
 	}(userID, postID)
 
 	c.JSON(http.StatusOK, gin.H{"message": "like registrado correctamente"})
 }
 
-// UnlikePost maneja la petición DELETE para quitar el me gusta de una publicación y emite un evento (RF-20)
 func (ctrl *PostController) UnlikePost(c *gin.Context) {
 	postID := c.Param("id")
 	userID := c.GetString("userID")
@@ -229,10 +214,9 @@ func (ctrl *PostController) UnlikePost(c *gin.Context) {
 		return
 	}
 
-	// Emitir evento a RabbitMQ de forma asíncrona
 	go func(uID, pID string) {
 		if pubErr := messaging.PublishPostUnliked(uID, pID); pubErr != nil {
-			println("ERROR: No se pudo publicar el evento de Unlike en RabbitMQ:", pubErr.Error())
+			log.Printf("ERROR: No se pudo publicar el evento de Unlike en RabbitMQ: %v", pubErr)
 		}
 	}(userID, postID)
 

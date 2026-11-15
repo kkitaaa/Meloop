@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 var (
@@ -25,6 +27,18 @@ type Post struct {
 	CreatedAt     time.Time `json:"created_at"`
 }
 
+// PostRepository define el contrato de persistencia de publicaciones
+type PostRepository interface {
+	CreatePost(ctx context.Context, authorID string, content string, urlMultimedia *string) (*Post, error)
+	UpdatePost(ctx context.Context, postID string, authorID string, newContent string) error
+	DeletePost(ctx context.Context, postID string, authorID string) (string, error)
+	GetPostByID(ctx context.Context, postID string, requesterID string) (*Post, error)
+	GetPostsByAuthor(ctx context.Context, authorID string, requesterID string, limit int, offset int) ([]Post, error)
+	SearchPosts(ctx context.Context, searchTerm string, requesterID string, limit int, offset int) ([]Post, error)
+	AddLike(ctx context.Context, postID string, userID string) error
+	RemoveLike(ctx context.Context, postID string, userID string) error
+}
+
 // SQLPostRepository maneja la persistencia de las publicaciones
 type SQLPostRepository struct {
 	db *sql.DB
@@ -35,57 +49,64 @@ func NewPostRepository(db *sql.DB) *SQLPostRepository {
 	return &SQLPostRepository{db: db}
 }
 
-// verifyOwnership es un helper interno para validar seguridad antes de modificar
-func (r *SQLPostRepository) verifyOwnership(ctx context.Context, postID string, authorID string) error {
+// classifyOwnershipFailure determina si una operación con 0 filas afectadas se debe a que el post no existe (404) o pertenece a otro autor (403)
+func (r *SQLPostRepository) classifyOwnershipFailure(ctx context.Context, postID string) error {
 	var ownerID string
 	query := `SELECT id_usuario FROM publicacion WHERE id_publicacion = $1`
 
 	err := r.db.QueryRowContext(ctx, query, postID).Scan(&ownerID)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return ErrPostNotFound
 		}
 		return fmt.Errorf("error al verificar publicación: %w", err)
 	}
 
-	if ownerID != authorID {
-		return ErrUnauthorized
-	}
-	return nil
+	return ErrUnauthorized
 }
 
-// UpdatePost modifica el contenido de una publicación usando el esquema real del MER
+// UpdatePost modifica el contenido de una publicación de forma atómica validando autoría y filas afectadas (RF-17)
 func (r *SQLPostRepository) UpdatePost(ctx context.Context, postID string, authorID string, newContent string) error {
-	if err := r.verifyOwnership(ctx, postID, authorID); err != nil {
-		return err
-	}
 	query := `
 		UPDATE publicacion 
 		SET texto = $1 
-		WHERE id_publicacion = $2
+		WHERE id_publicacion = $2 AND id_usuario = $3
 	`
-	_, err := r.db.ExecContext(ctx, query, newContent, postID)
+	res, err := r.db.ExecContext(ctx, query, newContent, postID, authorID)
 	if err != nil {
 		return fmt.Errorf("error al actualizar la publicación: %w", err)
 	}
 
+	rowsAffected, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("error al verificar filas actualizadas: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return r.classifyOwnershipFailure(ctx, postID)
+	}
+
 	return nil
 }
 
-// DeletePost elimina una publicación validando la autoría con el MER
-func (r *SQLPostRepository) DeletePost(ctx context.Context, postID string, authorID string) error {
-	if err := r.verifyOwnership(ctx, postID, authorID); err != nil {
-		return err
-	}
+// DeletePost elimina atómicamente una publicación validando autoría y retornando su url_multimedia para limpieza en MinIO (RF-18)
+func (r *SQLPostRepository) DeletePost(ctx context.Context, postID string, authorID string) (string, error) {
+	query := `
+		DELETE FROM publicacion 
+		WHERE id_publicacion = $1 AND id_usuario = $2
+		RETURNING COALESCE(url_multimedia, '')
+	`
 
-	query := `DELETE FROM publicacion WHERE id_publicacion = $1`
-
-	_, err := r.db.ExecContext(ctx, query, postID)
+	var mediaURL string
+	err := r.db.QueryRowContext(ctx, query, postID, authorID).Scan(&mediaURL)
 	if err != nil {
-		return fmt.Errorf("error al eliminar la publicación: %w", err)
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", r.classifyOwnershipFailure(ctx, postID)
+		}
+		return "", fmt.Errorf("error al eliminar la publicación: %w", err)
 	}
 
-	return nil
+	return mediaURL, nil
 }
 
 // GetPostByID obtiene un post por su ID
@@ -100,7 +121,7 @@ func (r *SQLPostRepository) GetPostByID(ctx context.Context, postID string, requ
 	var post Post
 	err := row.Scan(&post.ID, &post.AuthorID, &post.Content, &post.MusicID, &post.UrlMultimedia, &post.CreatedAt)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrPostNotFound
 		}
 		return nil, fmt.Errorf("error al obtener post: %w", err)
@@ -171,9 +192,9 @@ func (r *SQLPostRepository) SearchPosts(ctx context.Context, searchTerm string, 
 	return posts, nil
 }
 
-// CreatePost inserta una nueva publicación en la base de datos
+// CreatePost inserta una nueva publicación en la base de datos usando UUID válido
 func (r *SQLPostRepository) CreatePost(ctx context.Context, authorID string, content string, urlMultimedia *string) (*Post, error) {
-	newID := fmt.Sprintf("post-%d", time.Now().UnixMilli())
+	newID := uuid.New().String()
 
 	query := `
 		INSERT INTO publicacion (id_publicacion, id_usuario, texto, url_multimedia, fecha_creacion)
