@@ -184,6 +184,10 @@ func publishPostEvent(eventName, routingKey, userID, postID string) error {
 	return nil
 }
 
+func PublishPostCreated(authorID, postID string) error {
+	return publishPostEvent("PostCreated", "post.created", authorID, postID)
+}
+
 func PublishPostLiked(userID, postID string) error {
 	return publishPostEvent("PostLiked", "post.liked", userID, postID)
 }
