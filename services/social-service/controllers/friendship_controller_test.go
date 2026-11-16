@@ -26,6 +26,7 @@ type mockFriendshipService struct {
 	listFriendsFunc            func(ctx context.Context, userID string) ([]models.Friend, error)
 	removeFriendFunc           func(ctx context.Context, userID, targetID string) error
 	getFriendProfileFunc       func(ctx context.Context, userID, friendID string) (*models.FriendProfile, error)
+	getMutualFriendsFunc       func(ctx context.Context, userID, targetID string, limit int, cursor string) (*models.MutualFriendsResponse, error)
 	blockUserFunc              func(ctx context.Context, blockerID, blockedID string) error
 	validateInteractionFunc    func(ctx context.Context, user1ID, user2ID string) error
 	getFriendSuggestionsFunc   func(ctx context.Context, userID string) ([]models.FriendSuggestion, error)
@@ -46,6 +47,13 @@ func (m *mockFriendshipService) GetFriendSuggestions(ctx context.Context, userID
 			Motivo:        "Ambos escuchan a The Strokes",
 		},
 	}, nil
+}
+
+func (m *mockFriendshipService) GetMutualFriends(ctx context.Context, userID, targetID string, limit int, cursor string) (*models.MutualFriendsResponse, error) {
+	if m.getMutualFriendsFunc != nil {
+		return m.getMutualFriendsFunc(ctx, userID, targetID, limit, cursor)
+	}
+	return &models.MutualFriendsResponse{Friends: []models.MutualFriend{}}, nil
 }
 
 func (m *mockFriendshipService) ExcludeBlocked(ctx context.Context, userID string, candidateIDs []string) ([]string, error) {
@@ -155,6 +163,69 @@ func setupTestRouter(svc services.FriendshipService) *gin.Engine {
 	ctrl := controllers.NewFriendshipController(svc)
 	routes.SetupRoutes(router, ctrl)
 	return router
+}
+
+func TestMutualFriendsControllerUsesContextAndDefaultLimit(t *testing.T) {
+	var gotUserID, gotTargetID, gotCursor string
+	var gotLimit int
+	service := &mockFriendshipService{
+		getMutualFriendsFunc: func(_ context.Context, userID, targetID string, limit int, cursor string) (*models.MutualFriendsResponse, error) {
+			gotUserID, gotTargetID, gotLimit, gotCursor = userID, targetID, limit, cursor
+			return &models.MutualFriendsResponse{Friends: []models.MutualFriend{}}, nil
+		},
+	}
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set(controllers.ContextUserIDKey, "context-user")
+		c.Next()
+	})
+	routes.SetupRoutes(router, controllers.NewFriendshipController(service))
+
+	request := httptest.NewRequest(http.MethodGet, "/v1/social/users/target-user/mutual-friends?cursor=cursor-id", nil)
+	request.Header.Set("X-User-ID", "untrusted-header-user")
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", recorder.Code, recorder.Body.String())
+	}
+	if gotUserID != "context-user" || gotTargetID != "target-user" || gotLimit != 20 || gotCursor != "cursor-id" {
+		t.Fatalf("service args = (%q, %q, %d, %q), want context user, path target, default limit 20 and cursor",
+			gotUserID, gotTargetID, gotLimit, gotCursor)
+	}
+}
+
+func TestMutualFriendsControllerSelfQueryCode(t *testing.T) {
+	service := &mockFriendshipService{
+		getMutualFriendsFunc: func(context.Context, string, string, int, string) (*models.MutualFriendsResponse, error) {
+			return nil, services.ErrSelfMutualFriends
+		},
+	}
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/v1/social/users/self/mutual-friends", nil)
+	request.Header.Set("X-User-ID", "viewer")
+	setupTestRouter(service).ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", recorder.Code)
+	}
+	var response map[string]interface{}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	errorBody := response["error"].(map[string]interface{})
+	if errorBody["code"] != "SELF_QUERY" {
+		t.Fatalf("error code = %v, want SELF_QUERY", errorBody["code"])
+	}
+}
+
+func TestMutualFriendsControllerRequiresIdentity(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/v1/social/users/target/mutual-friends", nil)
+	setupTestRouter(&mockFriendshipService{}).ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", recorder.Code)
+	}
 }
 
 func TestFriendshipRequestActions_HTTP_AcceptTextAndLegacyIDs(t *testing.T) {

@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/meloop/social-service/controllers"
@@ -302,4 +303,241 @@ func TestBlockedFriendProfileReturnsNotFound(t *testing.T) {
 	routes.SetupRoutes(router, controllers.NewFriendshipController(service))
 	router.ServeHTTP(recorder, request)
 	assert.Equal(t, http.StatusNotFound, recorder.Code)
+}
+
+type mutualFriendsEnvelope struct {
+	Success bool                         `json:"success"`
+	Data    models.MutualFriendsResponse `json:"data"`
+	Error   *struct {
+		Code string `json:"code"`
+	} `json:"error"`
+}
+
+func mutualFriendsRequest(t *testing.T, f *fixture, viewerID, targetID, query string) (int, mutualFriendsEnvelope) {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	routes.SetupRoutes(router, controllers.NewFriendshipController(f.databaseService()))
+
+	path := fmt.Sprintf("/v1/social/users/%s/mutual-friends", targetID)
+	if query != "" {
+		path += "?" + query
+	}
+	request := httptest.NewRequest(http.MethodGet, path, nil)
+	if viewerID != "" {
+		request.Header.Set("X-User-ID", viewerID)
+	}
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, request)
+
+	var response mutualFriendsEnvelope
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &response))
+	return recorder.Code, response
+}
+
+func insertBlock(t *testing.T, f *fixture, blocker, blocked int) {
+	t.Helper()
+	_, err := f.pool.Exec(context.Background(), `
+		INSERT INTO bloqueo (id_bloqueo, id_usuario_bloqueador, id_usuario_bloqueado)
+		VALUES ($1, $2, $3)`,
+		fmt.Sprintf("social-block-%d", time.Now().UnixNano()), f.userIDs[blocker], f.userIDs[blocked])
+	require.NoError(t, err)
+}
+
+func setFriendListVisibility(t *testing.T, f *fixture, user int, visibility string) {
+	t.Helper()
+	_, err := f.pool.Exec(context.Background(), `
+		INSERT INTO configuracion_privacidad (id_privacidad, id_usuario, visibilidad_amigos)
+		VALUES ($1, $2, $3)`,
+		fmt.Sprintf("social-privacy-%d", time.Now().UnixNano()), f.userIDs[user], visibility)
+	require.NoError(t, err)
+}
+
+func markUserInactive(t *testing.T, f *fixture, affected int) {
+	t.Helper()
+	reportID := fmt.Sprintf("social-report-%d", time.Now().UnixNano())
+	_, err := f.pool.Exec(context.Background(), `
+		INSERT INTO reporte (id_reporte, id_usuario, id_objetivo, motivo)
+		VALUES ($1, $2, 1, 'integration test')`,
+		reportID, f.userIDs[0])
+	require.NoError(t, err)
+	_, err = f.pool.Exec(context.Background(), `
+		INSERT INTO accion_moderacion (id_accion, id_reporte, id_moderador, id_usuario_afectado, tipo_accion)
+		VALUES ($1, $2, $3, $4, 'INACTIVO')`,
+		fmt.Sprintf("social-action-%d", time.Now().UnixNano()), reportID, f.userIDs[0], f.userIDs[affected])
+	require.NoError(t, err)
+}
+
+func TestMutualFriendsZeroAndOneCommonPostgres(t *testing.T) {
+	t.Run("zero common friends", func(t *testing.T) {
+		f := setupFixture(t)
+		f.createFriendship(t, 0, 2, models.FriendshipAccepted)
+		f.createFriendship(t, 1, 3, models.FriendshipAccepted)
+
+		status, response := mutualFriendsRequest(t, f, f.userIDs[0], f.userIDs[1], "")
+		require.Equal(t, http.StatusOK, status)
+		require.True(t, response.Success)
+		assert.Equal(t, 0, response.Data.Count)
+		assert.Empty(t, response.Data.Friends)
+		assert.Empty(t, response.Data.NextCursor)
+	})
+
+	t.Run("one accepted common friend", func(t *testing.T) {
+		f := setupFixture(t)
+		f.createFriendship(t, 0, 2, models.FriendshipAccepted)
+		f.createFriendship(t, 2, 1, models.FriendshipAccepted)
+		_, err := f.pool.Exec(context.Background(), `
+			INSERT INTO perfil (id_perfil, id_usuario, foto_perfil)
+			VALUES ($1, $2, $3)`,
+			fmt.Sprintf("social-profile-%d", time.Now().UnixNano()), f.userIDs[2], "https://cdn.example.test/avatar.png")
+		require.NoError(t, err)
+
+		status, response := mutualFriendsRequest(t, f, f.userIDs[0], f.userIDs[1], "")
+		require.Equal(t, http.StatusOK, status)
+		require.True(t, response.Success)
+		require.Equal(t, 1, response.Data.Count)
+		require.Len(t, response.Data.Friends, 1)
+		assert.Equal(t, f.userIDs[2], response.Data.Friends[0].ID)
+		assert.Equal(t, fmt.Sprintf("socialtest%s2", strings.Split(f.userIDs[2], "-")[2]), response.Data.Friends[0].Username)
+		assert.Equal(t, "https://cdn.example.test/avatar.png", response.Data.Friends[0].AvatarURL)
+	})
+}
+
+func TestMutualFriendsAcceptedOrderAndPendingRequestsPostgres(t *testing.T) {
+	f := setupFixture(t)
+	f.createFriendship(t, 0, 2, models.FriendshipAccepted)
+	f.createFriendship(t, 1, 2, models.FriendshipAccepted)
+	f.createFriendship(t, 3, 0, models.FriendshipAccepted)
+	f.createFriendship(t, 1, 3, models.FriendshipAccepted)
+	f.createFriendship(t, 0, 3, models.FriendshipPending)
+	f.createFriendship(t, 3, 1, models.FriendshipPending)
+
+	status, response := mutualFriendsRequest(t, f, f.userIDs[0], f.userIDs[1], "")
+	require.Equal(t, http.StatusOK, status)
+	require.Equal(t, 2, response.Data.Count)
+	require.Len(t, response.Data.Friends, 2)
+	assert.Equal(t, f.userIDs[2], response.Data.Friends[0].ID)
+	assert.Equal(t, f.userIDs[3], response.Data.Friends[1].ID)
+}
+
+func TestMutualFriendsPendingRequestIsNotCountedPostgres(t *testing.T) {
+	f := setupFixture(t)
+	f.createFriendship(t, 0, 2, models.FriendshipAccepted)
+	f.createFriendship(t, 1, 2, models.FriendshipPending)
+
+	status, response := mutualFriendsRequest(t, f, f.userIDs[0], f.userIDs[1], "")
+	require.Equal(t, http.StatusOK, status)
+	assert.Equal(t, 0, response.Data.Count)
+	assert.Empty(t, response.Data.Friends)
+}
+
+func TestMutualFriendsHidesBlockedTargetInBothDirectionsPostgres(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		blocker int
+		blocked int
+	}{
+		{name: "A blocks B", blocker: 0, blocked: 1},
+		{name: "B blocks A", blocker: 1, blocked: 0},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			f := setupFixture(t)
+			insertBlock(t, f, test.blocker, test.blocked)
+
+			status, response := mutualFriendsRequest(t, f, f.userIDs[0], f.userIDs[1], "")
+			require.Equal(t, http.StatusNotFound, status)
+			require.NotNil(t, response.Error)
+			assert.Equal(t, "NOT_FOUND", response.Error.Code)
+		})
+	}
+}
+
+func TestMutualFriendsExcludeBlockedCandidatePostgres(t *testing.T) {
+	f := setupFixture(t)
+	f.createFriendship(t, 0, 2, models.FriendshipAccepted)
+	f.createFriendship(t, 1, 2, models.FriendshipAccepted)
+	insertBlock(t, f, 0, 2)
+
+	status, response := mutualFriendsRequest(t, f, f.userIDs[0], f.userIDs[1], "")
+	require.Equal(t, http.StatusOK, status)
+	assert.Equal(t, 0, response.Data.Count)
+	assert.Empty(t, response.Data.Friends)
+}
+
+func TestMutualFriendsPrivateListAndInactiveCandidatesPostgres(t *testing.T) {
+	t.Run("private list is hidden but reports the total", func(t *testing.T) {
+		f := setupFixture(t)
+		f.createFriendship(t, 0, 2, models.FriendshipAccepted)
+		f.createFriendship(t, 1, 2, models.FriendshipAccepted)
+		setFriendListVisibility(t, f, 1, "PRIVADO")
+
+		status, response := mutualFriendsRequest(t, f, f.userIDs[0], f.userIDs[1], "")
+		require.Equal(t, http.StatusOK, status)
+		assert.True(t, response.Data.Hidden)
+		assert.Equal(t, 1, response.Data.Count)
+		assert.Empty(t, response.Data.Friends)
+	})
+
+	t.Run("moderation-marked inactive users are excluded", func(t *testing.T) {
+		f := setupFixture(t)
+		f.createFriendship(t, 0, 2, models.FriendshipAccepted)
+		f.createFriendship(t, 1, 2, models.FriendshipAccepted)
+		f.createFriendship(t, 0, 3, models.FriendshipAccepted)
+		f.createFriendship(t, 1, 3, models.FriendshipAccepted)
+		markUserInactive(t, f, 3)
+
+		status, response := mutualFriendsRequest(t, f, f.userIDs[0], f.userIDs[1], "")
+		require.Equal(t, http.StatusOK, status)
+		assert.Equal(t, 1, response.Data.Count)
+		require.Len(t, response.Data.Friends, 1)
+		assert.Equal(t, f.userIDs[2], response.Data.Friends[0].ID)
+	})
+}
+
+func TestMutualFriendsPaginationAndHTTPValidationPostgres(t *testing.T) {
+	t.Run("limit and cursor return deterministic pages and total count", func(t *testing.T) {
+		f := setupFixture(t)
+		f.createFriendship(t, 0, 2, models.FriendshipAccepted)
+		f.createFriendship(t, 1, 2, models.FriendshipAccepted)
+		f.createFriendship(t, 3, 0, models.FriendshipAccepted)
+		f.createFriendship(t, 1, 3, models.FriendshipAccepted)
+
+		status, firstPage := mutualFriendsRequest(t, f, f.userIDs[0], f.userIDs[1], "limit=1")
+		require.Equal(t, http.StatusOK, status)
+		require.Equal(t, 2, firstPage.Data.Count)
+		require.Len(t, firstPage.Data.Friends, 1)
+		assert.Equal(t, f.userIDs[2], firstPage.Data.Friends[0].ID)
+		require.Equal(t, f.userIDs[2], firstPage.Data.NextCursor)
+
+		status, secondPage := mutualFriendsRequest(t, f, f.userIDs[0], f.userIDs[1], "limit=1&cursor="+firstPage.Data.NextCursor)
+		require.Equal(t, http.StatusOK, status)
+		require.Equal(t, 2, secondPage.Data.Count)
+		require.Len(t, secondPage.Data.Friends, 1)
+		assert.Equal(t, f.userIDs[3], secondPage.Data.Friends[0].ID)
+		assert.Empty(t, secondPage.Data.NextCursor)
+	})
+
+	t.Run("self query returns SELF_QUERY", func(t *testing.T) {
+		f := setupFixture(t)
+		status, response := mutualFriendsRequest(t, f, f.userIDs[0], f.userIDs[0], "")
+		require.Equal(t, http.StatusBadRequest, status)
+		require.NotNil(t, response.Error)
+		assert.Equal(t, "SELF_QUERY", response.Error.Code)
+	})
+
+	t.Run("missing target returns not found", func(t *testing.T) {
+		f := setupFixture(t)
+		status, response := mutualFriendsRequest(t, f, f.userIDs[0], "missing-user", "")
+		require.Equal(t, http.StatusNotFound, status)
+		require.NotNil(t, response.Error)
+		assert.Equal(t, "NOT_FOUND", response.Error.Code)
+	})
+
+	t.Run("missing authentication returns unauthorized", func(t *testing.T) {
+		f := setupFixture(t)
+		status, response := mutualFriendsRequest(t, f, "", f.userIDs[1], "")
+		require.Equal(t, http.StatusUnauthorized, status)
+		require.NotNil(t, response.Error)
+		assert.Equal(t, "UNAUTHORIZED", response.Error.Code)
+	})
 }

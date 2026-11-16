@@ -17,6 +17,8 @@ type friendshipRepositoryFake struct {
 	listFriendsErr    error
 	removeFriendErr   error
 	getProfileErr     error
+	mutualQuery       models.MutualFriendsQuery
+	mutualProfiles    []models.MutualFriend
 	blockUserErr      error
 	validateErr       error
 	request           *models.FriendRequest
@@ -90,6 +92,17 @@ func (f *friendshipRepositoryFake) GetFriendProfile(ctx context.Context, userID,
 		return nil, f.getProfileErr
 	}
 	return f.profile, nil
+}
+
+func (f *friendshipRepositoryFake) GetMutualFriendsQuery(context.Context, string, string) (models.MutualFriendsQuery, error) {
+	return f.mutualQuery, nil
+}
+
+func (f *friendshipRepositoryFake) ListMutualFriendProfiles(context.Context, []string) ([]models.MutualFriend, error) {
+	if f.mutualProfiles == nil {
+		return []models.MutualFriend{}, nil
+	}
+	return f.mutualProfiles, nil
 }
 
 func (f *friendshipRepositoryFake) BlockUser(ctx context.Context, blockerID, blockedID string) error {

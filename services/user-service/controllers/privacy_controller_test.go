@@ -28,6 +28,7 @@ func (m *mockPrivacyService) GetPrivacy(ctx context.Context, userID string) (*mo
 		VisibilidadPerfil:           models.VisibilidadPublico,
 		VisibilidadPublicaciones:    models.VisibilidadPublico,
 		VisibilidadInteracciones:    models.VisibilidadPublico,
+		VisibilidadAmigos:           models.VisibilidadPublico,
 		RecepcionMensajes:           models.RecepcionTodos,
 		RecepcionSolicitudesAmistad: models.RecepcionTodos,
 	}, nil
@@ -38,14 +39,19 @@ func (m *mockPrivacyService) UpdatePrivacy(ctx context.Context, userID string, r
 		return m.updatePrivacyFunc(ctx, userID, req)
 	}
 	vis := models.VisibilidadPublico
+	visAmigos := models.VisibilidadPublico
 	if req.VisibilidadPerfil != nil {
 		vis = *req.VisibilidadPerfil
+	}
+	if req.VisibilidadAmigos != nil {
+		visAmigos = *req.VisibilidadAmigos
 	}
 	return &models.PrivacyResponse{
 		IDUsuario:                   userID,
 		VisibilidadPerfil:           vis,
 		VisibilidadPublicaciones:    models.VisibilidadPublico,
 		VisibilidadInteracciones:    models.VisibilidadPublico,
+		VisibilidadAmigos:           visAmigos,
 		RecepcionMensajes:           models.RecepcionTodos,
 		RecepcionSolicitudesAmistad: models.RecepcionTodos,
 	}, nil
@@ -165,5 +171,27 @@ func TestUpdatePrivacy_HTTP_ValidacionInvalida(t *testing.T) {
 	_ = json.Unmarshal(w.Body.Bytes(), &resp)
 	if resp["success"] != false {
 		t.Errorf("se esperaba success = false")
+	}
+}
+
+func TestUpdatePrivacy_HTTP_FriendListVisibility(t *testing.T) {
+	router := setupPrivacyTestRouter(&mockPrivacyService{})
+	request := httptest.NewRequest(http.MethodPatch, "/users/me/privacy", bytes.NewBufferString(`{"visibilidad_amigos":"PRIVADO"}`))
+	request.Header.Set("X-User-ID", "usr-123")
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("se esperaba 200 OK, se obtuvo %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var response map[string]interface{}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("error al deserializar respuesta: %v", err)
+	}
+	data := response["data"].(map[string]interface{})
+	if data["visibilidad_amigos"] != "PRIVADO" {
+		t.Fatalf("visibilidad_amigos = %v, want PRIVADO", data["visibilidad_amigos"])
 	}
 }

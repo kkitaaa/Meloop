@@ -35,6 +35,10 @@ func SetupRoutes(router *gin.Engine, controller *controllers.FriendshipControlle
 		protected.GET("/recommendations", controller.GetFriendSuggestions)
 	}
 
+	versionedSocial := router.Group("/v1/social/users")
+	versionedSocial.Use(controllers.AuthRequired())
+	versionedSocial.GET("/:id/mutual-friends", controller.GetMutualFriends)
+
 	// Endpoint interno para comunicación entre microservicios (no requiere sesión JWT de usuario final)
 	internal := router.Group("/internal")
 	{

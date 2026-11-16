@@ -38,6 +38,8 @@ type FriendshipRepository interface {
 	GetFriendProfile(ctx context.Context, userID, friendID string) (*models.FriendProfile, error)
 	BlockUser(ctx context.Context, blockerID, blockedID string) error
 	IsBlocked(ctx context.Context, user1ID, user2ID string) (bool, error)
+	GetMutualFriendsQuery(ctx context.Context, userID, targetID string) (models.MutualFriendsQuery, error)
+	ListMutualFriendProfiles(ctx context.Context, userIDs []string) ([]models.MutualFriend, error)
 	ValidateInteraction(ctx context.Context, user1ID, user2ID string) error
 	GetEligibleCandidates(ctx context.Context, userID string) ([]models.CandidateUser, error)
 	GetMutualFriendsCount(ctx context.Context, userID string, candidateIDs []string) (map[string]int, error)
@@ -394,6 +396,110 @@ func (r *postgresFriendshipRepository) IsBlocked(ctx context.Context, user1ID, u
 		return false, err
 	}
 	return blocked, nil
+}
+
+func (r *postgresFriendshipRepository) GetMutualFriendsQuery(ctx context.Context, userID, targetID string) (models.MutualFriendsQuery, error) {
+	if r.pool == nil {
+		return models.MutualFriendsQuery{}, errors.New("database connection pool is not initialized")
+	}
+
+	var result models.MutualFriendsQuery
+	err := r.pool.QueryRow(ctx, `
+		WITH user_friends AS (
+			SELECT CASE
+				WHEN a.id_usuario_1::text = $1 THEN a.id_usuario_2::text
+				ELSE a.id_usuario_1::text
+			END AS friend_id
+			FROM amistad a
+			WHERE (a.id_usuario_1::text = $1 OR a.id_usuario_2::text = $1)
+			  AND a.estado = 'ACEPTADA'
+		),
+		target_friends AS (
+			SELECT CASE
+				WHEN a.id_usuario_1::text = $2 THEN a.id_usuario_2::text
+				ELSE a.id_usuario_1::text
+			END AS friend_id
+			FROM amistad a
+			WHERE (a.id_usuario_1::text = $2 OR a.id_usuario_2::text = $2)
+			  AND a.estado = 'ACEPTADA'
+		),
+		mutual_friends AS (
+			SELECT friend_id FROM user_friends
+			INTERSECT
+			SELECT friend_id FROM target_friends
+		),
+		active_mutual_friends AS (
+			SELECT m.friend_id
+			FROM mutual_friends m
+			JOIN usuario u ON u.id_usuario::text = m.friend_id
+			WHERE m.friend_id <> $1
+			  AND m.friend_id <> $2
+			  AND NOT EXISTS (
+				SELECT 1
+				FROM accion_moderacion am
+				WHERE am.id_usuario_afectado::text = m.friend_id
+				  AND UPPER(am.tipo_accion) IN ('BAN', 'SUSPENSION', 'INACTIVO', 'DESACTIVADO')
+			  )
+		)
+		SELECT
+			EXISTS (SELECT 1 FROM usuario WHERE id_usuario::text = $2),
+			EXISTS (
+				SELECT 1 FROM amistad
+				WHERE ((id_usuario_1::text = $1 AND id_usuario_2::text = $2)
+				    OR (id_usuario_1::text = $2 AND id_usuario_2::text = $1))
+				  AND estado = 'ACEPTADA'
+			),
+			COALESCE(
+				(SELECT visibilidad_amigos FROM configuracion_privacidad WHERE id_usuario::text = $2),
+				'PUBLICO'
+			),
+			COALESCE(
+				(SELECT array_agg(friend_id ORDER BY friend_id)::text[] FROM active_mutual_friends),
+				ARRAY[]::text[]
+			)`,
+		userID, targetID,
+	).Scan(
+		&result.TargetExists,
+		&result.ViewerFriend,
+		&result.Visibility,
+		&result.FriendIDs,
+	)
+	if err != nil {
+		return models.MutualFriendsQuery{}, err
+	}
+	return result, nil
+}
+
+func (r *postgresFriendshipRepository) ListMutualFriendProfiles(ctx context.Context, userIDs []string) ([]models.MutualFriend, error) {
+	if r.pool == nil {
+		return nil, errors.New("database connection pool is not initialized")
+	}
+	if len(userIDs) == 0 {
+		return []models.MutualFriend{}, nil
+	}
+
+	rows, err := r.pool.Query(ctx, `
+		SELECT u.id_usuario::text, u.username, COALESCE(p.foto_perfil, '')
+		FROM usuario u
+		LEFT JOIN perfil p ON p.id_usuario::text = u.id_usuario::text
+		WHERE u.id_usuario::text = ANY($1::text[])
+		ORDER BY u.id_usuario::text ASC`,
+		userIDs,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	friends := make([]models.MutualFriend, 0, len(userIDs))
+	for rows.Next() {
+		var friend models.MutualFriend
+		if err := rows.Scan(&friend.ID, &friend.Username, &friend.AvatarURL); err != nil {
+			return nil, err
+		}
+		friends = append(friends, friend)
+	}
+	return friends, rows.Err()
 }
 
 func (r *postgresFriendshipRepository) ValidateInteraction(ctx context.Context, user1ID, user2ID string) error {

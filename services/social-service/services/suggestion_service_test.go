@@ -49,6 +49,12 @@ func (m *mockFriendshipRepoForSuggestions) BlockUser(ctx context.Context, blocke
 func (m *mockFriendshipRepoForSuggestions) IsBlocked(ctx context.Context, user1ID, user2ID string) (bool, error) {
 	return false, nil
 }
+func (m *mockFriendshipRepoForSuggestions) GetMutualFriendsQuery(ctx context.Context, userID, targetID string) (models.MutualFriendsQuery, error) {
+	return models.MutualFriendsQuery{}, nil
+}
+func (m *mockFriendshipRepoForSuggestions) ListMutualFriendProfiles(ctx context.Context, userIDs []string) ([]models.MutualFriend, error) {
+	return []models.MutualFriend{}, nil
+}
 func (m *mockFriendshipRepoForSuggestions) ValidateInteraction(ctx context.Context, user1ID, user2ID string) error {
 	return nil
 }

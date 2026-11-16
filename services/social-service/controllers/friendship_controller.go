@@ -3,6 +3,7 @@ package controllers
 import (
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -105,6 +106,36 @@ func (ctrl *FriendshipController) GetFriendProfile(c *gin.Context) {
 			return
 		}
 		ctrl.handleError(c, err)
+		return
+	}
+	httpresponse.SuccessGin(c, http.StatusOK, result)
+}
+
+func (ctrl *FriendshipController) GetMutualFriends(c *gin.Context) {
+	userID := strings.TrimSpace(c.GetString(ContextUserIDKey))
+	targetID := strings.TrimSpace(c.Param("id"))
+	limit := 20
+	if rawLimit := strings.TrimSpace(c.Query("limit")); rawLimit != "" {
+		parsedLimit, err := strconv.Atoi(rawLimit)
+		if err != nil || parsedLimit <= 0 {
+			httpresponse.BadRequestGin(c, "El parámetro limit debe ser un entero positivo")
+			return
+		}
+		limit = parsedLimit
+	}
+
+	result, err := ctrl.service.GetMutualFriends(c.Request.Context(), userID, targetID, limit, c.Query("cursor"))
+	if err != nil {
+		switch {
+		case errors.Is(err, services.ErrSelfMutualFriends):
+			httpresponse.ErrorGin(c, http.StatusBadRequest, "SELF_QUERY", "No puedes consultar amigos en común contigo mismo")
+		case errors.Is(err, services.ErrUserNotFound), errors.Is(err, services.ErrBlocked):
+			httpresponse.NotFoundGin(c, "Usuario no encontrado")
+		case errors.Is(err, services.ErrInvalidPagination):
+			httpresponse.BadRequestGin(c, "El cursor no es válido")
+		default:
+			ctrl.handleError(c, err)
+		}
 		return
 	}
 	httpresponse.SuccessGin(c, http.StatusOK, result)
