@@ -109,6 +109,38 @@ Si el usuario no tiene géneros, artistas, canciones o preferencias, el servicio
 `200` con `recommendations: []` y no inventa candidatos. Los IDs deben ser positivos y
 `limit` está restringido al intervalo 1-50.
 
+## Demo reproducible de compatibilidad
+
+El script `data_processing.synthetic_demo` genera perfiles sintéticos de rock y reggaetón,
+crea interacciones `like` con canciones de cada grupo y convierte esas canciones en
+preferencias del perfil. Después usa `UserPreferencesPipeline` y `RecommendationModel` para
+comparar todos los pares mediante similitud coseno:
+
+```bash
+cd ml-service
+python -m data_processing.synthetic_demo
+```
+
+La semilla predeterminada es `42`, por lo que la misma ejecución genera los mismos usuarios,
+interacciones y puntuaciones. Se pueden cambiar la semilla y el número de usuarios de cada
+grupo:
+
+```bash
+python -m data_processing.synthetic_demo --seed 7 --users-per-group 5
+```
+
+El resultado imprime los perfiles, las interacciones y las compatibilidades medias de pares
+del mismo grupo y de grupos distintos. `RESULTADO: OK` confirma que la media intragrupo es
+mayor que la intergrupo; el script termina con error si no se cumple. Esta es evidencia
+controlada sobre datos sintéticos, no una garantía de calidad para datos reales.
+
+También se puede ejecutar en el contenedor existente mediante el perfil opcional de Docker
+Compose desde la raíz del repositorio:
+
+```bash
+docker compose --profile demo run --rm ml-service-synthetic-demo
+```
+
 ## Estructura
 
 ```text
@@ -119,6 +151,9 @@ ml-service/
 │   ├── schemas/
 │   ├── __init__.py
 │   └── main.py
+├── data_processing/
+│   └── synthetic_demo.py
+├── tests/
 ├── requirements.txt
 ├── README.md
 └── .venv/

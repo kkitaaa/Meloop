@@ -18,6 +18,13 @@ services:
     networks:
       - meloop-network
 
+  ml-service-synthetic-demo:
+    build:
+      context: ./ml-service
+    profiles:
+      - demo
+    command: ["python", "-m", "data_processing.synthetic_demo"]
+
   api-gateway:
     build:
       context: .
