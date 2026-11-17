@@ -3,7 +3,6 @@ package repositories
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log"
 	"os"
 	"strconv"
@@ -396,7 +395,7 @@ func (r *postgresFriendshipRepository) invalidateSocialCountCache(ctx context.Co
 	}
 }
 
-func (r *postgresFriendshipRepository) ListFriends(ctx context.Context, userID string, limit int, query string, cursor *models.FriendCursor) (models.FriendPage, error) {
+func (r *postgresFriendshipRepository) ListFriends(ctx context.Context, userID string) ([]models.Friend, error) {
 	if r.pool == nil {
 		return nil, errors.New("database connection pool is not initialized")
 	}

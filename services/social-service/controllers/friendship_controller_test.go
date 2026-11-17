@@ -7,7 +7,6 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"strings"
 	"testing"
 
@@ -305,7 +304,7 @@ func TestListFriends_HTTP_Exitoso(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
-		t.Fatalf("se esperaba código 200 OK, se obtuvo %d", w.Code)
+		t.Fatalf("se esperaba cÃ³digo 200 OK, se obtuvo %d", w.Code)
 	}
 
 	var resp map[string]interface{}
@@ -631,7 +630,7 @@ func TestGetFriendSuggestions_HTTP_NoAutenticado(t *testing.T) {
 	}
 	errBody := resp["error"].(map[string]interface{})
 	if errBody["code"] != "UNAUTHORIZED" {
-		t.Errorf("se esperaba código UNAUTHORIZED, se obtuvo %v", errBody["code"])
+		t.Errorf("se esperaba cÃ³digo UNAUTHORIZED, se obtuvo %v", errBody["code"])
 	}
 }
 
@@ -679,7 +678,7 @@ func TestGetFriendSuggestions_HTTP_SinPreferenciasMusicales(t *testing.T) {
 	}
 	errBody := resp["error"].(map[string]interface{})
 	if errBody["code"] != "VALIDATION_ERROR" {
-		t.Errorf("se esperaba código VALIDATION_ERROR, se obtuvo %v", errBody["code"])
+		t.Errorf("se esperaba cÃ³digo VALIDATION_ERROR, se obtuvo %v", errBody["code"])
 	}
 }
 
@@ -717,7 +716,7 @@ func TestGetFriendSuggestions_HTTP_ListaVaciaRetorna200(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
-		t.Fatalf("se esperaba 200 OK con lista vacía, se obtuvo %d", w.Code)
+		t.Fatalf("se esperaba 200 OK con lista vacÃ­a, se obtuvo %d", w.Code)
 	}
 
 	var resp map[string]interface{}
@@ -727,7 +726,7 @@ func TestGetFriendSuggestions_HTTP_ListaVaciaRetorna200(t *testing.T) {
 	}
 	data, ok := resp["data"].([]interface{})
 	if !ok || len(data) != 0 {
-		t.Fatalf("se esperaba lista vacía, se obtuvo %v", resp["data"])
+		t.Fatalf("se esperaba lista vacÃ­a, se obtuvo %v", resp["data"])
 	}
 }
 
@@ -756,10 +755,10 @@ func TestGetFriendSuggestions_HTTP_ErrorInterno_NoFugaDetalles(t *testing.T) {
 	}
 	errBody := resp["error"].(map[string]interface{})
 	if errBody["code"] != "INTERNAL_ERROR" {
-		t.Errorf("se esperaba código INTERNAL_ERROR, se obtuvo %v", errBody["code"])
+		t.Errorf("se esperaba cÃ³digo INTERNAL_ERROR, se obtuvo %v", errBody["code"])
 	}
 	if errBody["message"] != "Ha ocurrido un error interno" {
-		t.Errorf("se esperaba mensaje genérico, se obtuvo %v", errBody["message"])
+		t.Errorf("se esperaba mensaje genÃ©rico, se obtuvo %v", errBody["message"])
 	}
 }
 
@@ -875,7 +874,7 @@ func TestFriendshipController_ExcludeBlocked(t *testing.T) {
 		}
 	})
 
-	// 4. Lista de candidatos vacía
+	// 4. Lista de candidatos vacÃ­a
 	t.Run("Empty candidate list returns 200 with empty slices", func(t *testing.T) {
 		body := `{"user_id": "usr-ref", "candidate_ids": []}`
 		req, _ := http.NewRequest(http.MethodPost, "/internal/blocks/exclude", bytes.NewBufferString(body))
@@ -888,7 +887,7 @@ func TestFriendshipController_ExcludeBlocked(t *testing.T) {
 		}
 	})
 
-	// 5. Payload inválido
+	// 5. Payload invÃ¡lido
 	t.Run("Invalid JSON payload returns 400", func(t *testing.T) {
 		body := `invalid-json`
 		req, _ := http.NewRequest(http.MethodPost, "/internal/blocks/exclude", bytes.NewBufferString(body))
