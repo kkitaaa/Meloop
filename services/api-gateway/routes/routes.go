@@ -37,4 +37,6 @@ func SetupRoutes(router *gin.Engine) {
 	router.Any("/v1/users/*any", controllers.ProxyToService("USER_SERVICE_URL", "http://localhost:8082", ""))
 	router.Any("/v1/media", controllers.ProxyToService("MEDIA_SERVICE_URL", "http://localhost:8085", ""))
 	router.Any("/v1/media/*any", controllers.ProxyToService("MEDIA_SERVICE_URL", "http://localhost:8085", ""))
+	router.Any("/v1/moderation", controllers.ProxyToService("MODERATION_SERVICE_URL", "http://localhost:8089", ""))
+	router.Any("/v1/moderation/*any", controllers.ProxyToService("MODERATION_SERVICE_URL", "http://localhost:8089", ""))
 }

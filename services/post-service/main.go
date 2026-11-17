@@ -76,6 +76,7 @@ func main() {
 	postRepo := repositories.NewPostRepository(sqlDB)
 	postService := services.NewPostService(postRepo)
 	postController := controllers.NewPostController(postService)
+	moderationController := controllers.NewModerationController(postService)
 
 	// 8. Inyectar dependencias del nuevo FEED PRINCIPAL
 	feedRepo := repositories.NewPostgresFeedRepository(db)
@@ -98,6 +99,7 @@ func main() {
 
 	// Rutas de módulos (Mezclado: con middleware de tu rama y likeController de la rama main)
 	routes.SetupRoutes(router, likeController, commentController, postController, minioClient)
+	router.GET("/internal/moderation/targets/:target_type/:target_id", moderationController.GetTarget)
 
 	// Nueva ruta del Feed (directo en el main para no modificar el archivo routes por ahora)
 	router.GET("/v1/feed", feedController.GetMainFeed)

@@ -40,6 +40,36 @@ def test_transform_accepts_aliases_and_empty_values():
     assert processed.friend_matrix.shape == (1, 0)
 
 
+def test_transform_handles_a_profile_with_no_preferences():
+    processed = UserPreferencesPipeline().transform(
+        {"user_id": 11, "genres": [], "artists": [], "songs": [], "friends": []}
+    )
+
+    row = processed.normalized_data.iloc[0]
+    assert row["genres"] == []
+    assert row["artists"] == []
+    assert row["songs"] == []
+    assert row["friends"] == []
+    assert processed.preference_features == ()
+    assert processed.preference_matrix.shape == (1, 0)
+    assert processed.friend_features == ()
+    assert processed.friend_matrix.shape == (1, 0)
+
+
+def test_transform_handles_one_preference_and_repeated_values():
+    processed = UserPreferencesPipeline().transform(
+        {
+            "user_id": 12,
+            "genres": ["Rock", " rock ", "ROCK"],
+            "artists": ["Solo Artist", "solo artist"],
+        }
+    )
+
+    assert processed.preference_features == ("artist:solo artist", "genre:rock")
+    assert processed.preference_matrix.shape == (1, 2)
+    assert np.array_equal(processed.preference_matrix.toarray(), [[1, 1]])
+
+
 def test_transform_includes_songs_in_the_model_matrix():
     processed = UserPreferencesPipeline().transform(
         {"user_id": 10, "tracks": [" Song A ", None, "song a"]}

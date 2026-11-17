@@ -80,6 +80,15 @@ func (s *PostService) GetPost(ctx context.Context, postID string, requesterID st
 	return s.repo.GetPostByID(ctx, postID, requesterID)
 }
 
+func (s *PostService) GetModerationTarget(
+	ctx context.Context,
+	targetType string,
+	targetID string,
+	requesterID string,
+) (*repositories.ModerationTarget, error) {
+	return s.repo.GetModerationTarget(ctx, targetType, targetID, requesterID)
+}
+
 func (s *PostService) GetAuthorPosts(ctx context.Context, authorID string, requesterID string, limit int, offset int) ([]repositories.Post, error) {
 	if limit <= 0 || limit > 50 {
 		limit = 10 // Máximo por defecto seguro
