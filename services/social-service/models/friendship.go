@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"time"
 )
 
 const (
@@ -67,10 +68,21 @@ type SendFriendRequest struct {
 }
 
 type Friend struct {
-	IDAmistad FriendshipID `json:"id_amistad"`
-	IDUsuario string       `json:"id_usuario"`
-	Username  string       `json:"username,omitempty"`
-	Estado    string       `json:"estado"`
+	IDAmistad    FriendshipID `json:"id_amistad"`
+	IDUsuario    string       `json:"id_usuario"`
+	Username     string       `json:"username,omitempty"`
+	Estado       string       `json:"estado"`
+	FechaAmistad time.Time    `json:"-"`
+}
+
+type FriendCursor struct {
+	FechaAmistad time.Time    `json:"fecha_amistad"`
+	IDAmistad    FriendshipID `json:"id_amistad"`
+}
+
+type FriendPage struct {
+	Friends []Friend
+	HasMore bool
 }
 
 type FriendProfile struct {

@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/meloop/social-service/controllers"
@@ -55,9 +56,9 @@ func TestBlockingRemovesExistingFriendship(t *testing.T) {
 	f.createFriendship(t, 0, 1, models.FriendshipAccepted)
 
 	require.NoError(t, service.BlockUser(context.Background(), f.userIDs[0], f.userIDs[1]))
-	friends, err := service.ListFriends(context.Background(), f.userIDs[0])
+	friends, err := service.ListFriends(context.Background(), f.userIDs[0], 20, "", nil)
 	require.NoError(t, err)
-	for _, friend := range friends {
+	for _, friend := range friends.Friends {
 		assert.NotEqual(t, f.userIDs[1], friend.IDUsuario)
 	}
 
@@ -201,6 +202,14 @@ func TestFriendRequestsPersistAndProcessTextIDsThroughHTTP(t *testing.T) {
 	require.NoError(t, f.pool.QueryRow(context.Background(), `
 		SELECT estado FROM amistad WHERE id_amistad = $1`, string(accepted.ID)).Scan(&storedStatus))
 	require.Equal(t, models.FriendshipAccepted, storedStatus)
+	var acceptedAt time.Time
+	require.NoError(t, f.pool.QueryRow(context.Background(), `
+		SELECT fecha_amistad FROM amistad WHERE id_amistad = $1`, string(accepted.ID)).Scan(&acceptedAt))
+	require.False(t, acceptedAt.IsZero())
+	for _, user := range []int{0, 1} {
+		_, err := service.ListFriends(context.Background(), f.userIDs[user], 20, "", nil)
+		require.NoError(t, err)
+	}
 
 	for _, user := range []int{0, 1} {
 		response = doRequest(http.MethodGet, "/friends", f.userIDs[user], "")
