@@ -2,21 +2,21 @@ package controllers
 
 import (
 	"errors"
+	"log/slog"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/meloop/music-service/models"
 	"github.com/meloop/music-service/services"
 	"github.com/meloop/music-service/spotify"
-	"github.com/meloop/services/common/logging"
 )
 
 type MusicController struct {
 	searchService *services.MusicSearchService
-	logger        *logging.Logger
+	logger        *slog.Logger
 }
 
-func NewMusicController(searchService *services.MusicSearchService, logger *logging.Logger) *MusicController {
+func NewMusicController(searchService *services.MusicSearchService, logger *slog.Logger) *MusicController {
 	return &MusicController{
 		searchService: searchService,
 		logger:        logger,

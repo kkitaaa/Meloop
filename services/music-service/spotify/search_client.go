@@ -122,7 +122,7 @@ func (c *SearchClient) Search(ctx context.Context, query, searchType string, lim
 
 	token, err := c.tokenProvider.Token(ctx)
 	if err != nil {
-		return nil, &UpstreamError{Message: "no se pudo obtener token de acceso"}
+		return nil, &UpstreamError{Message: fmt.Sprintf("no se pudo obtener token de acceso: %v", err)}
 	}
 
 	reqURL, err := c.buildSearchURL(query, searchType, limit, offset)
@@ -157,7 +157,7 @@ func (c *SearchClient) Search(ctx context.Context, query, searchType string, lim
 	if statusCode != http.StatusOK {
 		return nil, &UpstreamError{
 			StatusCode: statusCode,
-			Message:    "respuesta no exitosa desde Spotify",
+			Message:    strings.TrimSpace(string(bodyBytes)),
 		}
 	}
 

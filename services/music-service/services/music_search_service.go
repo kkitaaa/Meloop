@@ -6,13 +6,13 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
 
 	"github.com/meloop/music-service/models"
-	"github.com/meloop/services/common/logging"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -62,10 +62,10 @@ func (r *RedisSearchCache) Set(ctx context.Context, key string, value string, tt
 type MusicSearchService struct {
 	searcher MusicSearcher
 	cache    SearchCache
-	logger   *logging.Logger
+	logger   *slog.Logger
 }
 
-func NewMusicSearchService(searcher MusicSearcher, cache SearchCache, logger *logging.Logger) *MusicSearchService {
+func NewMusicSearchService(searcher MusicSearcher, cache SearchCache, logger *slog.Logger) *MusicSearchService {
 	return &MusicSearchService{
 		searcher: searcher,
 		cache:    cache,

@@ -42,7 +42,9 @@ func loadEnvFile(path string) {
 }
 
 func main() {
+	// Carga variables locales primero y completa con el .env de la raíz del monorepo
 	loadEnvFile(".env")
+	loadEnvFile("../../.env")
 
 	logger := logging.New("music-service")
 

@@ -2,17 +2,17 @@ package config
 
 import (
 	"context"
+	"log/slog"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/meloop/services/common/logging"
 	"github.com/redis/go-redis/v9"
 )
 
 // NewRedisClient crea y verifica la conexión a Redis desde variables de entorno
-func NewRedisClient(logger *logging.Logger) *redis.Client {
+func NewRedisClient(logger *slog.Logger) *redis.Client {
 	addr := strings.TrimSpace(os.Getenv("REDIS_ADDR"))
 	if addr == "" {
 		addr = "localhost:6379"
