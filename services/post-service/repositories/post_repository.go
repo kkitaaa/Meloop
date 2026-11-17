@@ -11,6 +11,7 @@ import (
 var (
 	ErrPostNotFoundOrUnauthorized = errors.New("publicación no encontrada o no tienes permisos de autor")
 	ErrModerationTargetNotFound   = errors.New("moderation target not found or not visible")
+	ErrAlreadyLiked               = errors.New("el usuario ya dio me gusta a esta publicación")
 )
 
 type ModerationTarget struct {
