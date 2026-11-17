@@ -5,10 +5,16 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
+
+	"github.com/google/uuid"
+	"github.com/meloop/post-service/models"
 )
 
 var (
+	ErrPostNotFound               = errors.New("publicación no encontrada")
+	ErrUnauthorized               = errors.New("no tienes permisos para modificar esta publicación")
 	ErrPostNotFoundOrUnauthorized = errors.New("publicación no encontrada o no tienes permisos de autor")
 	ErrAlreadyLiked               = errors.New("el usuario ya dio me gusta a esta publicación")
 )
@@ -23,6 +29,26 @@ type Post struct {
 	CreatedAt     time.Time `json:"created_at"`
 }
 
+// CreatePostParams agrupa los datos validados para insertar en una transacción
+type CreatePostParams struct {
+	AuthorID      string
+	Content       string
+	UrlMultimedia *string
+	Music         *models.MusicReference
+}
+
+// PostRepository define el contrato de persistencia de publicaciones
+type PostRepository interface {
+	CreatePost(ctx context.Context, params CreatePostParams) (*Post, error)
+	UpdatePost(ctx context.Context, postID string, authorID string, newContent string) error
+	DeletePost(ctx context.Context, postID string, authorID string) (string, error)
+	GetPostByID(ctx context.Context, postID string, requesterID string) (*Post, error)
+	GetPostsByAuthor(ctx context.Context, authorID string, requesterID string, limit int, offset int) ([]Post, error)
+	SearchPosts(ctx context.Context, searchTerm string, requesterID string, limit int, offset int) ([]Post, error)
+	AddLike(ctx context.Context, postID string, userID string) error
+	RemoveLike(ctx context.Context, postID string, userID string) error
+}
+
 // SQLPostRepository maneja la persistencia de las publicaciones
 type SQLPostRepository struct {
 	db *sql.DB
@@ -33,7 +59,102 @@ func NewPostRepository(db *sql.DB) *SQLPostRepository {
 	return &SQLPostRepository{db: db}
 }
 
-// UpdatePost modifica el contenido de una publicación usando el esquema real del MER
+// CreatePost inserta la publicación (y su referencia en cancion si aplica) dentro de una transacción SQL (RF-16)
+func (r *SQLPostRepository) CreatePost(ctx context.Context, params CreatePostParams) (*Post, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("error iniciando transacción: %w", err)
+	}
+	defer func() {
+		if tx != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	var resolvedCancionID *string
+	if params.Music != nil && strings.TrimSpace(params.Music.ReferenceID) != "" {
+		refID := strings.TrimSpace(params.Music.ReferenceID)
+		var existingID string
+
+		findSongQuery := `SELECT id_cancion FROM cancion WHERE id_cancion = $1 OR spotify_id = $1 LIMIT 1`
+		err := tx.QueryRowContext(ctx, findSongQuery, refID).Scan(&existingID)
+		if err != nil {
+			if !errors.Is(err, sql.ErrNoRows) {
+				return nil, fmt.Errorf("error consultando canción: %w", err)
+			}
+
+			newCancionID := uuid.NewString()
+			titulo := strings.TrimSpace(params.Music.Title)
+			if titulo == "" {
+				titulo = refID
+			}
+			artista := "Artista Meloop"
+
+			insertSongQuery := `
+				INSERT INTO cancion (id_cancion, spotify_id, titulo, artista_nombre)
+				VALUES ($1, $2, $3, $4)
+				RETURNING id_cancion
+			`
+			if err := tx.QueryRowContext(ctx, insertSongQuery, newCancionID, refID, titulo, artista).Scan(&existingID); err != nil {
+				return nil, fmt.Errorf("error registrando referencia musical: %w", err)
+			}
+		}
+		resolvedCancionID = &existingID
+	}
+
+	newPostID := uuid.NewString()
+	insertPostQuery := `
+		INSERT INTO publicacion (id_publicacion, id_usuario, id_cancion, texto, url_multimedia, fecha_creacion)
+		VALUES ($1, $2, $3, $4, $5, NOW())
+		RETURNING id_publicacion, id_usuario, id_cancion, texto, url_multimedia, fecha_creacion
+	`
+
+	var post Post
+	err = tx.QueryRowContext(
+		ctx,
+		insertPostQuery,
+		newPostID,
+		params.AuthorID,
+		resolvedCancionID,
+		params.Content,
+		params.UrlMultimedia,
+	).Scan(
+		&post.ID,
+		&post.AuthorID,
+		&post.MusicID,
+		&post.Content,
+		&post.UrlMultimedia,
+		&post.CreatedAt,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("error insertando publicación: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("error confirmando transacción: %w", err)
+	}
+	tx = nil
+
+	return &post, nil
+}
+
+// classifyOwnershipFailure determina si 0 filas afectadas se debe a post inexistente (404) o sin permisos (403)
+func (r *SQLPostRepository) classifyOwnershipFailure(ctx context.Context, postID string) error {
+	var ownerID string
+	query := `SELECT id_usuario FROM publicacion WHERE id_publicacion = $1`
+
+	err := r.db.QueryRowContext(ctx, query, postID).Scan(&ownerID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrPostNotFound
+		}
+		return fmt.Errorf("error al verificar publicación: %w", err)
+	}
+
+	return ErrUnauthorized
+}
+
+// UpdatePost modifica el contenido de una publicación de forma atómica (RF-17)
 func (r *SQLPostRepository) UpdatePost(ctx context.Context, postID string, authorID string, newContent string) error {
 	query := `
 		UPDATE publicacion 
@@ -52,34 +173,30 @@ func (r *SQLPostRepository) UpdatePost(ctx context.Context, postID string, autho
 	}
 
 	if rowsAffected == 0 {
-		return ErrPostNotFoundOrUnauthorized
+		return r.classifyOwnershipFailure(ctx, postID)
 	}
 
 	return nil
 }
 
-// DeletePost elimina una publicación validando la autoría con el MER
-func (r *SQLPostRepository) DeletePost(ctx context.Context, postID string, authorID string) error {
+// DeletePost elimina atómicamente una publicación y retorna su url_multimedia para limpieza en MinIO (RF-18)
+func (r *SQLPostRepository) DeletePost(ctx context.Context, postID string, authorID string) (string, error) {
 	query := `
 		DELETE FROM publicacion 
 		WHERE id_publicacion = $1 AND id_usuario = $2
+		RETURNING COALESCE(url_multimedia, '')
 	`
 
-	result, err := r.db.ExecContext(ctx, query, postID, authorID)
+	var mediaURL string
+	err := r.db.QueryRowContext(ctx, query, postID, authorID).Scan(&mediaURL)
 	if err != nil {
-		return fmt.Errorf("error al eliminar la publicación: %w", err)
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", r.classifyOwnershipFailure(ctx, postID)
+		}
+		return "", fmt.Errorf("error al eliminar la publicación: %w", err)
 	}
 
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("error al verificar filas afectadas: %w", err)
-	}
-
-	if rowsAffected == 0 {
-		return ErrPostNotFoundOrUnauthorized
-	}
-
-	return nil
+	return mediaURL, nil
 }
 
 // GetPostByID obtiene un post por su ID
@@ -94,8 +211,8 @@ func (r *SQLPostRepository) GetPostByID(ctx context.Context, postID string, requ
 	var post Post
 	err := row.Scan(&post.ID, &post.AuthorID, &post.Content, &post.MusicID, &post.UrlMultimedia, &post.CreatedAt)
 	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, errors.New("publicación no encontrada")
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrPostNotFound
 		}
 		return nil, fmt.Errorf("error al obtener post: %w", err)
 	}
@@ -165,31 +282,8 @@ func (r *SQLPostRepository) SearchPosts(ctx context.Context, searchTerm string, 
 	return posts, nil
 }
 
-// CreatePost inserta una nueva publicación en la base de datos
-func (r *SQLPostRepository) CreatePost(ctx context.Context, authorID string, content string, urlMultimedia *string) (*Post, error) {
-	// Generamos un ID simple basado en el timestamp actual (puedes cambiarlo a UUID si tu BD lo usa)
-	newID := fmt.Sprintf("post-%d", time.Now().UnixMilli())
-
-	query := `
-		INSERT INTO publicacion (id_publicacion, id_usuario, texto, url_multimedia, fecha_creacion)
-		VALUES ($1, $2, $3, $4, NOW())
-		RETURNING id_publicacion, id_usuario, texto, url_multimedia, fecha_creacion
-	`
-	var post Post
-	err := r.db.QueryRowContext(ctx, query, newID, authorID, content, urlMultimedia).Scan(
-		&post.ID, &post.AuthorID, &post.Content, &post.UrlMultimedia, &post.CreatedAt,
-	)
-
-	if err != nil {
-		return nil, fmt.Errorf("error insertando publicación: %w", err)
-	}
-
-	return &post, nil
-}
-
 // AddLike inserta una interacción de tipo 'like' validando que no exista previamente (RF-20)
 func (r *SQLPostRepository) AddLike(ctx context.Context, postID string, userID string) error {
-	// 1. Verificamos si ya existe para evitar duplicados
 	checkQuery := `SELECT COUNT(1) FROM interaccion WHERE id_usuario = $1 AND id_publicacion = $2 AND tipo = 'like'`
 	var count int
 	if err := r.db.QueryRowContext(ctx, checkQuery, userID, postID).Scan(&count); err != nil {
@@ -200,7 +294,6 @@ func (r *SQLPostRepository) AddLike(ctx context.Context, postID string, userID s
 		return ErrAlreadyLiked
 	}
 
-	// 2. Generamos un ID simple para la interacción y la insertamos
 	interaccionID := fmt.Sprintf("like-%s-%d", userID, time.Now().UnixMilli())
 
 	query := `
