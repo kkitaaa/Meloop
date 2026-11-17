@@ -49,6 +49,39 @@ def test_compare_profiles_accepts_sparse_vectors(model):
     assert result.matching_features == ("artist:arctic monkeys",)
 
 
+def test_compare_profiles_returns_zero_for_empty_profiles(model):
+    result = model.compare_profiles([], [])
+
+    assert result.percentage == 0.0
+    assert result.matching_features == ()
+    assert result.reason == "No se encontraron preferencias musicales o sociales en común"
+
+
+def test_compare_profiles_handles_single_feature_profiles(model):
+    result = model.compare_profiles([1], [1], ["genre:rock"])
+
+    assert result.percentage == 100.0
+    assert result.matching_features == ("genre:rock",)
+
+
+def test_compare_profiles_handles_zero_vectors(model):
+    result = model.compare_profiles([0, 0], [0, 0], ["genre:rock", "genre:jazz"])
+
+    assert result.percentage == 0.0
+    assert result.matching_features == ()
+
+
+def test_compare_profiles_is_stable_for_repeated_values(model):
+    result = model.compare_profiles(
+        [1, 1, 0],
+        [1, 1, 0],
+        ["genre:rock", "artist:shared", "genre:jazz"],
+    )
+
+    assert result.percentage == 100.0
+    assert result.matching_features == ("genre:rock", "artist:shared")
+
+
 def test_recommend_catalog_ranks_music_by_content_similarity(model):
     recommendations = model.recommend_catalog(
         csr_matrix([[1, 1, 0]]),
@@ -60,6 +93,20 @@ def test_recommend_catalog_ranks_music_by_content_similarity(model):
 
     assert [(item.item_id, item.score) for item in recommendations] == [(101, 1.0), (102, 0.5)]
     assert recommendations[0].matching_features == ("artist:a", "genre:rock")
+
+
+def test_recommend_catalog_handles_empty_catalog(model):
+    recommendations = model.recommend_catalog([1, 0], [], [])
+
+    assert recommendations == ()
+
+
+def test_recommend_catalog_handles_single_item(model):
+    recommendations = model.recommend_catalog([1, 0], [[1, 0]], [101])
+
+    assert len(recommendations) == 1
+    assert recommendations[0].item_id == 101
+    assert recommendations[0].score == 1.0
 
 
 def test_recommend_catalog_allows_injecting_collaborative_scores():

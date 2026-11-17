@@ -22,6 +22,20 @@ source .venv/bin/activate  # Linux/macOS
 pip install -r requirements.txt
 ```
 
+## Ejecutar las pruebas
+
+Desde la raíz del repositorio:
+
+```bash
+make test-ml
+```
+
+O desde `ml-service`:
+
+```bash
+python -m pytest
+```
+
 ## Ejecutar la API
 
 ```bash

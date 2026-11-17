@@ -88,6 +88,8 @@ class RecommendationModel:
             raise ValueError("El límite debe ser mayor que cero")
         if len(item_ids) != self._row_count(catalog_vectors):
             raise ValueError("Debe existir un ID por cada elemento del catálogo")
+        if not item_ids:
+            return ()
 
         user = self._as_row_vector(user_vector)
         catalog = self._as_catalog_matrix(catalog_vectors)
