@@ -4,9 +4,11 @@ import "os"
 
 // Config almacena la configuración requerida para el microservicio de usuarios
 type Config struct {
-	DatabaseURL     string
-	Port            string
-	MediaServiceURL string
+	DatabaseURL                string
+	Port                       string
+	MediaServiceURL            string
+	SocialServiceURL           string
+	SocialServiceInternalToken string
 }
 
 // Load carga las variables de entorno o utiliza valores por defecto locales
@@ -26,9 +28,16 @@ func Load() *Config {
 		mediaServiceURL = "http://localhost:8085"
 	}
 
+	socialServiceURL := os.Getenv("SOCIAL_SERVICE_URL")
+	if socialServiceURL == "" {
+		socialServiceURL = "http://localhost:8086"
+	}
+
 	return &Config{
-		DatabaseURL:     dbURL,
-		Port:            port,
-		MediaServiceURL: mediaServiceURL,
+		DatabaseURL:                dbURL,
+		Port:                       port,
+		MediaServiceURL:            mediaServiceURL,
+		SocialServiceURL:           socialServiceURL,
+		SocialServiceInternalToken: os.Getenv("SOCIAL_SERVICE_INTERNAL_TOKEN"),
 	}
 }

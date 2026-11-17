@@ -352,6 +352,21 @@ func TestProfileController_GetOwnProfile_NotFound_404(t *testing.T) {
 	}
 }
 
+func TestProfileController_GetOwnProfile_SocialCounterUnavailable_502(t *testing.T) {
+	router := setupProfileTestRouter(&mockProfileService{
+		getOwnProfileFunc: func(context.Context, string) (*models.UserProfileResponse, error) {
+			return nil, services.ErrSocialCounterUnavailable
+		},
+	})
+	request := httptest.NewRequest(http.MethodGet, "/users/me/profile", nil)
+	request.Header.Set("X-User-ID", "usr-1")
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadGateway)
+	}
+}
+
 func TestProfileController_GetUserProfile_Success_200(t *testing.T) {
 	srv := &mockProfileService{}
 	router := setupProfileTestRouter(srv)

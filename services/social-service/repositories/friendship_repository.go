@@ -3,6 +3,9 @@ package repositories
 import (
 	"context"
 	"errors"
+	"fmt"
+	"log"
+	"os"
 	"strconv"
 	"strings"
 
@@ -37,6 +40,11 @@ type FriendshipRepository interface {
 	RemoveFriend(ctx context.Context, userID, targetID string) error
 	GetFriendProfile(ctx context.Context, userID, friendID string) (*models.FriendProfile, error)
 	BlockUser(ctx context.Context, blockerID, blockedID string) error
+	UnblockUser(ctx context.Context, blockerID, blockedID string) error
+	GetAcceptedFriendsCount(ctx context.Context, userID string) (int, error)
+	GetFriendsCount(ctx context.Context, userID string) (int, error)
+	GetBlockedUsersCount(ctx context.Context, userID string) (int, error)
+	GetBlockedCount(ctx context.Context, userID string) (int, error)
 	IsBlocked(ctx context.Context, user1ID, user2ID string) (bool, error)
 	ValidateInteraction(ctx context.Context, user1ID, user2ID string) error
 	GetEligibleCandidates(ctx context.Context, userID string) ([]models.CandidateUser, error)
@@ -46,11 +54,28 @@ type FriendshipRepository interface {
 }
 
 type postgresFriendshipRepository struct {
-	pool *pgxpool.Pool
+	pool  *pgxpool.Pool
+	cache *socialCountRedisCache
 }
 
-func NewFriendshipRepository(pool *pgxpool.Pool) FriendshipRepository {
-	return &postgresFriendshipRepository{pool: pool}
+func NewFriendshipRepository(pool *pgxpool.Pool, redisURL ...string) FriendshipRepository {
+	var cache *socialCountRedisCache
+	if len(redisURL) > 0 && strings.TrimSpace(redisURL[0]) != "" {
+		parsed, err := newSocialCountRedisCache(redisURL[0])
+		if err != nil {
+			log.Printf("WARN social-count-cache init failed: %v", err)
+		} else {
+			cache = parsed
+		}
+	} else if redisEnv := strings.TrimSpace(os.Getenv("REDIS_URL")); redisEnv != "" {
+		parsed, err := newSocialCountRedisCache(redisEnv)
+		if err != nil {
+			log.Printf("WARN social-count-cache init failed: %v", err)
+		} else {
+			cache = parsed
+		}
+	}
+	return &postgresFriendshipRepository{pool: pool, cache: cache}
 }
 
 func (r *postgresFriendshipRepository) CreatePending(ctx context.Context, senderID, receiverID string) (*models.FriendRequest, error) {
@@ -217,10 +242,161 @@ func (r *postgresFriendshipRepository) process(ctx context.Context, requestID st
 	if err := tx.Commit(ctx); err != nil {
 		return nil, err
 	}
+	if newStatus == models.FriendshipAccepted {
+		r.invalidateSocialCountCache(ctx, request.SenderID, request.ReceiverID)
+	}
 	return &request, nil
 }
 
-func (r *postgresFriendshipRepository) ListFriends(ctx context.Context, userID string) ([]models.Friend, error) {
+func (r *postgresFriendshipRepository) GetAcceptedFriendsCount(ctx context.Context, userID string) (int, error) {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return 0, ErrUserNotFound
+	}
+	cacheKey := socialFriendsCountKey(userID)
+	if r.cache != nil {
+		if value, ok, err := r.cache.getCount(ctx, cacheKey); err != nil {
+			r.cache.warnRedisFailure("read friends count", err)
+		} else if ok {
+			return value, nil
+		}
+		lockName := socialCountLockKey(userID)
+		if token, acquired, err := r.cache.acquireLock(ctx, lockName); err != nil {
+			r.cache.warnRedisFailure("lock friends count", err)
+		} else if acquired {
+			defer func() {
+				if err := r.cache.releaseLock(ctx, lockName, token); err != nil {
+					r.cache.warnRedisFailure("unlock friends count", err)
+				}
+			}()
+			count, dbErr := r.queryAcceptedFriendsCount(ctx, userID)
+			if dbErr != nil {
+				return 0, dbErr
+			}
+			if err := r.cache.setCount(ctx, cacheKey, count, socialCountTTL); err != nil {
+				r.cache.warnRedisFailure("write friends count", err)
+			}
+			return count, nil
+		} else {
+			value, ok, err := r.cache.waitForCount(ctx, cacheKey)
+			if err != nil {
+				r.cache.warnRedisFailure("wait for friends count", err)
+			} else if ok {
+				return value, nil
+			}
+		}
+	}
+	return r.queryAcceptedFriendsCount(ctx, userID)
+}
+
+func (r *postgresFriendshipRepository) GetBlockedUsersCount(ctx context.Context, userID string) (int, error) {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return 0, ErrUserNotFound
+	}
+	cacheKey := socialBlockedCountKey(userID)
+	if r.cache != nil {
+		if value, ok, err := r.cache.getCount(ctx, cacheKey); err != nil {
+			r.cache.warnRedisFailure("read blocked count", err)
+		} else if ok {
+			return value, nil
+		}
+		lockName := socialCountLockKey(userID)
+		if token, acquired, err := r.cache.acquireLock(ctx, lockName); err != nil {
+			r.cache.warnRedisFailure("lock blocked count", err)
+		} else if acquired {
+			defer func() {
+				if err := r.cache.releaseLock(ctx, lockName, token); err != nil {
+					r.cache.warnRedisFailure("unlock blocked count", err)
+				}
+			}()
+			count, dbErr := r.queryBlockedUsersCount(ctx, userID)
+			if dbErr != nil {
+				return 0, dbErr
+			}
+			if err := r.cache.setCount(ctx, cacheKey, count, socialCountTTL); err != nil {
+				r.cache.warnRedisFailure("write blocked count", err)
+			}
+			return count, nil
+		} else {
+			value, ok, err := r.cache.waitForCount(ctx, cacheKey)
+			if err != nil {
+				r.cache.warnRedisFailure("wait for blocked count", err)
+			} else if ok {
+				return value, nil
+			}
+		}
+	}
+	return r.queryBlockedUsersCount(ctx, userID)
+}
+
+func (r *postgresFriendshipRepository) GetFriendsCount(ctx context.Context, userID string) (int, error) {
+	return r.GetAcceptedFriendsCount(ctx, userID)
+}
+
+func (r *postgresFriendshipRepository) GetBlockedCount(ctx context.Context, userID string) (int, error) {
+	return r.GetBlockedUsersCount(ctx, userID)
+}
+
+func (r *postgresFriendshipRepository) queryAcceptedFriendsCount(ctx context.Context, userID string) (int, error) {
+	if r.pool == nil {
+		return 0, errors.New("database connection pool is not initialized")
+	}
+	var count int
+	query := `
+		SELECT COUNT(*)
+		FROM amistad
+		WHERE (id_usuario_1::text = $1 OR id_usuario_2::text = $1)
+		  AND estado = 'ACEPTADA'`
+	if err := r.pool.QueryRow(ctx, query, userID).Scan(&count); err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+func (r *postgresFriendshipRepository) queryBlockedUsersCount(ctx context.Context, userID string) (int, error) {
+	if r.pool == nil {
+		return 0, errors.New("database connection pool is not initialized")
+	}
+	var count int
+	query := `
+		SELECT COUNT(*)
+		FROM bloqueo
+		WHERE id_usuario_bloqueador::text = $1`
+	if err := r.pool.QueryRow(ctx, query, userID).Scan(&count); err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+func (r *postgresFriendshipRepository) invalidateSocialCountCache(ctx context.Context, userIDs ...string) {
+	if r == nil || r.cache == nil {
+		return
+	}
+	unique := make([]string, 0, len(userIDs)*2)
+	seen := make(map[string]struct{}, len(userIDs)*2)
+	for _, userID := range userIDs {
+		trimmed := strings.TrimSpace(userID)
+		if trimmed == "" {
+			continue
+		}
+		for _, key := range []string{socialFriendsCountKey(trimmed), socialBlockedCountKey(trimmed)} {
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			unique = append(unique, key)
+		}
+	}
+	if len(unique) == 0 {
+		return
+	}
+	if err := r.cache.invalidate(ctx, unique...); err != nil {
+		r.cache.warnRedisFailure("invalidate social counts", err)
+	}
+}
+
+func (r *postgresFriendshipRepository) ListFriends(ctx context.Context, userID string, limit int, query string, cursor *models.FriendCursor) (models.FriendPage, error) {
 	if r.pool == nil {
 		return nil, errors.New("database connection pool is not initialized")
 	}
@@ -318,7 +494,11 @@ func (r *postgresFriendshipRepository) RemoveFriend(ctx context.Context, userID,
 		return err
 	}
 
-	return tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+	r.invalidateSocialCountCache(ctx, u1, u2)
+	return nil
 }
 
 func (r *postgresFriendshipRepository) BlockUser(ctx context.Context, blockerID, blockedID string) error {
@@ -375,7 +555,39 @@ func (r *postgresFriendshipRepository) BlockUser(ctx context.Context, blockerID,
 		return err
 	}
 
-	return tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+	r.invalidateSocialCountCache(ctx, blockerID, blockedID)
+	return nil
+}
+
+func (r *postgresFriendshipRepository) UnblockUser(ctx context.Context, blockerID, blockedID string) error {
+	if r.pool == nil {
+		return errors.New("database connection pool is not initialized")
+	}
+	if blockerID == blockedID {
+		return ErrSelfBlock
+	}
+
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	_, err = tx.Exec(ctx, `
+		DELETE FROM bloqueo
+		WHERE id_usuario_bloqueador::text = $1 AND id_usuario_bloqueado::text = $2`, blockerID, blockedID)
+	if err != nil {
+		return err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+	r.invalidateSocialCountCache(ctx, blockerID, blockedID)
+	return nil
 }
 
 func (r *postgresFriendshipRepository) IsBlocked(ctx context.Context, user1ID, user2ID string) (bool, error) {

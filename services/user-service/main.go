@@ -40,7 +40,8 @@ func main() {
 	privacySrv := services.NewPrivacyService(privacyRepo, userRepo)
 	notifSrv := services.NewNotificationConfigService(notifRepo, userRepo)
 	inventorySrv := services.NewInventoryService(inventoryRepo, userRepo)
-	profileSrv := services.NewProfileService(profileRepo, userRepo, mediaVerifier, privacyRepo)
+	friendCounter := services.NewHTTPSocialFriendCounter(cfg.SocialServiceURL, cfg.SocialServiceInternalToken)
+	profileSrv := services.NewProfileServiceWithFriendCounter(profileRepo, userRepo, mediaVerifier, privacyRepo, friendCounter)
 
 	accountCtrl := controllers.NewAccountController(userSrv)
 	adminCtrl := controllers.NewAdminController(userSrv)
