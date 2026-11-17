@@ -10,15 +10,16 @@ export const options = {
     },
 };
 
-const BASE_URL = 'http://localhost:8084/api/v1/posts';
+const BASE_URL = __ENV.BASE_URL || 'http://localhost:8084/api/v1/posts';
+const USER_ID = __ENV.USER_ID || '1';
 
 export default function () {
     const headers = {
         'Content-Type': 'application/json',
-        'X-User-ID': '1',
+        'X-User-ID': USER_ID,
     };
 
-    // 1. Crear post de texto solo (ignorando author_id malicioso en body)
+    // 1. Crear post de texto solo (ignorando author_id malicioso en body - PST-02)
     const resText = http.post(
         BASE_URL,
         JSON.stringify({
@@ -31,7 +32,10 @@ export default function () {
 
     check(resText, {
         '1a. Texto solo retorna 201 con UUID y fecha_creacion': (r) =>
-            r.status === 201 && Boolean(postText.id) && Boolean(postText.created_at) && postText.author_id === '1',
+            r.status === 201 &&
+            Boolean(postText.id) &&
+            Boolean(postText.created_at) &&
+            postText.author_id === USER_ID,
     });
 
     // 1b. Leer desde BD vía GET para confirmar persistencia real
