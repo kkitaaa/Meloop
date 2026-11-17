@@ -21,3 +21,25 @@ type CreateCommentRequest struct {
 	AuthorID string `json:"author_id"`
 	Content  string `json:"content"`
 }
+
+// --- DTOs para el Frontend (JSON estructurado) ---
+
+type AuthorInfo struct {
+	ID       string `json:"id"`
+	Username string `json:"username"`
+	Avatar   string `json:"avatar"`
+}
+
+type CommentResponse struct {
+	ID        string            `json:"id"`
+	Content   string            `json:"content"`
+	CreatedAt time.Time         `json:"created_at"`
+	Likes     int               `json:"likes_count"` // RF-21, RF-22
+	Author    AuthorInfo        `json:"author"`
+	Replies   []CommentResponse `json:"replies,omitempty"` // Hilos anidados
+}
+
+type PaginatedCommentsResponse struct {
+	Comments   []CommentResponse `json:"comments"`
+	NextCursor string            `json:"next_cursor,omitempty"` // Paginación por cursor
+}
