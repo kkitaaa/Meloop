@@ -25,6 +25,30 @@ services:
       - demo
     command: ["python", "-m", "data_processing.synthetic_demo"]
 
+  moderation-service:
+    build:
+      context: .
+      dockerfile: services/moderation-service/Dockerfile
+    container_name: meloop-moderation-service
+    ports:
+      - "8089:8089"
+    environment:
+      PORT: 8089
+      DATABASE_URL: ${DATABASE_URL:-postgres://postgres:postgres@host.docker.internal:5432/postgres?sslmode=disable}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/
+      POST_SERVICE_URL: ${POST_SERVICE_URL:-http://host.docker.internal:8084}
+      USER_SERVICE_URL: http://user-service:8082
+      AUTH_SERVICE_URL: http://auth-service:8083
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?INTERNAL_SERVICE_TOKEN must be configured}
+    depends_on:
+      - redis
+      - rabbitmq
+      - user-service
+      - auth-service
+    networks:
+      - meloop-network
+
   api-gateway:
     build:
       context: .
@@ -37,6 +61,7 @@ services:
       PORT: 8080
       TEST_SERVICE_URL: http://test-service:8081
       USER_SERVICE_URL: http://user-service:8082
+      MODERATION_SERVICE_URL: http://moderation-service:8089
       AUTH_SERVICE_URL: http://auth-service:8083
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/
@@ -47,6 +72,7 @@ services:
       - test-service
       - user-service
       - auth-service
+      - moderation-service
       - media-service
       - redis
       - rabbitmq
