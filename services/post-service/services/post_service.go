@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"regexp"
 
 	"github.com/meloop/post-service/models"
 	"github.com/meloop/post-service/repositories"
+	"github.com/minio/minio-go/v7"
 )
 
 // spotifyIDRegex valida que el ID sea alfanumérico y de exactamente 22 caracteres
@@ -30,7 +32,6 @@ func ValidateMusicReferences(refs []models.MusicReference) error {
 			return errors.New("el reference_id no puede estar vacío")
 		}
 
-		// Validación estricta del formato del ID según el proveedor
 		if ref.Provider == "spotify" {
 			if !spotifyIDRegex.MatchString(ref.ReferenceID) {
 				return fmt.Errorf("formato de spotify_id inválido: %s", ref.ReferenceID)
@@ -41,11 +42,15 @@ func ValidateMusicReferences(refs []models.MusicReference) error {
 }
 
 type PostService struct {
-	repo *repositories.SQLPostRepository // <- Cambiado a SQLPostRepository
+	repo        repositories.PostRepository
+	minioClient *minio.Client
 }
 
-func NewPostService(repo *repositories.SQLPostRepository) *PostService {
-	return &PostService{repo: repo}
+func NewPostService(repo repositories.PostRepository, minioClient *minio.Client) *PostService {
+	return &PostService{
+		repo:        repo,
+		minioClient: minioClient,
+	}
 }
 
 // CreatePost valida y envía la nueva publicación al repositorio
@@ -71,9 +76,20 @@ func (s *PostService) EditPost(ctx context.Context, postID string, authorID stri
 	return s.repo.UpdatePost(ctx, postID, authorID, newContent)
 }
 
-// DeletePost procesa la solicitud de eliminación (RF-18)
+// DeletePost elimina la publicación en BD y limpia su archivo multimedia en MinIO si existe (RF-18)
 func (s *PostService) DeletePost(ctx context.Context, postID string, authorID string) error {
-	return s.repo.DeletePost(ctx, postID, authorID)
+	mediaURL, err := s.repo.DeletePost(ctx, postID, authorID)
+	if err != nil {
+		return err
+	}
+
+	if mediaURL != "" && s.minioClient != nil {
+		if delErr := DeleteMedia(ctx, s.minioClient, mediaURL); delErr != nil {
+			log.Printf("[Alerta] Post %s eliminado de BD, pero falló la limpieza en MinIO (%s): %v", postID, mediaURL, delErr)
+		}
+	}
+
+	return nil
 }
 
 func (s *PostService) GetPost(ctx context.Context, postID string, requesterID string) (*repositories.Post, error) {
@@ -82,7 +98,7 @@ func (s *PostService) GetPost(ctx context.Context, postID string, requesterID st
 
 func (s *PostService) GetAuthorPosts(ctx context.Context, authorID string, requesterID string, limit int, offset int) ([]repositories.Post, error) {
 	if limit <= 0 || limit > 50 {
-		limit = 10 // Máximo por defecto seguro
+		limit = 10
 	}
 	if offset < 0 {
 		offset = 0

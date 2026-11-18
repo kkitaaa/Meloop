@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"mime/multipart"
+	"strings"
 
 	"github.com/minio/minio-go/v7"
 )
@@ -15,9 +16,8 @@ const (
 	maxAudioSize = 15 << 20 // 15 MB
 )
 
-// UploadMedia contiene la lógica para recibir, validar (tamaño/formato) y procesar imágenes y audios[cite: 9].
+// UploadMedia contiene la lógica para recibir, validar (tamaño/formato) y procesar imágenes y audios.
 func UploadMedia(minioClient *minio.Client, file *multipart.FileHeader) (string, error) {
-	// 1. Validar el formato y tamaño
 	contentType := file.Header.Get("Content-Type")
 
 	switch contentType {
@@ -33,15 +33,13 @@ func UploadMedia(minioClient *minio.Client, file *multipart.FileHeader) (string,
 		return "", fmt.Errorf("formato no soportado: %s", contentType)
 	}
 
-	// 2. Abrir el archivo
 	src, err := file.Open()
 	if err != nil {
 		return "", err
 	}
 	defer src.Close()
 
-	// 3. Subir el archivo al servidor multimedia[cite: 9].
-	objectName := file.Filename // En producción, deberías generar un UUID para evitar colisiones
+	objectName := file.Filename
 	_, err = minioClient.PutObject(context.Background(), bucketName, objectName, src, file.Size, minio.PutObjectOptions{
 		ContentType: contentType,
 	})
@@ -49,9 +47,37 @@ func UploadMedia(minioClient *minio.Client, file *multipart.FileHeader) (string,
 		return "", fmt.Errorf("error subiendo archivo a MinIO: %w", err)
 	}
 
-	// 4. Retornar las URLs públicas generadas para luego guardarlas en la base de datos[cite: 9].
 	endpoint := minioClient.EndpointURL().Host
 	publicURL := fmt.Sprintf("http://%s/%s/%s", endpoint, bucketName, objectName)
 
 	return publicURL, nil
+}
+
+// DeleteMedia elimina de MinIO el objeto asociado a una URL multimedia
+func DeleteMedia(ctx context.Context, minioClient *minio.Client, mediaURL string) error {
+	if minioClient == nil || strings.TrimSpace(mediaURL) == "" {
+		return nil
+	}
+
+	objectName := strings.TrimSpace(mediaURL)
+	prefix := "/" + bucketName + "/"
+	if idx := strings.Index(objectName, prefix); idx != -1 {
+		objectName = objectName[idx+len(prefix):]
+	} else if strings.HasPrefix(objectName, bucketName+"/") {
+		objectName = strings.TrimPrefix(objectName, bucketName+"/")
+	}
+
+	if qIdx := strings.Index(objectName, "?"); qIdx != -1 {
+		objectName = objectName[:qIdx]
+	}
+
+	if objectName == "" {
+		return nil
+	}
+
+	if err := minioClient.RemoveObject(ctx, bucketName, objectName, minio.RemoveObjectOptions{}); err != nil {
+		return fmt.Errorf("error eliminando objeto %s de MinIO: %w", objectName, err)
+	}
+
+	return nil
 }
