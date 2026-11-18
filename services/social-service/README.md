@@ -9,7 +9,7 @@ Microservicio encargado de la gestión de relaciones sociales en Meloop:
 
 ## Endpoints Principales
 
-### Rutas Protegidas (`/friends`) - Requiere sesión / Header `X-User-ID`:
+### Rutas protegidas de amistades (`/friends`)
 - `POST /friends/requests`: Enviar solicitud de amistad.
 - `GET /friends/requests/received`: Listar solicitudes recibidas.
 - `GET /friends/requests/sent`: Listar solicitudes enviadas.
@@ -23,6 +23,9 @@ Microservicio encargado de la gestión de relaciones sociales en Meloop:
 - `GET /friends/validate-interaction`: Validar interacción bidireccional entre usuarios.
 - `GET /friends/suggestions`: Obtener sugerencias de amistad ordenadas por compatibilidad.
 - `POST /friends/blocks/exclude`: Excluir usuarios bloqueados para el usuario autenticado.
+
+### Amigos en común
+- `GET /v1/social/users/:id/mutual-friends?limit=20&cursor=`: Consultar amigos en común.
 
 ### Endpoint Interno (`/internal`) - Comunicación entre Microservicios:
 - `POST /internal/blocks/exclude`:
@@ -41,3 +44,14 @@ Sin esa variable se omiten para evitar conectarse a datos no destinados a prueba
 
 La invalidación de caché de bloqueos (S-01) no aplica a la arquitectura actual: `social-service` no utiliza
 una caché Redis para bloqueos. Por ese motivo no se implementa ni se pudo verificar invalidación de claves.
+
+La consulta de amigos en común calcula la intersección en PostgreSQL, excluye cuentas marcadas por acciones de
+moderación (`BAN`, `SUSPENSION`, `INACTIVO` o `DESACTIVADO`) y reutiliza `ExcludeBlocked` para filtrar candidatos
+bloqueados con el usuario consultante. La visibilidad de la lista se configura mediante `visibilidad_amigos`
+en la configuración existente de privacidad. No interpreta `USUARIO.suspendido` como inactividad RN-05, porque
+el repositorio no define esa equivalencia; esa regla queda pendiente de aclaración.
+
+Las rutas protegidas de social-service siguen usando el middleware `AuthRequired` existente: acepta un `user_id`
+ya presente en el contexto o un encabezado `X-User-ID` no vacío. Ese middleware no valida JWT ni prueba que el
+encabezado provenga de una fuente confiable; el gateway sólo hace proxy. Por ello, este endpoint no debe
+considerarse protegido por validación de tokens hasta que se integre una autenticación confiable.

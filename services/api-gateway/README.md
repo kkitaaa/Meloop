@@ -12,10 +12,16 @@ solicitudes al microservicio correspondiente.
 | Pública | `ANY /test` y `ANY /test/*any` | `test-service`, quitando `/test` | `TEST_SERVICE_URL` |
 | Privada | `ANY /users` y `ANY /users/*any` | `user-service`, conservando `/users` | `USER_SERVICE_URL` |
 | Pública | `ANY /auth` y `ANY /auth/*any` | `auth-service`, conservando `/auth` | `AUTH_SERVICE_URL` |
+| Social middleware* | `ANY /v1/social/*any` | `social-service`, conservando la ruta | `SOCIAL_SERVICE_URL` |
 
 Las rutas privadas reciben y reenvían el encabezado `Authorization`; la
 validación del token debe realizarse mediante la política de autenticación del
 servicio correspondiente.
+
+La ruta versionada de social-service reenvía `/v1/social/...` sin reescrituras;
+la identidad del usuario se obtiene actualmente mediante el middleware social
+existente, que acepta `X-User-ID` y no valida JWT (*no equivale a autenticación
+mediante token*).
 
 Las variables de destino aceptan una URL completa. Si no están definidas, el
 gateway usa los valores locales `http://localhost:8081`,

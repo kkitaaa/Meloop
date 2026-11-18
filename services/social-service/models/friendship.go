@@ -81,3 +81,23 @@ type FriendProfile struct {
 	Experiencia int          `json:"experiencia"`
 	IDAmistad   FriendshipID `json:"id_amistad"`
 }
+
+type MutualFriend struct {
+	ID        string `json:"id"`
+	Username  string `json:"username"`
+	AvatarURL string `json:"avatar_url"`
+}
+
+type MutualFriendsResponse struct {
+	Count      int            `json:"count"`
+	Hidden     bool           `json:"hidden"`
+	Friends    []MutualFriend `json:"friends"`
+	NextCursor string         `json:"next_cursor"`
+}
+
+type MutualFriendsQuery struct {
+	TargetExists bool
+	ViewerFriend bool
+	Visibility   string
+	FriendIDs    []string
+}
