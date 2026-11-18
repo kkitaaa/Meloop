@@ -36,9 +36,9 @@ func IsValidNotificationType(tipo string) bool {
 	return false
 }
 
-// ConfiguracionNotificacion representa la entidad de persistencia en PostgreSQL (CONFIGURACION_NOTIFICACIONES)
+// ConfiguracionNotificacion representa la entidad de persistencia en PostgreSQL (CONFIGURACION_NOTIFICACION)
 type ConfiguracionNotificacion struct {
-	IDConfiguracion  int    `json:"id_configuracion,omitempty"`
+	IDConfiguracion  string `json:"id_configuracion,omitempty"`
 	IDUsuario        string `json:"id_usuario"`
 	TipoNotificacion string `json:"tipo_notificacion"`
 	Habilitada       bool   `json:"habilitada"`

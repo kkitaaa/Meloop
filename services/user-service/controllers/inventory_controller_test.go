@@ -70,7 +70,7 @@ func setupInventoryTestRouter(srv services.InventoryService) *gin.Engine {
 	ctrl := controllers.NewInventoryController(srv)
 
 	v1Protected := router.Group("/v1/users")
-	v1Protected.Use(controllers.AuthRequired())
+	v1Protected.Use(testAuthRequired())
 	{
 		v1Protected.GET("/me/inventory", ctrl.GetInventory)
 		v1Protected.PUT("/me/inventory/:id/equip", ctrl.EquipReward)
@@ -78,7 +78,7 @@ func setupInventoryTestRouter(srv services.InventoryService) *gin.Engine {
 	}
 
 	protected := router.Group("/users")
-	protected.Use(controllers.AuthRequired())
+	protected.Use(testAuthRequired())
 	{
 		protected.GET("/me/inventory", ctrl.GetInventory)
 		protected.PUT("/me/inventory/:id/equip", ctrl.EquipReward)

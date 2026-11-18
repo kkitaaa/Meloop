@@ -1,0 +1,86 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: meloop-rabbitmq
+  namespace: student-acofre
+  labels:
+    app.kubernetes.io/name: meloop-rabbitmq
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate  
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: meloop-rabbitmq
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: meloop-rabbitmq
+    spec:
+      volumes:
+        - name: rabbitmq-data
+          emptyDir: {}
+      containers:
+        - name: rabbitmq
+          image: rabbitmq:4-management-alpine
+          imagePullPolicy: IfNotPresent
+          volumeMounts:
+            - name: rabbitmq-data
+              mountPath: /var/lib/rabbitmq          
+          ports:
+            - name: amqp
+              containerPort: 5672
+              protocol: TCP
+          env:
+            - name: RABBITMQ_DEFAULT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: meloop-rabbitmq-credentials
+                  key: RABBITMQ_USER
+            - name: RABBITMQ_DEFAULT_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: meloop-rabbitmq-credentials
+                  key: RABBITMQ_PASSWORD
+          startupProbe:
+            tcpSocket:
+              port: amqp
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 30
+
+          readinessProbe:
+            tcpSocket:
+              port: amqp
+            periodSeconds: 10
+            timeoutSeconds: 3
+
+          livenessProbe:
+            tcpSocket:
+              port: amqp
+            periodSeconds: 30
+            timeoutSeconds: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 192Mi
+            limits:
+              cpu: 300m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: meloop-rabbitmq
+  namespace: student-acofre
+  labels:
+    app.kubernetes.io/name: meloop-rabbitmq
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: meloop-rabbitmq
+  ports:
+    - name: amqp
+      port: 5672
+      targetPort: amqp
+      protocol: TCP
