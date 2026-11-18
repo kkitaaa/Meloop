@@ -3,10 +3,12 @@ package controllers_test
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -23,7 +25,7 @@ type mockFriendshipService struct {
 	acceptRequestFunc          func(ctx context.Context, requestID string, receiverID string) (*models.FriendRequest, error)
 	rejectRequestFunc          func(ctx context.Context, requestID string, receiverID string) (*models.FriendRequest, error)
 	cancelRequestFunc          func(ctx context.Context, requestID string, senderID string) (*models.FriendRequest, error)
-	listFriendsFunc            func(ctx context.Context, userID string) ([]models.Friend, error)
+	listFriendsFunc            func(ctx context.Context, userID string, limit int, query string, cursor *models.FriendCursor) (models.FriendPage, error)
 	removeFriendFunc           func(ctx context.Context, userID, targetID string) error
 	getFriendProfileFunc       func(ctx context.Context, userID, friendID string) (*models.FriendProfile, error)
 	blockUserFunc              func(ctx context.Context, blockerID, blockedID string) error
@@ -104,13 +106,13 @@ func (m *mockFriendshipService) CancelRequest(ctx context.Context, requestID str
 	return &models.FriendRequest{ID: models.FriendshipID(requestID), SenderID: senderID, ReceiverID: "receiver", Status: models.FriendshipCanceled}, nil
 }
 
-func (m *mockFriendshipService) ListFriends(ctx context.Context, userID string) ([]models.Friend, error) {
+func (m *mockFriendshipService) ListFriends(ctx context.Context, userID string, limit int, query string, cursor *models.FriendCursor) (models.FriendPage, error) {
 	if m.listFriendsFunc != nil {
-		return m.listFriendsFunc(ctx, userID)
+		return m.listFriendsFunc(ctx, userID, limit, query, cursor)
 	}
-	return []models.Friend{
+	return models.FriendPage{Friends: []models.Friend{
 		{IDAmistad: "1", IDUsuario: "friend-1", Username: "user1", Estado: models.FriendshipAccepted},
-	}, nil
+	}}, nil
 }
 
 func (m *mockFriendshipService) RemoveFriend(ctx context.Context, userID, targetID string) error {
@@ -242,6 +244,90 @@ func TestListFriends_HTTP_Exitoso(t *testing.T) {
 	data, ok := resp["data"].([]interface{})
 	if !ok || len(data) != 1 {
 		t.Fatalf("se esperaba 1 amigo en la lista")
+	}
+	if resp["next_cursor"] != "" {
+		t.Fatalf("se esperaba next_cursor vacío, se obtuvo %v", resp["next_cursor"])
+	}
+}
+
+func TestListFriends_HTTP_PaginationParameters(t *testing.T) {
+	tests := []struct {
+		name              string
+		query             string
+		wantStatus        int
+		wantLimit         int
+		wantSearch        string
+		wantCursor        bool
+		wantInvalidCursor bool
+	}{
+		{name: "default limit", wantStatus: http.StatusOK, wantLimit: 20},
+		{name: "limit capped", query: "?limit=80&q=alice", wantStatus: http.StatusOK, wantLimit: 50, wantSearch: "alice"},
+		{name: "zero limit", query: "?limit=0", wantStatus: http.StatusBadRequest},
+		{name: "negative limit", query: "?limit=-1", wantStatus: http.StatusBadRequest},
+		{name: "non numeric limit", query: "?limit=many", wantStatus: http.StatusBadRequest},
+		{name: "invalid cursor encoding", query: "?cursor=not-base64", wantStatus: http.StatusBadRequest, wantInvalidCursor: true},
+		{
+			name: "invalid cursor values",
+			query: "?cursor=" + url.QueryEscape(base64.StdEncoding.EncodeToString(
+				[]byte(`{"fecha_amistad":"not-a-date","id_amistad":"friend-id"}`))),
+			wantStatus: http.StatusBadRequest, wantInvalidCursor: true,
+		},
+	}
+
+	validCursor := base64.StdEncoding.EncodeToString(
+		[]byte(`{"fecha_amistad":"2026-01-02T03:04:05Z","id_amistad":"friend-id"}`),
+	)
+	tests = append(tests, struct {
+		name              string
+		query             string
+		wantStatus        int
+		wantLimit         int
+		wantSearch        string
+		wantCursor        bool
+		wantInvalidCursor bool
+	}{
+		name: "cursor and search forwarded", query: "?limit=5&q=ana&cursor=" + url.QueryEscape(validCursor),
+		wantStatus: http.StatusOK, wantLimit: 5, wantSearch: "ana", wantCursor: true,
+	})
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var called bool
+			mock := &mockFriendshipService{
+				listFriendsFunc: func(_ context.Context, userID string, limit int, query string, cursor *models.FriendCursor) (models.FriendPage, error) {
+					called = true
+					if userID != "usr-123" || limit != test.wantLimit || query != test.wantSearch {
+						t.Errorf("unexpected list arguments: user=%q limit=%d query=%q", userID, limit, query)
+					}
+					if (cursor != nil) != test.wantCursor {
+						t.Errorf("cursor presence = %t, want %t", cursor != nil, test.wantCursor)
+					}
+					return models.FriendPage{Friends: []models.Friend{}}, nil
+				},
+			}
+			router := setupTestRouter(mock)
+			recorder := httptest.NewRecorder()
+			request := httptest.NewRequest(http.MethodGet, "/friends"+test.query, nil)
+			request.Header.Set("X-User-ID", "usr-123")
+			router.ServeHTTP(recorder, request)
+
+			if recorder.Code != test.wantStatus {
+				t.Fatalf("status = %d, want %d: %s", recorder.Code, test.wantStatus, recorder.Body.String())
+			}
+			if test.wantStatus == http.StatusOK && !called {
+				t.Fatal("se esperaba invocar el servicio")
+			}
+			if test.wantInvalidCursor {
+				var response map[string]any
+				if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+					t.Fatalf("error deserializando json: %v", err)
+				}
+				apiError, ok := response["error"].(map[string]any)
+				if !ok || apiError["code"] != "INVALID_CURSOR" {
+					t.Fatalf("se esperaba error INVALID_CURSOR, se obtuvo %v", response["error"])
+				}
+			}
+		})
 	}
 }
 
