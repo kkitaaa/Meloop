@@ -1,0 +1,77 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: media-service
+  namespace: student-amanda-garcia-4679dc667f08
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: media-service
+  template:
+    metadata:
+      labels:
+        app: media-service
+    spec:
+      containers:
+        - name: media-service
+          image: ghcr.io/kkitaaa/meloop/media-service:a923a1e820ac419bed36a4330e8bf41bc78019c1
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8085
+          env:
+            - name: PORT
+              value: "8085"
+            - name: MINIO_ENDPOINT
+              value: "minio.student-amanda-garcia-4679dc667f08.svc.cluster.local:9000"
+            - name: MINIO_PUBLIC_ENDPOINT
+              value: "http://minio.student-amanda-garcia-4679dc667f08.svc.cluster.local:9000"
+            - name: MINIO_MEDIA_BUCKET
+              value: "meloop-media"
+            - name: MINIO_USE_SSL
+              value: "false"
+            - name: MINIO_REGION
+              value: "us-east-1"
+            - name: MINIO_MEDIA_USER
+              valueFrom:
+                secretKeyRef:
+                  name: minio-secrets
+                  key: MINIO_MEDIA_USER
+            - name: MINIO_MEDIA_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: minio-secrets
+                  key: MINIO_MEDIA_PASSWORD
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8085
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8085
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: media-service
+  namespace: student-amanda-garcia-4679dc667f08
+spec:
+  selector:
+    app: media-service
+  ports:
+    - name: http
+      port: 8085
+      targetPort: 8085
+  type: ClusterIP
