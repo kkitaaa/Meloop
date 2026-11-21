@@ -44,7 +44,7 @@ flutter analyze
 
 ## CI
 
-GitHub Actions ejecuta las pruebas de cada plataforma en workflows separados. Las pruebas unitarias no requieren Docker. Las pruebas de integración que necesiten Redis, RabbitMQ u otros servicios deberán levantar explícitamente los servicios requeridos con Docker Compose.
+GitHub Actions ejecuta las pruebas de cada plataforma en workflows separados. Los módulos Go se validan en un único job: para cada módulo bajo `services/`, CI revisa el formato con `gofmt` y ejecuta `go test ./...`; los fallos de un módulo no impiden revisar los demás. Las pruebas unitarias no requieren Docker. Las pruebas de integración que necesiten Redis, RabbitMQ u otros servicios deberán levantar explícitamente los servicios requeridos con Docker Compose.
 
 ## Reglas para nuevas pruebas
 
