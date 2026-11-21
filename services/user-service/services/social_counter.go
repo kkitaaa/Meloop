@@ -27,7 +27,7 @@ func NewHTTPSocialFriendCounter(baseURL, token string) SocialFriendCounter {
 	return &httpSocialFriendCounter{
 		baseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"),
 		token:   strings.TrimSpace(token),
-		client:  &http.Client{Timeout: 5 * time.Second},
+		client:  &http.Client{Timeout: 7 * time.Second},
 	}
 }
 

@@ -382,7 +382,9 @@ func (r *postgresFriendshipRepository) queryAcceptedFriendsCount(ctx context.Con
 		FROM amistad
 		WHERE (id_usuario_1::text = $1 OR id_usuario_2::text = $1)
 		  AND estado = 'ACEPTADA'`
-	if err := r.pool.QueryRow(ctx, query, userID).Scan(&count); err != nil {
+	queryCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	if err := r.pool.QueryRow(queryCtx, query, userID).Scan(&count); err != nil {
 		return 0, err
 	}
 	return count, nil
@@ -397,7 +399,9 @@ func (r *postgresFriendshipRepository) queryBlockedUsersCount(ctx context.Contex
 		SELECT COUNT(*)
 		FROM bloqueo
 		WHERE id_usuario_bloqueador::text = $1`
-	if err := r.pool.QueryRow(ctx, query, userID).Scan(&count); err != nil {
+	queryCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	if err := r.pool.QueryRow(queryCtx, query, userID).Scan(&count); err != nil {
 		return 0, err
 	}
 	return count, nil

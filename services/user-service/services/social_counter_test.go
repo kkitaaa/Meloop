@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/meloop/user-service/models"
 	"github.com/meloop/user-service/services"
@@ -39,6 +40,36 @@ func TestHTTPSocialFriendCounter_FailsExplicitlyWhenUnavailable(t *testing.T) {
 	_, err := counter.GetFriendsCount(context.Background(), "usr-target")
 	if !errors.Is(err, services.ErrSocialCounterUnavailable) {
 		t.Fatalf("error = %v, want ErrSocialCounterUnavailable", err)
+	}
+}
+
+func TestHTTPSocialFriendCounter_AllowsResponseAfterFiveSeconds(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		time.Sleep(5100 * time.Millisecond)
+		_, _ = fmt.Fprint(w, `{"success":true,"data":{"count":6},"error":null}`)
+	}))
+	defer server.Close()
+
+	count, err := services.NewHTTPSocialFriendCounter(server.URL, "service-token").
+		GetFriendsCount(context.Background(), "usr-target")
+	if err != nil {
+		t.Fatalf("GetFriendsCount returned error for a 5.1s response: %v", err)
+	}
+	if count != 6 {
+		t.Fatalf("count = %d, want 6", count)
+	}
+}
+
+func TestHTTPSocialFriendCounter_TimeoutIsReportedAsUnavailable(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	}))
+	defer server.Close()
+
+	_, err := services.NewHTTPSocialFriendCounter(server.URL, "service-token").
+		GetFriendsCount(context.Background(), "usr-target")
+	if !errors.Is(err, services.ErrSocialCounterUnavailable) {
+		t.Fatalf("error = %v, want ErrSocialCounterUnavailable after the 7s timeout", err)
 	}
 }
 
