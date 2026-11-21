@@ -3,10 +3,10 @@ package config
 import "os"
 
 type Config struct {
-	DatabaseURL string
-	RabbitMQURL string
+	DatabaseURL    string
+	RabbitMQURL    string
 	AuthServiceURL string
-	Port        string
+	Port           string
 }
 
 func Load() *Config {
