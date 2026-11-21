@@ -33,7 +33,11 @@ Consulta la documentación completa en [`docs/centralized_block_exclusion.md`](.
 
 ### Paginación de amigos (RF-12)
 
-`GET /v1/social/friends` acepta `limit` (predeterminado 20, máximo 50), `cursor` (base64 devuelto por la página anterior) y `q` (búsqueda parcial por nombre de usuario). Mantén el mismo `q` al enviar cada `cursor`.
+`GET /friends?limit=20&cursor=...&q=...` acepta `limit` (predeterminado 20, máximo 50), `cursor` (base64 devuelto por la página anterior) y `q` (búsqueda parcial por nombre de usuario). Mantén el mismo `q` al enviar cada `cursor`. El mismo endpoint está disponible tanto en el servicio social como a través del gateway.
+
+Ejemplo: `GET /friends?limit=20&cursor=eyJmZWNoYV9hbWlzdGFkIjoi...&q=usuario`.
+
+La migración que incorpora `fecha_amistad` asigna una fecha de referencia a las amistades aceptadas existentes que no tenían este campo. Esa fecha de referencia no representa necesariamente la fecha real en que fueron aceptadas.
 
 La respuesta conserva `data` como la lista de amigos y agrega `next_cursor` al envoltorio existente:
 
@@ -62,6 +66,7 @@ La cobertura medida para la lógica de negocio en el paquete `services` es **90.
 
 Las pruebas de integración de `tests/` requieren `TEST_DATABASE_URL` (base de datos cuyo nombre incluya `test`).
 Sin esa variable se omiten para evitar conectarse a datos no destinados a pruebas.
+Configura `TEST_DATABASE_URL` con una base PostgreSQL de pruebas separada (por ejemplo, `social_test`) y aplica antes las migraciones de `supabase/migrations` a esa base.
 
 Para levantar PostgreSQL local con Supabase CLI y ejecutar la suite de integración en una base aislada:
 
