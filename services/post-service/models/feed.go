@@ -13,4 +13,5 @@ type FeedPost struct {
 	AuthorAvatar   string    `json:"author_avatar"`
 	LikesCount     int       `json:"likes_count"`
 	CommentsCount  int       `json:"comments_count"`
+	RelevanceScore int       `json:"relevance_score"`
 }

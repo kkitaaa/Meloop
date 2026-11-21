@@ -84,6 +84,7 @@ func (r *PostgresFeedRepository) GetMainFeed(userID string, limit, offset int, a
 						FROM (
 							SELECT DISTINCT
 								UPPER(TRIM(pref.tipo)) AS pref_tipo,
+								LOWER(TRIM(pref.spotify_id)) AS pref_valor,
 								CASE
 									WHEN UPPER(TRIM(pref.tipo)) = 'CANCION'
 										 AND can.spotify_id IS NOT NULL
@@ -95,7 +96,8 @@ func (r *PostgresFeedRepository) GetMainFeed(userID string, limit, offset int, a
 									THEN 30
 									WHEN UPPER(TRIM(pref.tipo)) = 'GENERO'
 										 AND LENGTH(TRIM(pref.spotify_id)) >= 3
-										 AND cp.texto ILIKE '%' || TRIM(pref.spotify_id) || '%'
+										 AND (' ' || regexp_replace(LOWER(COALESCE(cp.texto, '')), '[^[:alnum:]]+', ' ', 'g') || ' ')
+										     LIKE ('% ' || regexp_replace(LOWER(TRIM(pref.spotify_id)), '[^[:alnum:]]+', ' ', 'g') || ' %')
 									THEN 15
 									ELSE 0
 								END AS match_score
