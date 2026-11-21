@@ -1,549 +1,75 @@
-import 'package:flutter/material.dart';
-
 import 'dart:async';
 
+import 'package:flutter/material.dart';
+
+import 'package:flutter/foundation.dart';
+
+import '../services/api_client.dart';
 import 'friends_screen.dart';
-import '../../features/comments/presentation/comments_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
-import 'friends_screen.dart';
-import '../../features/comments/presentation/comments_screen.dart';
-import '../../features/profile/presentation/profile_screen.dart';
-import '../widgets/post_card.dart';
+import '../features/posts/presentation/post_editor_dialog.dart';
+import '../features/search/presentation/global_search_screen.dart';
+import '../widgets/app_settings_menu.dart';
+import '../widgets/desktop_app_header.dart';
 import '../widgets/desktop_chat.dart';
-import '../widgets/notifications_menu.dart';
-import '../widgets/level_progress/level_progress.dart';
+import '../widgets/mobile_app_header.dart';
+import '../features/moderation/data/moderation_models.dart';
+import '../features/moderation/presentation/moderation_queue_screen.dart';
+import '../core/navigation/artists_and_songs_screen.dart';
 import '../features/gamification/presentation/gamification_demo_controller.dart';
+import '../widgets/level_progress/level_progress.dart';
+import '../../widgets/post_card.dart';
+import '../../widgets/rumi_xp_notice.dart';
+import '../../widgets/states/loading_state.dart';
+import '../../widgets/states/empty_state.dart';
+import '../../widgets/states/error_state.dart';
 
 class FeedScreen extends StatefulWidget {
-  const FeedScreen({super.key});
+  final ApiClient? apiClient;
+  final ModerationRole userRole;
 
-  @override
-  State<FeedScreen> createState() => _FeedScreenState();
-}
-
-class _LevelUpBanner extends StatefulWidget {
-  const _LevelUpBanner({
-    required this.reward,
-    required this.onClose,
-    required this.onEquip,
+  const FeedScreen({
+    super.key,
+    this.apiClient,
+    this.userRole = ModerationRole.user,
   });
 
-  final LevelUpReward reward;
-  final VoidCallback onClose;
-  final VoidCallback onEquip;
-
   @override
-  State<_LevelUpBanner> createState() => _LevelUpBannerState();
+  State<FeedScreen> createState() => FeedScreenState();
 }
 
-class _LevelUpBannerState extends State<_LevelUpBanner>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _timer;
+class FeedScreenState extends State<FeedScreen> {
+  static const int _pageSize = 5;
 
-  @override
-  void initState() {
-    super.initState();
-    _timer =
-        AnimationController(vsync: this, duration: const Duration(seconds: 10))
-          ..forward()
-          ..addStatusListener((status) {
-            if (status == AnimationStatus.completed) widget.onClose();
-          });
-  }
-
-  @override
-  void dispose() {
-    _timer.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: SlideTransition(
-        position: Tween<Offset>(begin: const Offset(0, -1.2), end: Offset.zero)
-            .animate(
-              CurvedAnimation(
-                parent: _timer,
-                curve: const Interval(0, .08, curve: Curves.easeOutBack),
-              ),
-            ),
-        child: Container(
-          width: 370,
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: .22),
-                blurRadius: 18,
-              ),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  Icon(Icons.circle, color: Colors.amber, size: 9),
-                  Icon(Icons.square, color: Color(0xFFFF6262), size: 10),
-                  Icon(Icons.circle, color: Color(0xFF00AF92), size: 8),
-                  Icon(Icons.star, color: Colors.purple, size: 13),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Text(
-                '¡Subiste a Nivel ${widget.reward.level}!',
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF1E7E70),
-                ),
-              ),
-              const SizedBox(height: 6),
-              const Text(
-                'Recompensa desbloqueada',
-                style: TextStyle(color: Colors.black54, fontSize: 12),
-              ),
-              const SizedBox(height: 10),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.gradient, color: Colors.purple),
-                  const SizedBox(width: 7),
-                  Text(
-                    widget.reward.name,
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              ElevatedButton(
-                onPressed: widget.onEquip,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF00AF92),
-                  foregroundColor: Colors.white,
-                ),
-                child: const Text('Equipar ahora'),
-              ),
-              TextButton(
-                onPressed: widget.onClose,
-                child: const Text('Cerrar'),
-              ),
-              AnimatedBuilder(
-                animation: _timer,
-                builder: (context, _) => LinearProgressIndicator(
-                  value: 1 - _timer.value,
-                  minHeight: 3,
-                  color: const Color(0xFF00AF92),
-                  backgroundColor: Colors.grey[200],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _CompactLevelUpBanner extends StatefulWidget {
-  const _CompactLevelUpBanner({
-    required this.reward,
-    required this.onClose,
-    required this.onEquip,
-  });
-  final LevelUpReward reward;
-  final VoidCallback onClose;
-  final VoidCallback onEquip;
-  @override
-  State<_CompactLevelUpBanner> createState() => _CompactLevelUpBannerState();
-}
-
-class _CompactLevelUpBannerState extends State<_CompactLevelUpBanner>
-    with TickerProviderStateMixin {
-  late final AnimationController _timer;
-  late final AnimationController _confetti;
-  @override
-  void initState() {
-    super.initState();
-    _timer =
-        AnimationController(vsync: this, duration: const Duration(seconds: 10))
-          ..forward()
-          ..addStatusListener((status) {
-            if (status == AnimationStatus.completed) widget.onClose();
-          });
-    _confetti = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1500),
-    )..repeat();
-  }
-
-  @override
-  void dispose() {
-    _timer.dispose();
-    _confetti.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) => Center(
-    child: SlideTransition(
-      position: Tween<Offset>(begin: const Offset(0, -1), end: Offset.zero)
-          .animate(
-            CurvedAnimation(
-              parent: _timer,
-              curve: const Interval(0, .08, curve: Curves.easeOutBack),
-            ),
-          ),
-      child: Container(
-        width: 520,
-        padding: const EdgeInsets.fromLTRB(18, 12, 18, 8),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: .22),
-              blurRadius: 18,
-            ),
-          ],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            SizedBox(
-              height: 57,
-              child: Stack(
-                children: [
-                  AnimatedBuilder(
-                    animation: _confetti,
-                    builder: (_, __) => Stack(
-                      children: [
-                        _confettiPiece(.08, Colors.amber, Icons.circle),
-                        _confettiPiece(
-                          .31,
-                          const Color(0xFFFF6262),
-                          Icons.square,
-                        ),
-                        _confettiPiece(
-                          .68,
-                          const Color(0xFF00AF92),
-                          Icons.circle,
-                        ),
-                        _confettiPiece(.9, Colors.purple, Icons.star),
-                      ],
-                    ),
-                  ),
-                  Center(
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(
-                          Icons.emoji_events,
-                          color: Colors.amber,
-                          size: 36,
-                        ),
-                        const SizedBox(width: 10),
-                        Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Nivel ${widget.reward.level}',
-                              style: const TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                                color: Color(0xFF1E7E70),
-                              ),
-                            ),
-                            Text(
-                              widget.reward.name,
-                              style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                TextButton(
-                  onPressed: widget.onClose,
-                  child: const Text('Cerrar'),
-                ),
-                const SizedBox(width: 10),
-                ElevatedButton(
-                  onPressed: widget.onEquip,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF00AF92),
-                    foregroundColor: Colors.white,
-                  ),
-                  child: const Text('Equipar ahora'),
-                ),
-              ],
-            ),
-            AnimatedBuilder(
-              animation: _timer,
-              builder: (_, __) => LinearProgressIndicator(
-                value: 1 - _timer.value,
-                minHeight: 3,
-                color: const Color(0xFF00AF92),
-                backgroundColor: Colors.grey[200],
-              ),
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
-  Widget _confettiPiece(double x, Color color, IconData icon) {
-    final fall = (_confetti.value + x) % 1;
-    return Positioned(
-      left: x * 480,
-      top: fall * 50,
-      child: Transform.rotate(
-        angle: fall * 6.28,
-        child: Icon(icon, color: color, size: 10),
-      ),
-    );
-  }
-}
-
-class _FullScreenConfetti extends StatefulWidget {
-  const _FullScreenConfetti();
-  @override
-  State<_FullScreenConfetti> createState() => _FullScreenConfettiState();
-}
-
-class _FullScreenConfettiState extends State<_FullScreenConfetti>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1250),
-    )..repeat();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) => IgnorePointer(
-    child: LayoutBuilder(
-      builder: (context, size) => AnimatedBuilder(
-        animation: _controller,
-        builder: (_, __) => Stack(
-          children: List.generate(10, (i) {
-            const colors = [
-              Colors.amber,
-              Color(0xFFFF6262),
-              Color(0xFF00AF92),
-              Colors.purple,
-              Colors.orange,
-            ];
-            final x = ((i * .173) % 1);
-            final fall = (_controller.value + i * .19) % 1;
-            return Positioned(
-              left: x * size.maxWidth,
-              top: -18 + fall * (size.maxHeight + 36),
-              child: Transform.rotate(
-                angle: fall * 10,
-                child: Icon(
-                  i.isEven ? Icons.square : Icons.circle,
-                  color: colors[i % colors.length],
-                  size: 10,
-                ),
-              ),
-            );
-          }),
-        ),
-      ),
-    ),
-  );
-}
-
-class _RewardLevelUpBanner extends StatefulWidget {
-  const _RewardLevelUpBanner({
-    required this.reward,
-    required this.onClose,
-    required this.onEquip,
-  });
-  final LevelUpReward reward;
-  final VoidCallback onClose;
-  final VoidCallback onEquip;
-  @override
-  State<_RewardLevelUpBanner> createState() => _RewardLevelUpBannerState();
-}
-
-class _RewardLevelUpBannerState extends State<_RewardLevelUpBanner>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _timer;
-  @override
-  void initState() {
-    super.initState();
-    _timer =
-        AnimationController(vsync: this, duration: const Duration(seconds: 10))
-          ..forward()
-          ..addStatusListener((s) {
-            if (s == AnimationStatus.completed) widget.onClose();
-          });
-  }
-
-  @override
-  void dispose() {
-    _timer.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) => Center(
-    child: SlideTransition(
-      position: Tween<Offset>(begin: const Offset(0, -1), end: Offset.zero)
-          .animate(
-            CurvedAnimation(
-              parent: _timer,
-              curve: const Interval(0, .08, curve: Curves.easeOutBack),
-            ),
-          ),
-      child: Container(
-        width: 520,
-        padding: const EdgeInsets.fromLTRB(18, 14, 18, 8),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: .22),
-              blurRadius: 18,
-            ),
-          ],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            SizedBox(
-              height: 58,
-              child: AnimatedBuilder(
-                animation: _timer,
-                builder: (_, __) {
-                  if (_timer.value < .3) {
-                    const phrase = '¡Subiste de nivel!';
-                    final progress = (_timer.value / .3).clamp(0, 1).toDouble();
-                    final fade = (1 - (progress - .8).clamp(0, .2) * 5)
-                        .toDouble();
-                    return Center(
-                      child: Opacity(
-                        opacity: fade,
-                        child: Text(
-                          phrase.substring(
-                            0,
-                            (phrase.length * progress).floor(),
-                          ),
-                          style: const TextStyle(
-                            fontSize: 23,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFF1E7E70),
-                          ),
-                        ),
-                      ),
-                    );
-                  }
-                  return Row(
-                    children: [
-                      const Icon(
-                        Icons.gradient,
-                        color: Colors.purple,
-                        size: 40,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              widget.reward.name,
-                              style: const TextStyle(
-                                fontSize: 17,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            const Text(
-                              'Marco de perfil',
-                              style: TextStyle(
-                                color: Colors.black54,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      ElevatedButton(
-                        onPressed: widget.onEquip,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF00AF92),
-                          foregroundColor: Colors.white,
-                        ),
-                        child: const Text('Equipar'),
-                      ),
-                    ],
-                  );
-                },
-              ),
-            ),
-            AnimatedBuilder(
-              animation: _timer,
-              builder: (_, __) => LinearProgressIndicator(
-                value: 1 - _timer.value,
-                minHeight: 3,
-                color: const Color(0xFF00AF92),
-                backgroundColor: Colors.grey[200],
-              ),
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
-}
-
-class _FeedScreenState extends State<FeedScreen> {
-  final Color _bgColor = const Color(0xFF0D5C5E);
   final Color _tealAccent = const Color(0xFF1ABC9C);
 
+  late final ApiClient _apiClient;
+  late final bool _ownsApiClient;
   final ScrollController _scrollController = ScrollController();
   final List<Map<String, dynamic>> _posts = [];
+
   bool _isInitialLoading = true;
   bool _isLoadingMore = false;
+  bool _hasMore = true;
+  String _selectedCategory = 'recent';
+  int _requestGeneration = 0;
   int _currentPage = 1;
-  LevelUpReward? _levelUpReward;
+  bool _hasError = false;
+  String? _feedError;
+  int _errorCode = 0;
 
   @override
   void initState() {
     super.initState();
-    GamificationDemoController.instance.addListener(_onGamificationChanged);
-    _fetchInitialPosts();
+    _apiClient = widget.apiClient ?? ApiClient();
+    _ownsApiClient = widget.apiClient == null;
 
+    _fetchInitialPosts();
     _scrollController.addListener(() {
-      if (_scrollController.position.pixels >=
-          _scrollController.position.maxScrollExtent - 200) {
-        if (!_isLoadingMore) {
+      if (_scrollController.hasClients &&
+          _scrollController.position.pixels >=
+              _scrollController.position.maxScrollExtent - 200) {
+        if (!_isInitialLoading && !_isLoadingMore && _hasMore && !_hasError) {
           _fetchMorePosts();
         }
       }
@@ -552,56 +78,153 @@ class _FeedScreenState extends State<FeedScreen> {
 
   @override
   void dispose() {
-    GamificationDemoController.instance.removeListener(_onGamificationChanged);
     _scrollController.dispose();
+    if (_ownsApiClient) _apiClient.close();
     super.dispose();
   }
 
-  void _onGamificationChanged() {
-    final reward = GamificationDemoController.instance.takePendingLevelUp();
-    if (reward != null && mounted) setState(() => _levelUpReward = reward);
-  }
-
-  Future<void> _fetchInitialPosts() async {
-    setState(() => _isInitialLoading = true);
-    await Future.delayed(const Duration(seconds: 2));
-
-    if (!mounted) return;
-
+  Future<void> _fetchInitialPosts({String? category}) async {
+    if (category != null) _selectedCategory = category;
+    final requestGeneration = ++_requestGeneration;
     setState(() {
-      _posts.addAll(_generateMockPosts(1, 5));
-      _isInitialLoading = false;
+      _isInitialLoading = true;
+      _isLoadingMore = false;
+      _hasError = false;
+      _feedError = null;
+      _hasMore = true;
     });
+
+    try {
+      final response = await _apiClient.getFeedPage(
+        category: _selectedCategory,
+        page: 1,
+        pageSize: _pageSize,
+      );
+      final page = response.data;
+      if (page == null) {
+        throw const ApiException(message: 'El API no devolvió publicaciones.');
+      }
+      if (!mounted || requestGeneration != _requestGeneration) return;
+      setState(() {
+        _posts
+          ..clear()
+          ..addAll(page.items.map((post) => post.toPostCardData()));
+        _isInitialLoading = false;
+        _currentPage = page.page;
+        _hasMore = page.hasMore;
+      });
+    } on ApiException catch (error) {
+      if (!mounted || requestGeneration != _requestGeneration) return;
+      setState(() {
+        _isInitialLoading = false;
+        _hasError = true;
+        _errorCode = error.statusCode ?? 0;
+        _feedError = error.message;
+      });
+    }
   }
 
   Future<void> _fetchMorePosts() async {
+    if (_isLoadingMore || !_hasMore || _isInitialLoading) return;
+    final requestGeneration = _requestGeneration;
     setState(() => _isLoadingMore = true);
-    await Future.delayed(const Duration(seconds: 2));
 
-    if (!mounted) return;
-
-    setState(() {
-      _currentPage++;
-      _posts.addAll(_generateMockPosts(_currentPage, 3));
-      _isLoadingMore = false;
-    });
+    try {
+      final response = await _apiClient.getFeedPage(
+        category: _selectedCategory,
+        page: _currentPage + 1,
+        pageSize: _pageSize,
+      );
+      final page = response.data;
+      if (page == null) {
+        throw const ApiException(message: 'El API no devolvió publicaciones.');
+      }
+      if (!mounted || requestGeneration != _requestGeneration) return;
+      setState(() {
+        _posts.addAll(page.items.map((post) => post.toPostCardData()));
+        _currentPage = page.page;
+        _hasMore = page.hasMore;
+        _isLoadingMore = false;
+      });
+    } on ApiException catch (error) {
+      if (!mounted || requestGeneration != _requestGeneration) return;
+      setState(() => _isLoadingMore = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'No se pudieron cargar más publicaciones: ${error.message}',
+          ),
+        ),
+      );
+    }
   }
 
-  List<Map<String, dynamic>> _generateMockPosts(int page, int count) {
-    return List.generate(count, (index) {
-      int id = (page - 1) * count + index + 1;
-      return {
-        "id": id,
-        "user": "Usuario_0$id",
-        "time": "Hace ${id * 5} minutos",
-        "content":
-            "Esta es la publicación dinámica número $id cargada desde el servidor simulado. Probando el scroll infinito y la paginación.",
-        "song": "Canción $id",
-        "artist": "Artista Generado",
-        "likes": 10 * id,
-        "comments": id,
-      };
+  Future<void> _createPost() async {
+    final result = await showDialog<PostEditorResult>(
+      context: context,
+      builder: (context) =>
+          PostEditorDialog(tealAccent: _tealAccent, apiClient: _apiClient),
+    );
+    if (!mounted || result == null) return;
+
+    final post = result.publishedPost ?? const <String, dynamic>{};
+    final serverImages = post['images'];
+    final firstServerImage = serverImages is List && serverImages.isNotEmpty
+        ? serverImages.first
+        : null;
+    final firstServerImageUrl = firstServerImage is String
+        ? firstServerImage
+        : firstServerImage is Map<String, dynamic>
+        ? firstServerImage['url'] as String?
+        : null;
+    setState(() {
+      _posts.insert(0, {
+        "id": post['id'] ?? DateTime.now().microsecondsSinceEpoch,
+        "user": post['user'] ?? post['username'] ?? "Tú",
+        "user_id": post['user_id'],
+        "time": "Hace un momento",
+        "content": post['content'] ?? result.content,
+        "image_bytes": result.imageBytes,
+        "image_name": result.imageName,
+        "image_url": post['image_url'] ?? firstServerImageUrl,
+        "images": serverImages ?? result.images,
+        "song": post['song_title'] ?? result.songTitle,
+        "artist": post['artist_name'] ?? result.artistName,
+        "song_id": post['song_id'] ?? post['spotify_track_id'] ?? result.songId,
+        "audio_url": post['audio_url'],
+        "audio_bytes": result.audioBytes,
+        "audio_name": result.audioName,
+        "likes": 0,
+        "comments": 0,
+        "isAuthor": true,
+        "isEdited": false,
+        "within24Hours": true,
+      });
     });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: RumiXpNotice(xpAwarded: result.xpAwarded)),
+    );
+  }
+
+  Future<void> createPost() => _createPost();
+
+  void _openModerationQueue() {
+    Navigator.push(
+      context,
+      MaterialPageRoute<void>(
+        builder: (_) => ModerationQueueScreen(role: widget.userRole),
+      ),
+    );
+  }
+
+  void _openSearch() {
+    Navigator.push(
+      context,
+      MaterialPageRoute<void>(
+        builder: (_) => GlobalSearchScreen(apiClient: _apiClient),
+      ),
+    );
   }
 
   @override
@@ -610,7 +233,7 @@ class _FeedScreenState extends State<FeedScreen> {
     final bool isDesktop = screenWidth > 900;
 
     return Scaffold(
-      backgroundColor: _bgColor,
+      backgroundColor: Colors.transparent,
       body: Stack(
         children: [
           Column(
@@ -623,33 +246,43 @@ class _FeedScreenState extends State<FeedScreen> {
           ),
           if (isDesktop)
             const Positioned(right: 24, bottom: 0, child: DesktopChat()),
-          if (_levelUpReward != null)
-            const Positioned.fill(child: _FullScreenConfetti()),
-          if (_levelUpReward != null)
-            Positioned(
-              top: 18,
-              left: 0,
-              right: 0,
-              child: _RewardLevelUpBanner(
-                reward: _levelUpReward!,
-                onClose: () => setState(() => _levelUpReward = null),
-                onEquip: () {
-                  setState(() => _levelUpReward = null);
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const ProfileScreen(openInventory: true),
-                    ),
-                  );
-                },
-              ),
-            ),
         ],
       ),
     );
   }
 
   Widget _buildTopBar(bool isDesktop) {
+    final canModerate = widget.userRole != ModerationRole.user;
+    if (isDesktop) {
+      return DesktopAppHeader(
+        activeSection: DesktopNavigationSection.home,
+        onHomeTap: () {},
+        onFriendsTap: () =>
+            navigateToDesktopSection(context, (_) => const FriendsScreen()),
+        onArtistsTap: () => navigateToDesktopSection(
+          context,
+          (_) => const ArtistsAndSongsScreen(),
+        ),
+        onProfileTap: () => Navigator.push(
+          context,
+          MaterialPageRoute<void>(
+            builder: (_) => ProfileScreen(apiClient: _apiClient),
+          ),
+        ),
+        onModerationTap: canModerate ? _openModerationQueue : null,
+        onSearchTap: _openSearch,
+        apiClient: _apiClient,
+      );
+    }
+
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      return MobileAppHeader(
+        onSearchTap: _openSearch,
+        onModerationTap: canModerate ? _openModerationQueue : null,
+        apiClient: _apiClient,
+      );
+    }
+
     return Container(
       height: 55,
       color: _tealAccent,
@@ -662,64 +295,27 @@ class _FeedScreenState extends State<FeedScreen> {
             height: 24,
             fit: BoxFit.contain,
           ),
-          if (isDesktop) ...[
-            Row(
-              children: [
-                _navLink('Inicio', isActive: true),
-                _navLink(
-                  'Amigos',
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const FriendsScreen(),
-                      ),
-                    );
-                  },
-                ),
-                _navLink(
-                  'Perfil',
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const ProfileScreen(),
-                      ),
-                    );
-                  },
-                ),
-              ],
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Row(
-                children: const [
-                  Icon(Icons.play_circle_fill, color: Colors.white, size: 18),
-                  SizedBox(width: 8),
-                  Text(
-                    "Playing... DJ Gouz",
-                    style: TextStyle(color: Colors.white, fontSize: 12),
-                  ),
-                  SizedBox(width: 8),
-                  Icon(Icons.graphic_eq, color: Colors.white, size: 16),
-                ],
-              ),
-            ),
-          ],
           Row(
             children: [
-              const NotificationsMenu(),
+              IconButton(
+                tooltip: 'Búsqueda global',
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                icon: const Icon(Icons.search, color: Colors.white, size: 20),
+                onPressed: _openSearch,
+              ),
+              const SizedBox(width: 16),
+              AppSettingsMenu(apiClient: _apiClient),
+              const SizedBox(width: 16),
+              const Icon(Icons.notifications, color: Colors.white, size: 20),
               const SizedBox(width: 16),
               InkWell(
                 onTap: () {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) => const ProfileScreen(),
+                      builder: (context) =>
+                          ProfileScreen(apiClient: _apiClient),
                     ),
                   );
                 },
@@ -732,29 +328,6 @@ class _FeedScreenState extends State<FeedScreen> {
             ],
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _navLink(String text, {bool isActive = false, VoidCallback? onTap}) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 4.0),
-        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 6.0),
-        decoration: BoxDecoration(
-          color: isActive ? Colors.white : Colors.transparent,
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Text(
-          text,
-          style: TextStyle(
-            color: isActive ? _tealAccent : Colors.white,
-            fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-            fontSize: 12,
-          ),
-        ),
       ),
     );
   }
@@ -917,62 +490,13 @@ class _FeedScreenState extends State<FeedScreen> {
   }
 
   Widget _buildLevelCard() {
-    return AnimatedBuilder(
-      animation: GamificationDemoController.instance,
-      builder: (context, _) {
-        final game = GamificationDemoController.instance;
-        return LevelProgress(
-          level: game.level,
-          xp: game.xp,
-          xpNeeded: GamificationDemoController.xpNeeded,
-          compact: true,
-          accentColor: _tealAccent,
-        );
-      },
-    );
-  }
-
-  Widget _buildLegacyLevelCard() {
-    return AnimatedBuilder(
-      animation: GamificationDemoController.instance,
-      builder: (context, _) {
-        final game = GamificationDemoController.instance;
-        final percentage = (game.xp / GamificationDemoController.xpNeeded * 100)
-            .round();
-        return Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Column(
-            children: [
-              Row(
-                children: [
-                  Icon(Icons.star, color: _tealAccent, size: 14),
-                  const SizedBox(width: 4),
-                  Text(
-                    "Nivel ${game.level} · (${game.xp} XP / 100 XP) $percentage%",
-                    style: TextStyle(
-                      color: Colors.black87,
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              LinearProgressIndicator(
-                value: game.xp / GamificationDemoController.xpNeeded,
-                backgroundColor: Colors.grey[200],
-                valueColor: AlwaysStoppedAnimation<Color>(_tealAccent),
-                minHeight: 6,
-                borderRadius: BorderRadius.circular(3),
-              ),
-            ],
-          ),
-        );
-      },
+    final progress = GamificationDemoController.instance;
+    return LevelProgress(
+      level: progress.level,
+      xp: progress.xp,
+      xpNeeded: progress.experienceNeeded,
+      compact: true,
+      demoController: progress,
     );
   }
 
@@ -1038,10 +562,13 @@ class _FeedScreenState extends State<FeedScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 32.0, vertical: 24.0),
         child: Column(
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              runSpacing: 12,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                Row(
+                Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     const Text(
                       "Ultimos Blogs:",
@@ -1051,9 +578,9 @@ class _FeedScreenState extends State<FeedScreen> {
                       ),
                     ),
                     const SizedBox(width: 16),
-                    _filterChip("recientes", isActive: true),
-                    _filterChip("tendencias", isActive: false),
-                    _filterChip("amigos", isActive: false),
+                    _filterChip("recientes", category: 'recent'),
+                    _filterChip("amigos", category: 'friends'),
+                    _filterChip("sugeridos", category: 'suggested'),
                   ],
                 ),
                 OutlinedButton.icon(
@@ -1067,7 +594,7 @@ class _FeedScreenState extends State<FeedScreen> {
                       vertical: 12,
                     ),
                   ),
-                  onPressed: () {},
+                  onPressed: _createPost,
                   icon: Icon(Icons.edit, color: _tealAccent, size: 14),
                   label: Text(
                     "escribir blog",
@@ -1081,11 +608,28 @@ class _FeedScreenState extends State<FeedScreen> {
               ],
             ),
             const Divider(height: 32, thickness: 1, color: Colors.black12),
+
+            // --- IMPLEMENTACIÓN DE LOS ESTADOS DE CARGA, ERROR Y VACÍO ---
             Expanded(
               child: _isInitialLoading
-                  ? Center(child: CircularProgressIndicator(color: _tealAccent))
+                  ? const LoadingState() // Estado animado (Skeletons)
+                  : _hasError
+                  ? ErrorState(
+                      errorCode: _errorCode,
+                      onRetry:
+                          _fetchInitialPosts, // Botón para volver a intentar
+                      tealAccent: _tealAccent,
+                      message: _feedError,
+                    )
+                  : _posts.isEmpty
+                  ? const EmptyState(
+                      title: "Feed vacío",
+                      message: "Aún no hay publicaciones recientes. ¡Sé el primero en crear un blog!",
+                      icon: Icons.post_add,
+                    )
                   : ListView.builder(
                       controller: _scrollController,
+                      padding: const EdgeInsets.only(right: 16),
                       itemCount: _posts.length + (_isLoadingMore ? 1 : 0),
                       itemBuilder: (context, index) {
                         if (index == _posts.length) {
@@ -1098,239 +642,84 @@ class _FeedScreenState extends State<FeedScreen> {
                             ),
                           );
                         }
+                        // Uso de la tarjeta reutilizable
                         return PostCard(
                           postData: _posts[index],
                           tealAccent: _tealAccent,
+                          apiClient: _apiClient,
+                          onDelete: () {
+                            setState(() {
+                              _posts.removeAt(index);
+                            });
+                          },
                         );
                       },
                     ),
             ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _tealAccent,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20),
+
+            if (!_isInitialLoading &&
+                !_hasError &&
+                _posts.isNotEmpty &&
+                _hasMore)
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _tealAccent,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  elevation: 0,
                 ),
-                elevation: 0,
+                onPressed: _isLoadingMore ? null : _fetchMorePosts,
+                child: _isLoadingMore
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2,
+                        ),
+                      )
+                    : const Text(
+                        "Cargar más blogs",
+                        style: TextStyle(color: Colors.white, fontSize: 12),
+                      ),
               ),
-              onPressed: () {},
-              child: const Text(
-                "Cargar más blogs",
-                style: TextStyle(color: Colors.white, fontSize: 12),
-              ),
-            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _filterChip(String label, {required bool isActive}) {
-    return Container(
-      margin: const EdgeInsets.only(right: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      decoration: BoxDecoration(
-        color: isActive ? Colors.white : Colors.grey[200],
-        border: isActive
-            ? Border.all(color: _tealAccent, width: 1)
-            : Border.all(color: Colors.transparent),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: isActive ? _tealAccent : Colors.grey[600],
-          fontSize: 10,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPostCard(Map<String, dynamic> postData) {
+  Widget _filterChip(String label, {required String category}) {
+    final isActive = _selectedCategory == category;
     return Padding(
-      padding: const EdgeInsets.only(bottom: 24.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
-                children: [
-                  InkWell(
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) =>
-                              ProfileScreen(username: postData["user"]),
-                        ),
-                      );
-                    },
-                    child: const CircleAvatar(
-                      radius: 16,
-                      backgroundColor: Colors.black87,
-                      child: Icon(Icons.person, color: Colors.white, size: 18),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      InkWell(
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) =>
-                                  ProfileScreen(username: postData["user"]),
-                            ),
-                          );
-                        },
-                        child: Text(
-                          postData["user"],
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ),
-                      Text(
-                        postData["time"],
-                        style: const TextStyle(
-                          fontSize: 10,
-                          color: Colors.grey,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-              const Icon(Icons.more_horiz, color: Colors.grey, size: 20),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Text(
-            postData["content"],
-            style: const TextStyle(
-              fontSize: 13,
-              color: Colors.black87,
-              height: 1.4,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.all(8),
+      padding: const EdgeInsets.only(right: 8),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: isActive || _isInitialLoading
+              ? null
+              : () => _fetchInitialPosts(category: category),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
-              color: _tealAccent,
-              borderRadius: BorderRadius.circular(6),
+              color: isActive ? Colors.white : Colors.grey[200],
+              border: isActive
+                  ? Border.all(color: _tealAccent, width: 1)
+                  : Border.all(color: Colors.transparent),
+              borderRadius: BorderRadius.circular(12),
             ),
-            child: Row(
-              children: [
-                Container(
-                  width: 36,
-                  height: 36,
-                  color: Colors.black87,
-                  child: const Icon(
-                    Icons.play_arrow,
-                    color: Colors.white,
-                    size: 20,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        postData["song"],
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                        ),
-                      ),
-                      Text(
-                        postData["artist"],
-                        style: const TextStyle(
-                          color: Colors.white70,
-                          fontSize: 10,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.graphic_eq, color: _tealAccent, size: 12),
-                      const SizedBox(width: 4),
-                      Text(
-                        "Escuchar",
-                        style: TextStyle(
-                          color: _tealAccent,
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+            child: Text(
+              label,
+              style: TextStyle(
+                color: isActive ? _tealAccent : Colors.grey[600],
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Row(
-                children: [
-                  const Icon(Icons.favorite, color: Colors.red, size: 16),
-                  const SizedBox(width: 4),
-                  Text(
-                    "${postData["likes"]} Likes",
-                    style: const TextStyle(color: Colors.grey, fontSize: 11),
-                  ),
-                ],
-              ),
-              const SizedBox(width: 16),
-              InkWell(
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => CommentsScreen(postData: postData),
-                    ),
-                  );
-                },
-                child: Row(
-                  children: [
-                    const Icon(
-                      Icons.mode_comment_outlined,
-                      color: Colors.grey,
-                      size: 16,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      "${postData["comments"]} Comentarios",
-                      style: const TextStyle(color: Colors.grey, fontSize: 11),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          const Divider(color: Colors.black12),
-        ],
+        ),
       ),
     );
   }

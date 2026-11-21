@@ -14,6 +14,11 @@ class GamificationDemoController extends ChangeNotifier {
   bool rgbFrameEquipped = false;
   LevelUpReward? _pendingLevelUp;
 
+  /// Vicente: keep this demo progression and its connected UI. Replace the
+  /// values with API progress when endpoints are ready, without removing the
+  /// level/XP animations or level-up reward presentation.
+  int get experienceNeeded => xpNeeded;
+
   LevelUpReward? takePendingLevelUp() {
     final reward = _pendingLevelUp;
     _pendingLevelUp = null;
@@ -22,12 +27,12 @@ class GamificationDemoController extends ChangeNotifier {
 
   void grantLikeXp() {
     xp += 10;
-    if (xp >= xpNeeded) {
+    while (xp >= xpNeeded) {
       xp -= xpNeeded;
-      level = 4;
+      level++;
       rgbFrameUnlocked = true;
-      _pendingLevelUp = const LevelUpReward(
-        level: 4,
+      _pendingLevelUp = LevelUpReward(
+        level: level,
         name: 'Marco RGB',
         description: 'Un marco animado multicolor para tu perfil.',
       );

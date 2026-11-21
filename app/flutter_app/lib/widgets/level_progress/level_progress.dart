@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../features/gamification/presentation/gamification_demo_controller.dart';
+
 /// Widget reutilizable para mostrar nivel, experiencia y progreso.
 class LevelProgress extends StatelessWidget {
   const LevelProgress({
@@ -9,6 +11,7 @@ class LevelProgress extends StatelessWidget {
     required this.xpNeeded,
     this.compact = false,
     this.accentColor = const Color(0xFF00AF92),
+    this.demoController,
   });
 
   final int level;
@@ -17,8 +20,34 @@ class LevelProgress extends StatelessWidget {
   final bool compact;
   final Color accentColor;
 
+  /// Optional demo source; replace it with server progress when API support is
+  /// added, without removing the animated progress presentation.
+  final GamificationDemoController? demoController;
+
   @override
   Widget build(BuildContext context) {
+    final controller = demoController;
+    if (controller == null) {
+      return _buildProgress(context, level: level, xp: xp, xpNeeded: xpNeeded);
+    }
+
+    return AnimatedBuilder(
+      animation: controller,
+      builder: (context, _) => _buildProgress(
+        context,
+        level: controller.level,
+        xp: controller.xp,
+        xpNeeded: controller.experienceNeeded,
+      ),
+    );
+  }
+
+  Widget _buildProgress(
+    BuildContext context, {
+    required int level,
+    required int xp,
+    required int xpNeeded,
+  }) {
     final progress = xpNeeded == 0
         ? 0.0
         : (xp / xpNeeded).clamp(0, 1).toDouble();
