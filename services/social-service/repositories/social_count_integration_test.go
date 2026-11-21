@@ -110,8 +110,14 @@ func TestSocialCountCacheAsideInvalidationFallbackAndConcurrency(t *testing.T) {
 			socialFriendsCountKey(user2),
 			socialBlockedCountKey(user1),
 			socialBlockedCountKey(user2),
-			socialCountLockKey(user1),
-			socialCountLockKey(user2),
+			socialCountLockKey(user1, "friends"),
+			socialCountLockKey(user1, "blocked"),
+			socialCountLockKey(user2, "friends"),
+			socialCountLockKey(user2, "blocked"),
+			socialCountVersionKey(socialFriendsCountKey(user1)),
+			socialCountVersionKey(socialFriendsCountKey(user2)),
+			socialCountVersionKey(socialBlockedCountKey(user1)),
+			socialCountVersionKey(socialBlockedCountKey(user2)),
 		).Result()
 		require.NoError(t, cleanupErr)
 	}()
@@ -171,9 +177,49 @@ func TestSocialCountCacheAsideInvalidationFallbackAndConcurrency(t *testing.T) {
 		require.Equal(t, 1, count)
 	}
 
+	require.NoError(t, cache.invalidate(context.Background(), socialFriendsCountKey(user1)))
+	type staleReadResult struct {
+		count int
+		err   error
+	}
+	staleCountCaptured := make(chan int, 1)
+	releaseStaleRead := make(chan struct{})
+	staleReadResultCh := make(chan staleReadResult, 1)
+	go func() {
+		count, err := repo.getSocialCount(
+			context.Background(),
+			socialFriendsCountKey(user1),
+			socialCountLockKey(user1, "friends"),
+			"friends",
+			func(ctx context.Context) (int, error) {
+				count, err := repo.queryAcceptedFriendsCount(ctx, user1)
+				if err != nil {
+					return 0, err
+				}
+				staleCountCaptured <- count
+				<-releaseStaleRead
+				return count, nil
+			},
+		)
+		staleReadResultCh <- staleReadResult{count: count, err: err}
+	}()
+	select {
+	case count := <-staleCountCaptured:
+		require.Equal(t, 1, count)
+	case <-time.After(5 * time.Second):
+		t.Fatal("stale PostgreSQL count was not captured")
+	}
 	require.NoError(t, repo.RemoveFriend(context.Background(), user1, user2))
+	require.False(t, socialCacheHasKey(t, cache, socialFriendsCountKey(user1)))
+	close(releaseStaleRead)
+	select {
+	case result := <-staleReadResultCh:
+		require.NoError(t, result.err)
+		require.Zero(t, result.count, "the reader must retry after its stale publication is fenced")
+	case <-time.After(5 * time.Second):
+		t.Fatal("stale reader did not finish after invalidation")
+	}
 	for _, userID := range []string{user1, user2} {
-		require.False(t, socialCacheHasKey(t, cache, socialFriendsCountKey(userID)))
 		count, err := repo.GetAcceptedFriendsCount(context.Background(), userID)
 		require.NoError(t, err)
 		require.Zero(t, count)

@@ -3,10 +3,12 @@ package repositories
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -253,39 +255,15 @@ func (r *postgresFriendshipRepository) GetAcceptedFriendsCount(ctx context.Conte
 		return 0, ErrUserNotFound
 	}
 	cacheKey := socialFriendsCountKey(userID)
-	if r.cache != nil {
-		if value, ok, err := r.cache.getCount(ctx, cacheKey); err != nil {
-			r.cache.warnRedisFailure("read friends count", err)
-		} else if ok {
-			return value, nil
-		}
-		lockName := socialCountLockKey(userID)
-		if token, acquired, err := r.cache.acquireLock(ctx, lockName); err != nil {
-			r.cache.warnRedisFailure("lock friends count", err)
-		} else if acquired {
-			defer func() {
-				if err := r.cache.releaseLock(ctx, lockName, token); err != nil {
-					r.cache.warnRedisFailure("unlock friends count", err)
-				}
-			}()
-			count, dbErr := r.queryAcceptedFriendsCount(ctx, userID)
-			if dbErr != nil {
-				return 0, dbErr
-			}
-			if err := r.cache.setCount(ctx, cacheKey, count, socialCountTTL); err != nil {
-				r.cache.warnRedisFailure("write friends count", err)
-			}
-			return count, nil
-		} else {
-			value, ok, err := r.cache.waitForCount(ctx, cacheKey)
-			if err != nil {
-				r.cache.warnRedisFailure("wait for friends count", err)
-			} else if ok {
-				return value, nil
-			}
-		}
-	}
-	return r.queryAcceptedFriendsCount(ctx, userID)
+	return r.getSocialCount(
+		ctx,
+		cacheKey,
+		socialCountLockKey(userID, "friends"),
+		"friends",
+		func(ctx context.Context) (int, error) {
+			return r.queryAcceptedFriendsCount(ctx, userID)
+		},
+	)
 }
 
 func (r *postgresFriendshipRepository) GetBlockedUsersCount(ctx context.Context, userID string) (int, error) {
@@ -294,39 +272,96 @@ func (r *postgresFriendshipRepository) GetBlockedUsersCount(ctx context.Context,
 		return 0, ErrUserNotFound
 	}
 	cacheKey := socialBlockedCountKey(userID)
-	if r.cache != nil {
+	return r.getSocialCount(
+		ctx,
+		cacheKey,
+		socialCountLockKey(userID, "blocked"),
+		"blocked",
+		func(ctx context.Context) (int, error) {
+			return r.queryBlockedUsersCount(ctx, userID)
+		},
+	)
+}
+
+func (r *postgresFriendshipRepository) getSocialCount(
+	ctx context.Context,
+	cacheKey, lockKey, countType string,
+	load func(context.Context) (int, error),
+) (int, error) {
+	if r.cache == nil {
+		return load(ctx)
+	}
+
+	for attempt := 0; attempt < socialCountMaxAttempts; attempt++ {
 		if value, ok, err := r.cache.getCount(ctx, cacheKey); err != nil {
-			r.cache.warnRedisFailure("read blocked count", err)
+			r.cache.warnRedisFailure("read "+countType+" count", err)
+			return load(ctx)
 		} else if ok {
 			return value, nil
 		}
-		lockName := socialCountLockKey(userID)
-		if token, acquired, err := r.cache.acquireLock(ctx, lockName); err != nil {
-			r.cache.warnRedisFailure("lock blocked count", err)
-		} else if acquired {
-			defer func() {
-				if err := r.cache.releaseLock(ctx, lockName, token); err != nil {
-					r.cache.warnRedisFailure("unlock blocked count", err)
-				}
-			}()
-			count, dbErr := r.queryBlockedUsersCount(ctx, userID)
-			if dbErr != nil {
-				return 0, dbErr
-			}
-			if err := r.cache.setCount(ctx, cacheKey, count, socialCountTTL); err != nil {
-				r.cache.warnRedisFailure("write blocked count", err)
-			}
-			return count, nil
-		} else {
-			value, ok, err := r.cache.waitForCount(ctx, cacheKey)
+
+		token, acquired, err := r.cache.acquireLock(ctx, lockKey)
+		if err != nil {
+			r.cache.warnRedisFailure("lock "+countType+" count", err)
+			return load(ctx)
+		}
+		if !acquired {
+			value, ok, err := r.cache.waitForCount(ctx, cacheKey, lockKey)
 			if err != nil {
-				r.cache.warnRedisFailure("wait for blocked count", err)
-			} else if ok {
+				if ctx.Err() != nil || errors.Is(err, errSocialCountWaitTimeout) {
+					return 0, fmt.Errorf("wait for %s count calculation: %w", countType, err)
+				}
+				r.cache.warnRedisFailure("wait for "+countType+" count", err)
+				return load(ctx)
+			}
+			if ok {
 				return value, nil
 			}
+			continue
+		}
+
+		releaseLock := func() {
+			cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
+			defer cancel()
+			if err := r.cache.releaseLock(cleanupCtx, lockKey, token); err != nil {
+				r.cache.warnRedisFailure("unlock "+countType+" count", err)
+			}
+		}
+
+		if value, ok, err := r.cache.getCount(ctx, cacheKey); err != nil {
+			releaseLock()
+			r.cache.warnRedisFailure("recheck "+countType+" count", err)
+			return load(ctx)
+		} else if ok {
+			releaseLock()
+			return value, nil
+		}
+
+		version, err := r.cache.getVersion(ctx, cacheKey)
+		if err != nil {
+			releaseLock()
+			r.cache.warnRedisFailure("read "+countType+" count version", err)
+			return load(ctx)
+		}
+
+		stopRenewal := r.cache.startLockRenewal(ctx, lockKey, token)
+		count, err := load(ctx)
+		stopRenewal()
+		if err != nil {
+			releaseLock()
+			return 0, err
+		}
+		published, err := r.cache.publishCount(ctx, cacheKey, lockKey, token, version, count, socialCountTTL)
+		releaseLock()
+		if err != nil {
+			r.cache.warnRedisFailure("write "+countType+" count", err)
+			return count, nil
+		}
+		if published {
+			return count, nil
 		}
 	}
-	return r.queryBlockedUsersCount(ctx, userID)
+	return 0, fmt.Errorf("%s count changed too frequently to cache", countType)
 }
 
 func (r *postgresFriendshipRepository) GetFriendsCount(ctx context.Context, userID string) (int, error) {
@@ -390,8 +425,13 @@ func (r *postgresFriendshipRepository) invalidateSocialCountCache(ctx context.Co
 	if len(unique) == 0 {
 		return
 	}
-	if err := r.cache.invalidate(ctx, unique...); err != nil {
-		r.cache.warnRedisFailure("invalidate social counts", err)
+	retryCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), socialInvalidationTimeout)
+	defer cancel()
+	err := retrySocialCountInvalidation(retryCtx, func(ctx context.Context) error {
+		return r.cache.invalidate(ctx, unique...)
+	})
+	if err != nil {
+		r.cache.warnRedisFailure("invalidate social counts; cached values may remain stale until their TTL expires", err)
 	}
 }
 

@@ -98,3 +98,9 @@ Recomendaciones:
 | Caché de respuestas frecuentes | Servicio que sea dueño del dato |
 
 La comunicación entre `ml-service` y `recommendation-service` será inicialmente HTTP/REST; Redis no reemplaza esa comunicación.
+
+## Conteos sociales de `social-service`
+
+Los conteos de amistades aceptadas y usuarios bloqueados usan cache-aside con TTL de 600 segundos. Cada conteo tiene un lock independiente por usuario. El lock se renueva mientras PostgreSQL calcula el valor; su propietario solo puede publicar si conserva el token y la versión observada antes de la consulta. La invalidación incrementa esa versión y elimina el valor en una sola operación Lua. Las claves de versión no expiran para evitar que una lectura antigua vuelva a ser válida por expiración.
+
+Después de un commit PostgreSQL, el servicio reintenta la invalidación un número limitado de veces usando un plazo independiente de la solicitud HTTP. Si Redis permanece inaccesible durante todos los reintentos, PostgreSQL sigue siendo la fuente de verdad y las lecturas pueden continuar con fallback, pero una clave anterior que siga en Redis podría servirse hasta su TTL de 600 segundos. PostgreSQL y Redis no comparten una transacción; por tanto, no se garantiza coherencia inmediata durante una interrupción persistente de Redis.
