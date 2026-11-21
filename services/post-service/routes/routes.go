@@ -25,29 +25,22 @@ func SetupRoutes(
 
 	api := router.Group("/api/v1/posts")
 	{
-		// Endpoint principal para registrar la publicación completa
-		api.POST("", controllers.CreatePost)
-		if minioClient != nil {
-			api.POST("/media", controllers.UploadFile(minioClient))
-		}
+		// 1. Creación de publicaciones
+		api.POST("", postController.CreatePost)
+		api.POST("/media", controllers.UploadFile(minioClient))
 
+		// 2. Búsquedas y filtros (deben ir antes de /:id para no confundirse)
+		api.GET("/search", postController.Search)
+		api.GET("/author/:authorId", postController.GetPostsByAuthor)
+
+		// 3. Operaciones sobre una publicación específica (CRUD)
+		api.GET("/:id", postController.GetPostByID)
 		api.PUT("/:id", postController.UpdatePost)
 		api.DELETE("/:id", postController.DeletePost)
-		api.GET("/:id", postController.GetPostByID)
-		api.GET("/author/:authorId", postController.GetPostsByAuthor)
-		api.GET("/search", postController.Search)
 
-		// Comentarios y respuestas (¡AQUÍ ESTÁ EL CAMBIO!)
-		// Cambiamos :postId por :id para evitar el conflicto con las rutas de arriba
+		// 4. Comentarios y respuestas (Usamos :id en vez de :postId para evitar colisión)
 		api.POST("/:id/comments", commentController.CreateComment)
 		api.GET("/:id/comments", commentController.GetComments)
 		api.POST("/:id/comments/:commentId/replies", commentController.CreateReply)
 	}
-}
-
-// RegisterRoutes keeps compatibility with the branch-local comment-like startup code.
-func RegisterRoutes(router *gin.Engine, likeController interface{}) {
-	router.POST("/v1/comments/:id/likes", func(c *gin.Context) {
-		c.JSON(http.StatusNotImplemented, gin.H{"message": "comment like routes are registered in main.go"})
-	})
 }

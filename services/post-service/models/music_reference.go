@@ -17,10 +17,3 @@ type MusicReference struct {
 	Title         string        `json:"title,omitempty"`     // Metadato opcional para caché/UI rápida
 	CoverURL      string        `json:"cover_url,omitempty"` // Metadato opcional
 }
-
-// CreatePostRequest es el payload esperado en el endpoint HTTP/REST
-type CreatePostRequest struct {
-	UserID          string           `json:"user_id" binding:"required"`
-	Content         string           `json:"content"`
-	MusicReferences []MusicReference `json:"music_references"` // Arreglo para soportar múltiples referencias
-}

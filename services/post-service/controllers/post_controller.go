@@ -1,40 +1,14 @@
 package controllers
 
 import (
-	"github.com/gin-gonic/gin"
-	"github.com/meloop/post-service/models"
-	"github.com/meloop/post-service/services"
+	"log"
 	"net/http"
 	"strconv"
+
+	"github.com/gin-gonic/gin"
+	"github.com/meloop/post-service/messaging"
+	"github.com/meloop/post-service/services"
 )
-
-// CreatePost procesa la creación de un post con referencias musicales
-func CreatePost(c *gin.Context) {
-	var req models.CreatePostRequest
-
-	// 1. Mapear el body del request al Struct de Go
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Payload JSON inválido: " + err.Error()})
-		return
-	}
-
-	// 2. Ejecutar la validación robusta de los identificadores
-	if len(req.MusicReferences) > 0 {
-		if err := services.ValidateMusicReferences(req.MusicReferences); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error":   "Error de validación musical",
-				"details": err.Error(),
-			})
-			return
-		}
-	}
-
-	// Resultado esperado: Retornar éxito indicando que el enlace es correcto
-	c.JSON(http.StatusCreated, gin.H{
-		"message": "Publicación validada y lista para ser guardada",
-		"data":    req,
-	})
-}
 
 type PostController struct {
 	postService *services.PostService
@@ -44,9 +18,54 @@ func NewPostController(postService *services.PostService) *PostController {
 	return &PostController{postService: postService}
 }
 
-// Estructura para recibir el nuevo contenido en formato JSON
+// Estructura para recibir los datos de la nueva publicación
+type CreatePostRequest struct {
+	Content   string   `json:"content" binding:"required"`
+	MediaURLs []string `json:"media_urls"` // Opcional, si manejas imágenes
+	MusicID   string   `json:"music_id"`   // Agregado para usar el nuevo campo
+}
+
+// Estructura para recibir el nuevo contenido en formato JSON (Edición)
 type UpdatePostRequest struct {
 	Content string `json:"content" binding:"required"`
+}
+
+// CreatePost maneja la petición POST para crear una publicación y guardarla en BD
+func (ctrl *PostController) CreatePost(c *gin.Context) {
+	// 1. Obtener el ID del autor desde el token/contexto
+	authorID := c.GetString("userID")
+	if authorID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "usuario no autenticado"})
+		return
+	}
+
+	// 2. Validar el cuerpo de la petición (JSON)
+	var req CreatePostRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "datos inválidos o incompletos"})
+		return
+	}
+
+	// 3. ENVIAR A GUARDAR
+	post, err := ctrl.postService.CreatePost(c.Request.Context(), authorID, req.Content, req.MediaURLs)
+	if err != nil {
+		println("ERROR AL GUARDAR POST:", err.Error())
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "no se pudo guardar la publicación en la base de datos"})
+		return
+	}
+
+	// 4. PUBLICAR EVENTO ASÍNCRONAMENTE (RNF-05, RF-16)
+	go func() {
+		// Nota: Si tu struct de base de datos usa otro nombre para el ID (ej: IdPublicacion),
+		// cambia post.ID por el nombre correcto.
+		err := messaging.PublishPostCreated(authorID, post.ID)
+		if err != nil {
+			log.Printf("[Alerta] El post %s fue creado, pero falló la publicación en RabbitMQ: %v", post.ID, err)
+		}
+	}()
+
+	// 5. Responder 201 Created con el objeto ya guardado
+	c.JSON(http.StatusCreated, post)
 }
 
 // UpdatePost maneja la petición PUT/PATCH para editar contenido (RF-17)
@@ -54,7 +73,6 @@ func (ctrl *PostController) UpdatePost(c *gin.Context) {
 	postID := c.Param("id")
 
 	// IMPORTANTE: Obtenemos el ID del usuario directamente del contexto de Gin
-	// (Asumiendo que tu Middleware de autenticación guarda el "userID" en el contexto)
 	authorID := c.GetString("userID")
 	if authorID == "" {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "usuario no autenticado"})
@@ -156,4 +174,60 @@ func (ctrl *PostController) Search(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, posts)
+}
+
+// LikePost maneja la petición POST para dar me gusta a una publicación y emite un evento (RF-20)
+func (ctrl *PostController) LikePost(c *gin.Context) {
+	postID := c.Param("id")
+	userID := c.GetString("userID")
+
+	if userID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "usuario no autenticado"})
+		return
+	}
+
+	err := ctrl.postService.AddLike(c.Request.Context(), postID, userID)
+	if err != nil {
+		if err.Error() == "el usuario ya dio me gusta a esta publicación" {
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()}) // 409 Conflict si ya existe
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "error interno al registrar el like"})
+		return
+	}
+
+	// Emitir evento a RabbitMQ de forma asíncrona
+	go func(uID, pID string) {
+		if pubErr := messaging.PublishPostLiked(uID, pID); pubErr != nil {
+			println("ERROR: No se pudo publicar el evento de Like en RabbitMQ:", pubErr.Error())
+		}
+	}(userID, postID)
+
+	c.JSON(http.StatusOK, gin.H{"message": "like registrado correctamente"})
+}
+
+// UnlikePost maneja la petición DELETE para quitar el me gusta de una publicación y emite un evento (RF-20)
+func (ctrl *PostController) UnlikePost(c *gin.Context) {
+	postID := c.Param("id")
+	userID := c.GetString("userID")
+
+	if userID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "usuario no autenticado"})
+		return
+	}
+
+	err := ctrl.postService.RemoveLike(c.Request.Context(), postID, userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "error interno al eliminar el like"})
+		return
+	}
+
+	// Emitir evento a RabbitMQ de forma asíncrona
+	go func(uID, pID string) {
+		if pubErr := messaging.PublishPostUnliked(uID, pID); pubErr != nil {
+			println("ERROR: No se pudo publicar el evento de Unlike en RabbitMQ:", pubErr.Error())
+		}
+	}(userID, postID)
+
+	c.JSON(http.StatusOK, gin.H{"message": "like eliminado correctamente"})
 }

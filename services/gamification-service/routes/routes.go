@@ -5,11 +5,18 @@ import (
 	"github.com/meloop/gamification-service/controllers"
 )
 
-func SetupRoutes(router *gin.Engine, gamificationController *controllers.GamificationController, adminController *controllers.AdminController) {
+func SetupRoutes(
+	router *gin.Engine,
+	gamificationController *controllers.GamificationController,
+	adminController *controllers.AdminController,
+	progressController *controllers.ProgressController,
+) {
 	api := router.Group("/api/v1/gamification")
 	{
 		// Endpoint para sumar XP manualmente (simulando eventos)
 		api.POST("/xp", gamificationController.AddXP)
+
+		api.GET("/me/progress", progressController.GetProgress)
 
 		admin := api.Group("/admin")
 		admin.Use(controllers.AdminRequired())

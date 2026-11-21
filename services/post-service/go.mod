@@ -5,6 +5,7 @@ go 1.26.6
 require (
 	github.com/gin-gonic/gin v1.12.0
 	github.com/google/uuid v1.6.0
+	github.com/meloop/infrastructure v0.0.0-00010101000000-000000000000
 	github.com/meloop/services/common v0.0.0-unpublished
 	github.com/minio/minio-go/v7 v7.3.0
 	github.com/rabbitmq/amqp091-go v1.13.0

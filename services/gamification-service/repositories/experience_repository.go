@@ -67,8 +67,3 @@ func (r *ExperienceRepository) AddExperienceWithRetry(ctx context.Context, userI
 
 	return 0, fmt.Errorf("se superó el máximo de reintentos (%d): %w", maxRetries, err)
 }
-
-func (r *ExperienceRepository) AddExperience(ctx context.Context, userID string, xpToAdd int) error {
-	_, err := r.AddExperienceWithRetry(ctx, userID, xpToAdd, 3)
-	return err
-}

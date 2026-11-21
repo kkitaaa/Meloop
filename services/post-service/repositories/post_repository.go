@@ -10,6 +10,7 @@ import (
 
 var (
 	ErrPostNotFoundOrUnauthorized = errors.New("publicación no encontrada o no tienes permisos de autor")
+	ErrAlreadyLiked               = errors.New("el usuario ya dio me gusta a esta publicación")
 )
 
 // Post representa una publicación basada estrictamente en el MER
@@ -22,16 +23,18 @@ type Post struct {
 	CreatedAt     time.Time `json:"created_at"`
 }
 
-type PostRepository struct {
+// SQLPostRepository maneja la persistencia de las publicaciones
+type SQLPostRepository struct {
 	db *sql.DB
 }
 
-func NewPostRepository(db *sql.DB) *PostRepository {
-	return &PostRepository{db: db}
+// NewPostRepository crea una nueva instancia del repositorio
+func NewPostRepository(db *sql.DB) *SQLPostRepository {
+	return &SQLPostRepository{db: db}
 }
 
 // UpdatePost modifica el contenido de una publicación usando el esquema real del MER
-func (r *PostRepository) UpdatePost(ctx context.Context, postID string, authorID string, newContent string) error {
+func (r *SQLPostRepository) UpdatePost(ctx context.Context, postID string, authorID string, newContent string) error {
 	query := `
 		UPDATE publicacion 
 		SET texto = $1 
@@ -56,7 +59,7 @@ func (r *PostRepository) UpdatePost(ctx context.Context, postID string, authorID
 }
 
 // DeletePost elimina una publicación validando la autoría con el MER
-func (r *PostRepository) DeletePost(ctx context.Context, postID string, authorID string) error {
+func (r *SQLPostRepository) DeletePost(ctx context.Context, postID string, authorID string) error {
 	query := `
 		DELETE FROM publicacion 
 		WHERE id_publicacion = $1 AND id_usuario = $2
@@ -80,7 +83,7 @@ func (r *PostRepository) DeletePost(ctx context.Context, postID string, authorID
 }
 
 // GetPostByID obtiene un post por su ID
-func (r *PostRepository) GetPostByID(ctx context.Context, postID string, requesterID string) (*Post, error) {
+func (r *SQLPostRepository) GetPostByID(ctx context.Context, postID string, requesterID string) (*Post, error) {
 	query := `
 		SELECT id_publicacion, id_usuario, texto, id_cancion, url_multimedia, fecha_creacion
 		FROM publicacion
@@ -101,7 +104,7 @@ func (r *PostRepository) GetPostByID(ctx context.Context, postID string, request
 }
 
 // GetPostsByAuthor obtiene los posts de un perfil con paginación
-func (r *PostRepository) GetPostsByAuthor(ctx context.Context, authorID string, requesterID string, limit int, offset int) ([]Post, error) {
+func (r *SQLPostRepository) GetPostsByAuthor(ctx context.Context, authorID string, requesterID string, limit int, offset int) ([]Post, error) {
 	query := `
 		SELECT id_publicacion, id_usuario, texto, id_cancion, url_multimedia, fecha_creacion
 		FROM publicacion
@@ -131,7 +134,7 @@ func (r *PostRepository) GetPostsByAuthor(ctx context.Context, authorID string, 
 }
 
 // SearchPosts busca posts por texto o canción
-func (r *PostRepository) SearchPosts(ctx context.Context, searchTerm string, requesterID string, limit int, offset int) ([]Post, error) {
+func (r *SQLPostRepository) SearchPosts(ctx context.Context, searchTerm string, requesterID string, limit int, offset int) ([]Post, error) {
 	searchPattern := "%" + searchTerm + "%"
 
 	query := `
@@ -160,4 +163,70 @@ func (r *PostRepository) SearchPosts(ctx context.Context, searchTerm string, req
 		posts = []Post{}
 	}
 	return posts, nil
+}
+
+// CreatePost inserta una nueva publicación en la base de datos
+func (r *SQLPostRepository) CreatePost(ctx context.Context, authorID string, content string, urlMultimedia *string) (*Post, error) {
+	// Generamos un ID simple basado en el timestamp actual (puedes cambiarlo a UUID si tu BD lo usa)
+	newID := fmt.Sprintf("post-%d", time.Now().UnixMilli())
+
+	query := `
+		INSERT INTO publicacion (id_publicacion, id_usuario, texto, url_multimedia, fecha_creacion)
+		VALUES ($1, $2, $3, $4, NOW())
+		RETURNING id_publicacion, id_usuario, texto, url_multimedia, fecha_creacion
+	`
+	var post Post
+	err := r.db.QueryRowContext(ctx, query, newID, authorID, content, urlMultimedia).Scan(
+		&post.ID, &post.AuthorID, &post.Content, &post.UrlMultimedia, &post.CreatedAt,
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("error insertando publicación: %w", err)
+	}
+
+	return &post, nil
+}
+
+// AddLike inserta una interacción de tipo 'like' validando que no exista previamente (RF-20)
+func (r *SQLPostRepository) AddLike(ctx context.Context, postID string, userID string) error {
+	// 1. Verificamos si ya existe para evitar duplicados
+	checkQuery := `SELECT COUNT(1) FROM interaccion WHERE id_usuario = $1 AND id_publicacion = $2 AND tipo = 'like'`
+	var count int
+	if err := r.db.QueryRowContext(ctx, checkQuery, userID, postID).Scan(&count); err != nil {
+		return fmt.Errorf("error al verificar el estado del like: %w", err)
+	}
+
+	if count > 0 {
+		return ErrAlreadyLiked
+	}
+
+	// 2. Generamos un ID simple para la interacción y la insertamos
+	interaccionID := fmt.Sprintf("like-%s-%d", userID, time.Now().UnixMilli())
+
+	query := `
+		INSERT INTO interaccion (id_interaccion, id_usuario, id_publicacion, tipo, fecha_creacion)
+		VALUES ($1, $2, $3, 'like', NOW())
+	`
+
+	_, err := r.db.ExecContext(ctx, query, interaccionID, userID, postID)
+	if err != nil {
+		return fmt.Errorf("error al registrar el like: %w", err)
+	}
+
+	return nil
+}
+
+// RemoveLike elimina una interacción de tipo 'like' de la base de datos (RF-20)
+func (r *SQLPostRepository) RemoveLike(ctx context.Context, postID string, userID string) error {
+	query := `
+		DELETE FROM interaccion 
+		WHERE id_publicacion = $1 AND id_usuario = $2 AND tipo = 'like'
+	`
+
+	_, err := r.db.ExecContext(ctx, query, postID, userID)
+	if err != nil {
+		return fmt.Errorf("error al eliminar el like: %w", err)
+	}
+
+	return nil
 }

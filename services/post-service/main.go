@@ -57,9 +57,7 @@ func main() {
 		logger.Info("event_published", "event", "post.liked")
 	}
 
-	// 6. Inyectar dependencias existentes
-	sqlDB, _ := db.DB()
-
+	// 6. Inyectar dependencias de Likes y Comentarios
 	likeRepo := repositories.NewPostgresLikeRepository(db)
 	likeService := services.NewLikeService(likeRepo)
 	likeController := controllers.NewLikeController(likeService)
@@ -68,23 +66,45 @@ func main() {
 	commentService := services.NewCommentService(commentRepo)
 	commentController := controllers.NewCommentController(commentService)
 
+	// 7. Inyectar dependencias de Publicaciones (Post)
+	// Extraemos la conexión base de SQL desde GORM para inyectarla en tu SQLPostRepository
+	sqlDB, err := db.DB()
+	if err != nil {
+		log.Fatalf("Error crítico al obtener la conexión SQL: %v", err)
+	}
+
 	postRepo := repositories.NewPostRepository(sqlDB)
 	postService := services.NewPostService(postRepo)
 	postController := controllers.NewPostController(postService)
 
-	// 7. Inyectar dependencias del nuevo FEED PRINCIPAL
+	// 8. Inyectar dependencias del nuevo FEED PRINCIPAL
 	feedRepo := repositories.NewPostgresFeedRepository(db)
 	feedService := services.NewFeedService(feedRepo)
 	feedController := controllers.NewFeedController(feedService)
 
-	// 8. Configurar Rutas
+	// 9. Configurar Rutas
 	router := gin.Default()
 
-	// Rutas de módulos anteriores
+	// --- MIDDLEWARE DE PRUEBAS ---
+	// Extrae el ID del usuario desde el header para simular que pasó por el API Gateway
+	router.Use(func(c *gin.Context) {
+		userID := c.GetHeader("X-User-ID")
+		if userID != "" {
+			c.Set("userID", userID)
+		}
+		c.Next()
+	})
+	// ------------------------------
+
+	// Rutas de módulos (Mezclado: con middleware de tu rama y likeController de la rama main)
 	routes.SetupRoutes(router, likeController, commentController, postController, minioClient)
 
 	// Nueva ruta del Feed (directo en el main para no modificar el archivo routes por ahora)
 	router.GET("/v1/feed", feedController.GetMainFeed)
+
+	// Nuevas rutas para el sistema de Likes (RF-20)
+	router.POST("/v1/posts/:id/like", postController.LikePost)
+	router.DELETE("/v1/posts/:id/like", postController.UnlikePost)
 
 	// Nota: Tu puerto actual en este archivo es 8084
 	logger.Info("http_server_started", "port", "8084")
