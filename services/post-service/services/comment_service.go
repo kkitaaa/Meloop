@@ -36,6 +36,15 @@ func (s *CommentService) CreateComment(postID string, req models.CreateCommentRe
 	return s.repo.Create(comment)
 }
 
+func (s *CommentService) CreateCommentWithOutbox(postID string, req models.CreateCommentRequest, buildOutbox repositories.OutboxBuilder) (models.Comment, error) {
+	comment := models.Comment{
+		PostID:   postID,
+		AuthorID: req.AuthorID,
+		Content:  req.Content,
+	}
+	return s.repo.CreateWithOutbox(comment, buildOutbox)
+}
+
 func (s *CommentService) CreateReply(parentCommentID string, postID string, req models.CreateCommentRequest) (models.Comment, error) {
 	comment := models.Comment{
 		PostID:          postID,
@@ -44,6 +53,16 @@ func (s *CommentService) CreateReply(parentCommentID string, postID string, req 
 		ParentCommentID: &parentCommentID,
 	}
 	return s.repo.Create(comment)
+}
+
+func (s *CommentService) CreateReplyWithOutbox(parentCommentID string, postID string, req models.CreateCommentRequest, buildOutbox repositories.OutboxBuilder) (models.Comment, error) {
+	comment := models.Comment{
+		PostID:          postID,
+		AuthorID:        req.AuthorID,
+		Content:         req.Content,
+		ParentCommentID: &parentCommentID,
+	}
+	return s.repo.CreateWithOutbox(comment, buildOutbox)
 }
 
 func (s *CommentService) GetThreadedComments(postID string, cursor time.Time, limit int, excludedUserIDs []string) ([]models.Comment, error) {

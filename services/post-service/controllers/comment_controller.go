@@ -1,8 +1,8 @@
 package controllers
 
 import (
+	"encoding/json"
 	"errors"
-	"log"
 	"net/http"
 	"time"
 
@@ -16,17 +16,59 @@ import (
 
 type CommentController struct {
 	service      *services.CommentService
-	publishEvent func(messaging.CommentCreatedEvent) error
+	notifyOutbox func()
 }
 
 func NewCommentController(service *services.CommentService) *CommentController {
 	return &CommentController{
-		service:      service,
-		publishEvent: messaging.PublishCommentCreated,
+		service: service,
 	}
 }
 
-// CreateComment crea un comentario principal en una publicación y publica el evento con el autor real
+func (controller *CommentController) SetOutboxNotifier(notify func()) {
+	controller.notifyOutbox = notify
+}
+
+func buildCommentCreatedOutbox(created models.Comment, authorID, targetAuthorID, targetType, targetID string) (models.OutboxEvent, error) {
+	now := time.Now().UTC()
+	nowStr := now.Format(time.RFC3339)
+	eventID := uuid.New().String()
+
+	event := messaging.NormalizeCommentCreatedEvent(messaging.CommentCreatedEvent{
+		EventID:         eventID,
+		Event:           "comment.created",
+		ActionType:      "COMMENT",
+		CommentID:       created.ID,
+		ActorID:         authorID,
+		UserID:          authorID,
+		CommentAuthorID: authorID,
+		TargetOwnerID:   targetAuthorID,
+		TargetAuthorID:  targetAuthorID,
+		TargetType:      targetType,
+		TargetID:        targetID,
+		Timestamp:       nowStr,
+		CreatedAt:       nowStr,
+	})
+
+	payload, err := json.Marshal(event)
+	if err != nil {
+		return models.OutboxEvent{}, err
+	}
+
+	return models.OutboxEvent{
+		ID:            eventID,
+		AggregateType: "comment",
+		AggregateID:   created.ID,
+		EventType:     "comment.created",
+		RoutingKey:    "comment.created",
+		Payload:       string(payload),
+		Status:        models.OutboxStatusPending,
+		Attempts:      0,
+		NextRetryAt:   now,
+	}, nil
+}
+
+// CreateComment persiste el comentario y su evento outbox en una transacción atómica
 func (controller *CommentController) CreateComment(c *gin.Context) {
 	postID := c.Param("id")
 	authorID := c.GetString("userID")
@@ -44,7 +86,6 @@ func (controller *CommentController) CreateComment(c *gin.Context) {
 
 	request.AuthorID = authorID
 
-	// Obtener el autor real de la publicación (elimina placeholder)
 	targetAuthorID, err := controller.service.GetPostAuthorID(postID)
 	if err != nil {
 		if errors.Is(err, repositories.ErrParentPostNotFound) {
@@ -55,39 +96,22 @@ func (controller *CommentController) CreateComment(c *gin.Context) {
 		return
 	}
 
-	created, err := controller.service.CreateComment(postID, request)
+	created, err := controller.service.CreateCommentWithOutbox(postID, request, func(saved models.Comment) (models.OutboxEvent, error) {
+		return buildCommentCreatedOutbox(saved, authorID, targetAuthorID, "post", postID)
+	})
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	nowStr := time.Now().UTC().Format(time.RFC3339)
-	event := messaging.CommentCreatedEvent{
-		EventID:         uuid.New().String(),
-		Event:           "comment.created",
-		ActionType:      "COMMENT",
-		CommentID:       created.ID,
-		ActorID:         authorID,
-		UserID:          authorID,
-		CommentAuthorID: authorID,
-		TargetOwnerID:   targetAuthorID,
-		TargetAuthorID:  targetAuthorID,
-		TargetType:      "post",
-		TargetID:        postID,
-		Timestamp:       nowStr,
-		CreatedAt:       nowStr,
+	if controller.notifyOutbox != nil {
+		controller.notifyOutbox()
 	}
-
-	go func(ev messaging.CommentCreatedEvent) {
-		if err := controller.publishEvent(ev); err != nil {
-			log.Printf("[Alerta] El comentario %s fue creado, pero falló la entrega confirmada en RabbitMQ: %v", ev.CommentID, err)
-		}
-	}(event)
 
 	c.JSON(http.StatusCreated, created)
 }
 
-// CreateReply crea una respuesta asociada a un comentario y publica el evento con el autor real del comentario padre
+// CreateReply persiste la respuesta y su evento outbox en una transacción atómica
 func (controller *CommentController) CreateReply(c *gin.Context) {
 	postID := c.Param("id")
 	commentID := c.Param("commentId")
@@ -106,7 +130,6 @@ func (controller *CommentController) CreateReply(c *gin.Context) {
 
 	request.AuthorID = authorID
 
-	// Obtener el autor real del comentario padre (elimina placeholder)
 	targetAuthorID, err := controller.service.GetCommentAuthorID(commentID)
 	if err != nil {
 		if errors.Is(err, repositories.ErrParentCommentNotFound) {
@@ -117,34 +140,17 @@ func (controller *CommentController) CreateReply(c *gin.Context) {
 		return
 	}
 
-	created, err := controller.service.CreateReply(commentID, postID, request)
+	created, err := controller.service.CreateReplyWithOutbox(commentID, postID, request, func(saved models.Comment) (models.OutboxEvent, error) {
+		return buildCommentCreatedOutbox(saved, authorID, targetAuthorID, "comment", commentID)
+	})
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	nowStr := time.Now().UTC().Format(time.RFC3339)
-	event := messaging.CommentCreatedEvent{
-		EventID:         uuid.New().String(),
-		Event:           "comment.created",
-		ActionType:      "COMMENT",
-		CommentID:       created.ID,
-		ActorID:         authorID,
-		UserID:          authorID,
-		CommentAuthorID: authorID,
-		TargetOwnerID:   targetAuthorID,
-		TargetAuthorID:  targetAuthorID,
-		TargetType:      "comment",
-		TargetID:        commentID,
-		Timestamp:       nowStr,
-		CreatedAt:       nowStr,
+	if controller.notifyOutbox != nil {
+		controller.notifyOutbox()
 	}
-
-	go func(ev messaging.CommentCreatedEvent) {
-		if err := controller.publishEvent(ev); err != nil {
-			log.Printf("[Alerta] La respuesta %s fue creada, pero falló la entrega confirmada en RabbitMQ: %v", ev.CommentID, err)
-		}
-	}(event)
 
 	c.JSON(http.StatusCreated, created)
 }

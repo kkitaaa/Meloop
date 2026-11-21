@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"bytes"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -16,14 +17,31 @@ import (
 )
 
 type stubCommentRepo struct {
+	mu             sync.Mutex
 	postAuthors    map[string]string
 	commentAuthors map[string]string
+	outboxEvents   []models.OutboxEvent
 }
 
 func (s *stubCommentRepo) Create(comment models.Comment) (models.Comment, error) {
+	return s.CreateWithOutbox(comment, nil)
+}
+
+func (s *stubCommentRepo) CreateWithOutbox(comment models.Comment, buildOutbox repositories.OutboxBuilder) (models.Comment, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	comment.ID = "comment-uuid-123"
-	comment.CreatedAt = time.Now()
+	comment.CreatedAt = time.Now().UTC()
 	s.commentAuthors[comment.ID] = comment.AuthorID
+
+	if buildOutbox != nil {
+		ev, err := buildOutbox(comment)
+		if err != nil {
+			return models.Comment{}, err
+		}
+		s.outboxEvents = append(s.outboxEvents, ev)
+	}
 	return comment, nil
 }
 
@@ -51,7 +69,7 @@ func (s *stubCommentRepo) Delete(commentID, authorID string) error {
 	return nil
 }
 
-func TestCommentAndReply_PublishesRealTargetAuthorAndContract(t *testing.T) {
+func TestCommentAndReply_PersistsAtomicOutboxWithRealTargetAuthor(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	repo := &stubCommentRepo{
 		postAuthors:    map[string]string{"post-99": "author-post-owner"},
@@ -60,17 +78,10 @@ func TestCommentAndReply_PublishesRealTargetAuthorAndContract(t *testing.T) {
 	svc := services.NewCommentService(repo)
 	ctrl := NewCommentController(svc)
 
-	var mu sync.Mutex
-	var published []messaging.CommentCreatedEvent
-	done := make(chan struct{}, 2)
-
-	ctrl.publishEvent = func(ev messaging.CommentCreatedEvent) error {
-		mu.Lock()
-		published = append(published, ev)
-		mu.Unlock()
-		done <- struct{}{}
-		return nil
-	}
+	notifyCalls := 0
+	ctrl.SetOutboxNotifier(func() {
+		notifyCalls++
+	})
 
 	r := gin.New()
 	r.Use(func(c *gin.Context) {
@@ -104,21 +115,23 @@ func TestCommentAndReply_PublishesRealTargetAuthorAndContract(t *testing.T) {
 		t.Fatalf("esperado 201 en CreateReply, obtenido %d", w2.Code)
 	}
 
-	for i := 0; i < 2; i++ {
-		select {
-		case <-done:
-		case <-time.After(2 * time.Second):
-			t.Fatal("timeout esperando publicación asíncrona de eventos")
+	if notifyCalls != 2 {
+		t.Fatalf("esperadas 2 notificaciones al OutboxWorker, obtenidas %d", notifyCalls)
+	}
+
+	if len(repo.outboxEvents) != 2 {
+		t.Fatalf("esperados 2 registros en outbox_events, obtenidos %d", len(repo.outboxEvents))
+	}
+
+	for _, outboxEv := range repo.outboxEvents {
+		if outboxEv.Status != models.OutboxStatusPending || outboxEv.RoutingKey != "comment.created" {
+			t.Fatalf("estado o routing_key inválido en outbox: %+v", outboxEv)
 		}
-	}
 
-	mu.Lock()
-	defer mu.Unlock()
-	if len(published) != 2 {
-		t.Fatalf("esperados 2 eventos publicados, obtenidos %d", len(published))
-	}
-
-	for _, ev := range published {
+		var ev messaging.CommentCreatedEvent
+		if err := json.Unmarshal([]byte(outboxEv.Payload), &ev); err != nil {
+			t.Fatalf("error deserializando payload outbox: %v", err)
+		}
 		if ev.TargetAuthorID == "placeholder_post_author_id" || ev.TargetAuthorID == "placeholder_comment_author_id" {
 			t.Fatalf("se detectó placeholder en TargetAuthorID: %s", ev.TargetAuthorID)
 		}

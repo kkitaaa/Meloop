@@ -14,8 +14,11 @@ var (
 	ErrCommentNotFound       = errors.New("comentario no encontrado o sin permisos")
 )
 
+type OutboxBuilder func(created models.Comment) (models.OutboxEvent, error)
+
 type CommentRepository interface {
 	Create(comment models.Comment) (models.Comment, error)
+	CreateWithOutbox(comment models.Comment, buildOutbox OutboxBuilder) (models.Comment, error)
 	GetThreadedComments(postID string, cursor time.Time, limit int, excludedUserIDs []string) ([]models.Comment, error)
 	GetPostAuthorID(postID string) (string, error)
 	GetCommentAuthorID(commentID string) (string, error)
@@ -32,6 +35,29 @@ func NewPostgresCommentRepository(db *gorm.DB) *PostgresCommentRepository {
 
 func (r *PostgresCommentRepository) Create(comment models.Comment) (models.Comment, error) {
 	if err := r.db.Create(&comment).Error; err != nil {
+		return models.Comment{}, err
+	}
+	return comment, nil
+}
+
+// CreateWithOutbox persiste el comentario y el evento en outbox_events dentro de la misma transacción SQL
+func (r *PostgresCommentRepository) CreateWithOutbox(comment models.Comment, buildOutbox OutboxBuilder) (models.Comment, error) {
+	err := r.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&comment).Error; err != nil {
+			return err
+		}
+		if buildOutbox != nil {
+			outboxEv, err := buildOutbox(comment)
+			if err != nil {
+				return err
+			}
+			if err := tx.Create(&outboxEv).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
 		return models.Comment{}, err
 	}
 	return comment, nil

@@ -75,10 +75,11 @@ func publishWithConfirm(routingKey string, body []byte) error {
 	}
 	defer ch.Close()
 
-	// Habilitar Publisher Confirms para garantizar entrega al broker (RNF-05)
+	// Habilitar Publisher Confirms y detección de mensajes no enrutables (mandatory=true + NotifyReturn)
 	if err := ch.Confirm(false); err != nil {
 		return fmt.Errorf("error activando confirmaciones del broker: %w", err)
 	}
+	returns := ch.NotifyReturn(make(chan amqp.Return, 1))
 	confirms := ch.NotifyPublish(make(chan amqp.Confirmation, 1))
 
 	if err := ch.ExchangeDeclare(exchange, exchangeType, true, false, false, false, nil); err != nil {
@@ -92,7 +93,7 @@ func publishWithConfirm(routingKey string, body []byte) error {
 		ctx,
 		exchange,
 		routingKey,
-		false,
+		true, // mandatory=true: RabbitMQ devuelve el mensaje si no hay cola enlazada
 		false,
 		amqp.Publishing{
 			ContentType:  "application/json",
@@ -106,20 +107,31 @@ func publishWithConfirm(routingKey string, body []byte) error {
 	}
 
 	select {
+	case ret := <-returns:
+		return fmt.Errorf("mensaje %s no enrutable (sin cola enlazada): code=%d text=%s", routingKey, ret.ReplyCode, ret.ReplyText)
 	case confirm := <-confirms:
 		if !confirm.Ack {
 			return fmt.Errorf("RabbitMQ rechazó (NACK) el mensaje %s", routingKey)
 		}
-		return nil
+		// En AMQP 0-9-1 basic.return llega antes de basic.ack si el mensaje no tiene ruta
+		select {
+		case ret := <-returns:
+			return fmt.Errorf("mensaje %s no enrutable (sin cola enlazada): code=%d text=%s", routingKey, ret.ReplyCode, ret.ReplyText)
+		default:
+			return nil
+		}
 	case <-time.After(3 * time.Second):
 		return fmt.Errorf("timeout esperando confirmación (ACK) de RabbitMQ para %s", routingKey)
 	}
 }
 
-// PublishCommentCreated publica el evento con confirmaciones del broker y reintentos con backoff exponencial (RNF-05)
-func PublishCommentCreated(event CommentCreatedEvent) error {
-	logger := logging.New("post-service")
+// PublishEventBytes publica un payload JSON ya serializado (usado por el OutboxWorker)
+func PublishEventBytes(routingKey string, body []byte) error {
+	return publishWithConfirm(routingKey, body)
+}
 
+// NormalizeCommentCreatedEvent garantiza todos los alias requeridos por gamification-service
+func NormalizeCommentCreatedEvent(event CommentCreatedEvent) CommentCreatedEvent {
 	if event.Event == "" {
 		event.Event = "comment.created"
 	}
@@ -138,6 +150,16 @@ func PublishCommentCreated(event CommentCreatedEvent) error {
 	if event.Timestamp == "" {
 		event.Timestamp = event.CreatedAt
 	}
+	if event.CreatedAt == "" {
+		event.CreatedAt = event.Timestamp
+	}
+	return event
+}
+
+// PublishCommentCreated publica el evento con confirmaciones del broker, mandatory=true y reintentos
+func PublishCommentCreated(event CommentCreatedEvent) error {
+	logger := logging.New("post-service")
+	event = NormalizeCommentCreatedEvent(event)
 
 	body, err := json.Marshal(event)
 	if err != nil {
