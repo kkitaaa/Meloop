@@ -66,9 +66,12 @@ services:
       - "8082:8082"
     environment:
       MEDIA_SERVICE_URL: http://media-service:8085
+      AUTH_SERVICE_URL: http://auth-service:8083
       DATABASE_URL: ${DATABASE_URL:-postgres://postgres:postgres@host.docker.internal:5432/postgres?sslmode=disable}
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    depends_on:
+      - auth-service
     networks:
       - meloop-network
 
@@ -79,6 +82,13 @@ services:
     container_name: meloop-auth-service
     ports:
       - "8083:8083"
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgres://postgres:postgres@host.docker.internal:5432/postgres?sslmode=disable}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - redis
     networks:
       - meloop-network
 

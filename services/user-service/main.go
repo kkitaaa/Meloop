@@ -34,6 +34,7 @@ func main() {
 	notifRepo := repositories.NewNotificationConfigRepository(dbPool)
 	inventoryRepo := repositories.NewInventoryRepository(dbPool)
 	profileRepo := repositories.NewProfileRepository(dbPool)
+	userSearchRepo := repositories.NewUserSearchRepository(dbPool)
 
 	mediaVerifier := services.NewHTTPMediaVerifier(cfg.MediaServiceURL)
 
@@ -49,6 +50,7 @@ func main() {
 	notifCtrl := controllers.NewNotificationController(notifSrv)
 	inventoryCtrl := controllers.NewInventoryController(inventorySrv)
 	profileCtrl := controllers.NewProfileController(profileSrv)
+	userSearchCtrl := controllers.NewUserSearchController(services.NewUserSearchService(userSearchRepo))
 
 	router := gin.New()
 	router.Use(logging.GinMiddleware(logger))
@@ -80,6 +82,7 @@ func main() {
 		protected.GET("/me", accountCtrl.GetAccount)
 		protected.PATCH("/me/username", accountCtrl.UpdateUsername)
 		protected.POST("/me/email", accountCtrl.RequestEmailChange)
+		protected.GET("/search", userSearchCtrl.Search)
 
 		// Consulta y edición de perfil (RF-06, RF-07)
 		protected.GET("/me/profile", profileCtrl.GetOwnProfile)
@@ -111,6 +114,8 @@ func main() {
 	v1Protected := router.Group("/v1/users")
 	v1Protected.Use(controllers.AuthRequired(authClient))
 	{
+		v1Protected.GET("/search", userSearchCtrl.Search)
+
 		// Consulta y edición de perfil (RF-06, RF-07)
 		v1Protected.GET("/me/profile", profileCtrl.GetOwnProfile)
 		v1Protected.GET("/me/perfil", profileCtrl.GetOwnProfile)
