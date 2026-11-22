@@ -55,7 +55,8 @@ func (s *stubLikeRepo) CountLikes(postID string) int {
 func TestLegacyLikeRoutes_UseAuthenticatedContextAndIgnoreClientUserID(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	repo := newStubLikeRepo()
-	svc := services.NewLikeService(repo)
+	noopPublisher := func(string, string) error { return nil }
+	svc := services.NewLikeServiceWithPublishers(repo, noopPublisher, noopPublisher)
 	ctrl := NewLikeController(svc)
 
 	r := gin.New()

@@ -9,13 +9,37 @@ import (
 	"github.com/meloop/post-service/repositories"
 )
 
+type LikeEventPublisher func(userID, postID string) error
+
 type LikeService struct {
-	repository repositories.LikeRepository
+	repository     repositories.LikeRepository
+	publishLiked   LikeEventPublisher
+	publishUnliked LikeEventPublisher
 }
 
 func NewLikeService(repository repositories.LikeRepository) *LikeService {
+	return NewLikeServiceWithPublishers(
+		repository,
+		messaging.PublishPostLiked,
+		messaging.PublishPostUnliked,
+	)
+}
+
+func NewLikeServiceWithPublishers(
+	repository repositories.LikeRepository,
+	publishLiked LikeEventPublisher,
+	publishUnliked LikeEventPublisher,
+) *LikeService {
+	if publishLiked == nil {
+		publishLiked = func(string, string) error { return nil }
+	}
+	if publishUnliked == nil {
+		publishUnliked = func(string, string) error { return nil }
+	}
 	return &LikeService{
-		repository: repository,
+		repository:     repository,
+		publishLiked:   publishLiked,
+		publishUnliked: publishUnliked,
 	}
 }
 
@@ -31,7 +55,7 @@ func (s *LikeService) AddLike(postID, userID string) (*models.Like, int, error) 
 		return nil, 0, err
 	}
 
-	err = messaging.PublishPostLiked(userID, postID)
+	err = s.publishLiked(userID, postID)
 	if err != nil {
 		// Si RabbitMQ falla, deshacemos el like para evitar
 		// que quede guardado aunque la API responda error.
@@ -60,7 +84,7 @@ func (s *LikeService) RemoveLike(postID, userID string) (int, error) {
 		return 0, err
 	}
 
-	err = messaging.PublishPostUnliked(userID, postID)
+	err = s.publishUnliked(userID, postID)
 	if err != nil {
 		// Restauramos el like si no se pudo publicar el evento.
 		rollbackLike := models.Like{
