@@ -3,6 +3,7 @@ package controllers
 import (
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -22,9 +23,14 @@ func NewCommentController(service *services.CommentService) *CommentController {
 	}
 }
 
-// CreateComment crea un comentario principal en una publicación.
+// CreateComment crea un comentario principal en una publicación usando exclusivamente la identidad autenticada.
 func (controller *CommentController) CreateComment(c *gin.Context) {
 	postID := c.Param("id")
+	userID := strings.TrimSpace(c.GetString("userID"))
+	if userID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "usuario no autenticado"})
+		return
+	}
 
 	var request models.CreateCommentRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
@@ -32,10 +38,8 @@ func (controller *CommentController) CreateComment(c *gin.Context) {
 		return
 	}
 
-	if request.AuthorID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "author id is required"})
-		return
-	}
+	// Ignorar cualquier author_id enviado por el cliente y asignar el usuario autenticado
+	request.AuthorID = userID
 
 	created, err := controller.service.CreateComment(postID, request)
 	if err != nil {
@@ -50,7 +54,7 @@ func (controller *CommentController) CreateComment(c *gin.Context) {
 		event := messaging.CommentCreatedEvent{
 			EventID:         uuid.New().String(),
 			CommentID:       created.ID,
-			CommentAuthorID: request.AuthorID,
+			CommentAuthorID: userID,
 			TargetAuthorID:  targetAuthorID,
 			TargetType:      "post",
 			TargetID:        postID,
@@ -65,10 +69,15 @@ func (controller *CommentController) CreateComment(c *gin.Context) {
 	c.JSON(http.StatusCreated, created)
 }
 
-// CreateReply crea una respuesta asociada a un comentario.
+// CreateReply crea una respuesta asociada a un comentario usando exclusivamente la identidad autenticada.
 func (controller *CommentController) CreateReply(c *gin.Context) {
-	postID := c.Param("id")           // ID del post en la URL (ej: /posts/:id/comments/:commentId/replies)
-	commentID := c.Param("commentId") // Asumimos que agregas commentId a la ruta
+	postID := c.Param("id")
+	commentID := c.Param("commentId")
+	userID := strings.TrimSpace(c.GetString("userID"))
+	if userID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "usuario no autenticado"})
+		return
+	}
 
 	var request models.CreateCommentRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
@@ -76,10 +85,8 @@ func (controller *CommentController) CreateReply(c *gin.Context) {
 		return
 	}
 
-	if request.AuthorID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "author id is required"})
-		return
-	}
+	// Ignorar cualquier author_id enviado por el cliente y asignar el usuario autenticado
+	request.AuthorID = userID
 
 	created, err := controller.service.CreateReply(commentID, postID, request)
 	if err != nil {
@@ -94,7 +101,7 @@ func (controller *CommentController) CreateReply(c *gin.Context) {
 		event := messaging.CommentCreatedEvent{
 			EventID:         uuid.New().String(),
 			CommentID:       created.ID,
-			CommentAuthorID: request.AuthorID,
+			CommentAuthorID: userID,
 			TargetAuthorID:  targetAuthorID,
 			TargetType:      "comment",
 			TargetID:        commentID,
@@ -112,10 +119,10 @@ func (controller *CommentController) CreateReply(c *gin.Context) {
 // GetComments maneja la obtención del listado paginado y anidado
 func (controller *CommentController) GetComments(c *gin.Context) {
 	postID := c.Param("id")
-	requestingUserID := c.GetString("userID") // Idealmente viene del token JWT
+	requestingUserID := c.GetString("userID")
 
 	// 1. Leer parámetros de paginación
-	limit := 10 // Por defecto
+	limit := 10
 	cursorStr := c.Query("cursor")
 	var cursor time.Time
 	if cursorStr != "" {
@@ -149,11 +156,9 @@ func (controller *CommentController) GetComments(c *gin.Context) {
 		parentDTO.Replies = repliesDTO
 		responseComments = append(responseComments, parentDTO)
 
-		// El cursor será el CreatedAt del último comentario
 		nextCursor = c.CreatedAt.Format(time.RFC3339)
 	}
 
-	// Si trajimos menos del límite, ya no hay más páginas
 	if len(comments) < limit {
 		nextCursor = ""
 	}
@@ -170,10 +175,10 @@ func mapToCommentResponse(c models.Comment) models.CommentResponse {
 		ID:        c.ID,
 		Content:   c.Content,
 		CreatedAt: c.CreatedAt,
-		Likes:     0, // Placeholder para el contador real
+		Likes:     0,
 		Author: models.AuthorInfo{
 			ID:       c.AuthorID,
-			Username: c.AuthorID, // Usamos el ID directamente como nombre de usuario por ahora
+			Username: c.AuthorID,
 			Avatar:   "https://avatar.placeholder.com/150",
 		},
 	}
@@ -181,6 +186,5 @@ func mapToCommentResponse(c models.Comment) models.CommentResponse {
 
 // getExcludedUsers simula la llamada al servicio de usuarios para cumplir RF-64, RN-17, RN-05
 func getExcludedUsers(userID string) []string {
-	// Lógica futura: Llamar a UserService vía gRPC o HTTP para traer bloqueados
 	return []string{"user-bloqueado-1", "user-inactivo-2"}
 }

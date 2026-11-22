@@ -21,13 +21,6 @@ const (
 
 // slidingWindowScript ejecuta atómicamente la verificación de bloqueo, limpieza de ventana móvil de 60 min,
 // conteo, registro y renovación de TTL en Redis.
-// KEYS[1] = spam:block:<userID>
-// KEYS[2] = spam:window:<userID>
-// ARGV[1] = nowMs
-// ARGV[2] = windowMs
-// ARGV[3] = maxInteractions
-// ARGV[4] = blockMs
-// ARGV[5] = memberID
 var slidingWindowScript = redis.NewScript(`
 local blockKey = KEYS[1]
 local windowKey = KEYS[2]
@@ -114,15 +107,15 @@ func isInteractionRequest(method, rawPath string) bool {
 
 	p := strings.TrimSuffix(rawPath, "/")
 
-	// Likes / Unlikes (/v1/posts/:id/like o /posts/:postId/likes)
+	// Likes / Unlikes (/v1/posts/:id/like y ruta legacy /posts/:postId/likes)
 	if strings.HasPrefix(p, "/v1/posts/") && strings.HasSuffix(p, "/like") {
 		return true
 	}
-	if strings.HasPrefix(p, "/posts/") && strings.Contains(p, "/likes") {
+	if strings.HasPrefix(p, "/posts/") && strings.HasSuffix(p, "/likes") {
 		return true
 	}
 
-	// Comentarios y respuestas (/api/v1/posts/:id/comments y .../replies)
+	// Comentarios, respuestas y compartidos (/api/v1/posts/:id/...)
 	if method == http.MethodPost && strings.HasPrefix(p, "/api/v1/posts/") {
 		if strings.HasSuffix(p, "/comments") || strings.HasSuffix(p, "/replies") {
 			return true
@@ -153,10 +146,12 @@ func AntiSpamMiddlewareWithLimiter(limiter RateLimiter, nowFn func() time.Time) 
 			return
 		}
 
-		// 2. No contabilizar solicitudes sin identidad autenticada
+		// 2. Rechazar cualquier interacción que no tenga identidad autenticada en contexto
 		userID := strings.TrimSpace(c.GetString("userID"))
 		if userID == "" {
-			c.Next()
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+				"error": "Autenticación requerida para realizar interacciones",
+			})
 			return
 		}
 

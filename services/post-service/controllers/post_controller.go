@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/meloop/post-service/messaging"
@@ -56,8 +57,6 @@ func (ctrl *PostController) CreatePost(c *gin.Context) {
 
 	// 4. PUBLICAR EVENTO ASÍNCRONAMENTE (RNF-05, RF-16)
 	go func() {
-		// Nota: Si tu struct de base de datos usa otro nombre para el ID (ej: IdPublicacion),
-		// cambia post.ID por el nombre correcto.
 		err := messaging.PublishPostCreated(authorID, post.ID)
 		if err != nil {
 			log.Printf("[Alerta] El post %s fue creado, pero falló la publicación en RabbitMQ: %v", post.ID, err)
@@ -176,6 +175,16 @@ func (ctrl *PostController) Search(c *gin.Context) {
 	c.JSON(http.StatusOK, posts)
 }
 
+func isDuplicateLikeError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return msg == "el usuario ya dio me gusta a esta publicación" ||
+		strings.Contains(msg, "23505") ||
+		strings.Contains(msg, "duplicate key")
+}
+
 // LikePost maneja la petición POST para dar me gusta a una publicación y emite un evento (RF-20)
 func (ctrl *PostController) LikePost(c *gin.Context) {
 	postID := c.Param("id")
@@ -188,8 +197,8 @@ func (ctrl *PostController) LikePost(c *gin.Context) {
 
 	err := ctrl.postService.AddLike(c.Request.Context(), postID, userID)
 	if err != nil {
-		if err.Error() == "el usuario ya dio me gusta a esta publicación" {
-			c.JSON(http.StatusConflict, gin.H{"error": err.Error()}) // 409 Conflict si ya existe
+		if isDuplicateLikeError(err) {
+			c.JSON(http.StatusConflict, gin.H{"error": "el usuario ya dio me gusta a esta publicación"})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "error interno al registrar el like"})

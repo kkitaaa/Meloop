@@ -1,9 +1,14 @@
 package main
 
 import (
+	"bufio"
 	"context"
+	"fmt"
 	"log"
 	"os"
+	"strconv"
+	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
@@ -21,7 +26,67 @@ import (
 	"github.com/meloop/services/common/logging"
 )
 
+func loadDotEnvIfPresent(paths ...string) {
+	for _, path := range paths {
+		f, err := os.Open(path)
+		if err != nil {
+			continue
+		}
+		scanner := bufio.NewScanner(f)
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) != 2 {
+				continue
+			}
+			key := strings.TrimSpace(parts[0])
+			val := strings.Trim(strings.TrimSpace(parts[1]), `"'`)
+			if (strings.HasPrefix(key, "REDIS_") || key == "AUTH_SERVICE_URL") && os.Getenv(key) == "" {
+				_ = os.Setenv(key, val)
+			}
+		}
+		_ = f.Close()
+	}
+}
+
+func newRedisClientFromEnv() (*redis.Client, string, error) {
+	if rawURL := strings.TrimSpace(os.Getenv("REDIS_URL")); rawURL != "" {
+		opts, err := redis.ParseURL(rawURL)
+		if err != nil {
+			return nil, rawURL, fmt.Errorf("REDIS_URL inválida: %w", err)
+		}
+		return redis.NewClient(opts), opts.Addr, nil
+	}
+
+	redisAddr := strings.TrimSpace(os.Getenv("REDIS_ADDR"))
+	if redisAddr == "" {
+		redisAddr = "localhost:6379"
+	}
+	redisPassword := os.Getenv("REDIS_PASSWORD")
+
+	redisDB := 0
+	if rawDB := strings.TrimSpace(os.Getenv("REDIS_DB")); rawDB != "" {
+		parsedDB, err := strconv.Atoi(rawDB)
+		if err != nil || parsedDB < 0 {
+			return nil, redisAddr, fmt.Errorf("REDIS_DB inválido (%q): debe ser un entero >= 0", rawDB)
+		}
+		redisDB = parsedDB
+	}
+
+	client := redis.NewClient(&redis.Options{
+		Addr:     redisAddr,
+		Password: redisPassword,
+		DB:       redisDB,
+	})
+	return client, redisAddr, nil
+}
+
 func main() {
+	loadDotEnvIfPresent(".env", "../.env", "../../.env")
+
 	// 1. Inicializar el logger
 	logger := logging.New("post-service")
 	logger.Info("service_started")
@@ -79,50 +144,50 @@ func main() {
 	postService := services.NewPostService(postRepo)
 	postController := controllers.NewPostController(postService)
 
-	// 8. Inyectar dependencias del nuevo FEED PRINCIPAL
+	// 8. Inyectar dependencias del FEED PRINCIPAL
 	feedRepo := repositories.NewPostgresFeedRepository(db)
 	feedService := services.NewFeedService(feedRepo)
 	feedController := controllers.NewFeedController(feedService)
 
-	// 8.5 Inicializar conexión a Redis leyendo variables de entorno para Docker
-	redisAddr := os.Getenv("REDIS_ADDR")
-	if redisAddr == "" {
-		redisAddr = "localhost:6379"
-	}
-	redisPassword := os.Getenv("REDIS_PASSWORD")
-
-	rdb := redis.NewClient(&redis.Options{
-		Addr:     redisAddr,
-		Password: redisPassword, // Ahora lee correctamente la contraseña
-		DB:       0,
-	})
-	if _, err := rdb.Ping(context.Background()).Result(); err != nil {
-		log.Printf("Advertencia: No se pudo conectar a Redis: %v", err)
+	// 9. Inicializar y verificar Redis para el limitador anti-spam
+	rdb, redisAddr, err := newRedisClientFromEnv()
+	if err != nil {
+		log.Fatalf("Error crítico en configuración de Redis: %v", err)
 	}
 
-	// 9. Configurar Rutas y Middlewares
+	pingCtx, cancelPing := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancelPing()
+	if err := rdb.Ping(pingCtx).Err(); err != nil {
+		if strings.EqualFold(os.Getenv("REDIS_REQUIRED"), "false") {
+			log.Printf("Advertencia: Redis (%s) no disponible y REDIS_REQUIRED=false: %v", redisAddr, err)
+		} else {
+			log.Fatalf("Error crítico: Redis (%s) inaccesible o credenciales inválidas (verifica REDIS_ADDR/REDIS_PASSWORD): %v", redisAddr, err)
+		}
+	}
+
+	// 10. Inicializar validador de sesiones contra auth-service (sin confiar en X-User-ID)
+	authValidator := middlewares.NewAuthServiceTokenValidator(os.Getenv("AUTH_SERVICE_URL"))
+
+	// 11. Configurar Rutas y Middlewares
 	router := gin.Default()
 
-	// --- MIDDLEWARE DE PRUEBAS (Simula API Gateway) ---
-	router.Use(func(c *gin.Context) {
-		userID := c.GetHeader("X-User-ID")
-		if userID != "" {
-			c.Set("userID", userID)
-		}
-		c.Next()
-	})
+	// Resolver la identidad del token Bearer antes del control de cuota anti-spam
+	router.Use(middlewares.OptionalAuthMiddleware(authValidator))
 
-	// --- MIDDLEWARE ANTI-SPAM (Redis) ---
+	// Middleware Anti-Spam (Redis Lua Sliding Window)
 	router.Use(middlewares.AntiSpamMiddleware(rdb))
 
 	// Rutas de módulos
-	routes.SetupRoutes(router, likeController, commentController, postController, minioClient)
+	routes.SetupRoutes(router, likeController, commentController, postController, minioClient, authValidator)
 
-	// Nueva ruta del Feed
+	// Ruta del Feed Principal (identidad opcional ya resuelta por el middleware global)
 	router.GET("/v1/feed", feedController.GetMainFeed)
 
-	router.POST("/v1/posts/:id/like", postController.LikePost)
-	router.DELETE("/v1/posts/:id/like", postController.UnlikePost)
+	// Rutas de Likes v1 (requieren sesión autenticada)
+	requireAuth := middlewares.RequireAuthMiddleware(authValidator)
+	router.POST("/v1/posts/:id/like", requireAuth, postController.LikePost)
+	router.DELETE("/v1/posts/:id/like", requireAuth, postController.UnlikePost)
+
 	logger.Info("http_server_started", "port", "8084")
 	if err := router.Run(":8084"); err != nil {
 		log.Fatalf("Error al iniciar el servidor web: %v", err)

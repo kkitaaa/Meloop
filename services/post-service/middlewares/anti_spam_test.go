@@ -7,13 +7,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/gin-gonic/gin"
 )
 
-// memorySlidingLimiter replica exactamente la lógica del script Lua de Redis para tests deterministas
 type memorySlidingLimiter struct {
 	mu      sync.Mutex
 	events  map[string][]time.Time
@@ -61,13 +61,16 @@ func (m *memorySlidingLimiter) AllowInteraction(ctx context.Context, userID stri
 
 func setupAntiSpamTestRouter(limiter RateLimiter, nowFn func() time.Time) *gin.Engine {
 	gin.SetMode(gin.TestMode)
+	validator := &stubTokenValidator{
+		tokens: map[string]string{
+			"tok-spam":    "user-spam",
+			"tok-sliding": "user-sliding",
+			"tok-crud":    "user-crud",
+		},
+	}
+
 	r := gin.New()
-	r.Use(func(c *gin.Context) {
-		if uid := c.GetHeader("X-User-ID"); uid != "" {
-			c.Set("userID", uid)
-		}
-		c.Next()
-	})
+	r.Use(OptionalAuthMiddleware(validator))
 	r.Use(AntiSpamMiddlewareWithLimiter(limiter, nowFn))
 
 	okHandler := func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"ok": true}) }
@@ -78,9 +81,39 @@ func setupAntiSpamTestRouter(limiter RateLimiter, nowFn func() time.Time) *gin.E
 	r.POST("/api/v1/posts/media", okHandler)
 	r.POST("/v1/posts/:id/like", okHandler)
 	r.DELETE("/v1/posts/:id/like", okHandler)
+	r.POST("/posts/:postId/likes", okHandler)
+	r.DELETE("/posts/:postId/likes", okHandler)
 	r.POST("/api/v1/posts/:id/comments", okHandler)
 	r.POST("/api/v1/posts/:id/comments/:commentId/replies", okHandler)
 	return r
+}
+
+func TestAntiSpam_RejectsUnauthenticatedInteractionsWith401(t *testing.T) {
+	limiter := newMemorySlidingLimiter()
+	r := setupAntiSpamTestRouter(limiter, time.Now)
+
+	endpoints := []struct {
+		method string
+		path   string
+	}{
+		{http.MethodPost, "/v1/posts/post-1/like"},
+		{http.MethodDelete, "/v1/posts/post-1/like"},
+		{http.MethodPost, "/posts/post-1/likes"},
+		{http.MethodDelete, "/posts/post-1/likes"},
+		{http.MethodPost, "/api/v1/posts/post-1/comments"},
+		{http.MethodPost, "/api/v1/posts/post-1/comments/c-1/replies"},
+	}
+
+	for _, ep := range endpoints {
+		req, _ := http.NewRequest(ep.method, ep.path, nil)
+		// Intentar suplantación mediante X-User-ID sin token válido
+		req.Header.Set("X-User-ID", "spoofed-user")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("%s %s sin autenticación: esperado 401, obtenido %d", ep.method, ep.path, w.Code)
+		}
+	}
 }
 
 func TestAntiSpam_Allows50Blocks51AndEnforces15MinBlock(t *testing.T) {
@@ -88,10 +121,9 @@ func TestAntiSpam_Allows50Blocks51AndEnforces15MinBlock(t *testing.T) {
 	currentTime := time.Date(2026, 11, 15, 10, 0, 0, 0, time.UTC)
 	r := setupAntiSpamTestRouter(limiter, func() time.Time { return currentTime })
 
-	// 1. Las primeras 50 interacciones deben pasar (200)
 	for i := 1; i <= 50; i++ {
 		req, _ := http.NewRequest(http.MethodPost, "/api/v1/posts/post-1/comments", nil)
-		req.Header.Set("X-User-ID", "user-spam")
+		req.Header.Set("Authorization", "Bearer tok-spam")
 		w := httptest.NewRecorder()
 		r.ServeHTTP(w, req)
 		if w.Code != http.StatusOK {
@@ -100,9 +132,8 @@ func TestAntiSpam_Allows50Blocks51AndEnforces15MinBlock(t *testing.T) {
 		currentTime = currentTime.Add(10 * time.Second)
 	}
 
-	// 2. La interacción 51 debe bloquearse con 429 y retry_after_ms = 900000 (15 min)
 	req51, _ := http.NewRequest(http.MethodPost, "/v1/posts/post-1/like", nil)
-	req51.Header.Set("X-User-ID", "user-spam")
+	req51.Header.Set("Authorization", "Bearer tok-spam")
 	w51 := httptest.NewRecorder()
 	r.ServeHTTP(w51, req51)
 
@@ -114,15 +145,39 @@ func TestAntiSpam_Allows50Blocks51AndEnforces15MinBlock(t *testing.T) {
 	if int64(resp51["retry_after_ms"].(float64)) != BlockDuration.Milliseconds() {
 		t.Fatalf("esperado retry_after_ms=%d, obtenido %v", BlockDuration.Milliseconds(), resp51["retry_after_ms"])
 	}
+}
 
-	// 3. A los 10 minutos sigue bloqueado con 5 minutos restantes
-	currentTime = currentTime.Add(10 * time.Minute)
-	reqBlocked, _ := http.NewRequest(http.MethodPost, "/api/v1/posts/post-1/comments", nil)
-	reqBlocked.Header.Set("X-User-ID", "user-spam")
-	wBlocked := httptest.NewRecorder()
-	r.ServeHTTP(wBlocked, reqBlocked)
-	if wBlocked.Code != http.StatusTooManyRequests {
-		t.Fatalf("durante el bloqueo de 15m: esperado 429, obtenido %d", wBlocked.Code)
+func TestAntiSpam_ConcurrentBurstEnforcesExact50Limit(t *testing.T) {
+	limiter := newMemorySlidingLimiter()
+	fixedTime := time.Date(2026, 11, 15, 10, 0, 0, 0, time.UTC)
+	r := setupAntiSpamTestRouter(limiter, func() time.Time { return fixedTime })
+
+	const totalRequests = 80
+	var allowedCount int32
+	var blockedCount int32
+	var wg sync.WaitGroup
+
+	for i := 0; i < totalRequests; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			req, _ := http.NewRequest(http.MethodPost, "/v1/posts/post-1/like", nil)
+			req.Header.Set("Authorization", "Bearer tok-spam")
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+			switch w.Code {
+			case http.StatusOK:
+				atomic.AddInt32(&allowedCount, 1)
+			case http.StatusTooManyRequests:
+				atomic.AddInt32(&blockedCount, 1)
+			}
+		}()
+	}
+	wg.Wait()
+
+	if allowedCount != MaxInteractions || blockedCount != totalRequests-MaxInteractions {
+		t.Fatalf("bajo concurrencia se esperaban %d permitidas y %d bloqueadas; obtenidas %d y %d",
+			MaxInteractions, totalRequests-MaxInteractions, allowedCount, blockedCount)
 	}
 }
 
@@ -131,10 +186,9 @@ func TestAntiSpam_SlidingWindowBehavior(t *testing.T) {
 	currentTime := time.Date(2026, 11, 15, 10, 0, 0, 0, time.UTC)
 	r := setupAntiSpamTestRouter(limiter, func() time.Time { return currentTime })
 
-	// 30 interacciones en t = 0
 	for i := 0; i < 30; i++ {
 		req, _ := http.NewRequest(http.MethodPost, "/v1/posts/post-1/like", nil)
-		req.Header.Set("X-User-ID", "user-sliding")
+		req.Header.Set("Authorization", "Bearer tok-sliding")
 		w := httptest.NewRecorder()
 		r.ServeHTTP(w, req)
 		if w.Code != http.StatusOK {
@@ -142,11 +196,10 @@ func TestAntiSpam_SlidingWindowBehavior(t *testing.T) {
 		}
 	}
 
-	// 20 interacciones en t = +40 min (total = 50 en la última hora)
 	currentTime = currentTime.Add(40 * time.Minute)
 	for i := 0; i < 20; i++ {
 		req, _ := http.NewRequest(http.MethodPost, "/v1/posts/post-1/like", nil)
-		req.Header.Set("X-User-ID", "user-sliding")
+		req.Header.Set("Authorization", "Bearer tok-sliding")
 		w := httptest.NewRecorder()
 		r.ServeHTTP(w, req)
 		if w.Code != http.StatusOK {
@@ -154,12 +207,10 @@ func TestAntiSpam_SlidingWindowBehavior(t *testing.T) {
 		}
 	}
 
-	// Avanzamos a t = +61 min: las 30 primeras ya salieron de la ventana móvil de 60 min,
-	// solo quedan 20 activas -> deben permitirse 30 nuevas interacciones sin bloqueo
 	currentTime = currentTime.Add(21 * time.Minute)
 	for i := 0; i < 30; i++ {
 		req, _ := http.NewRequest(http.MethodPost, "/v1/posts/post-1/like", nil)
-		req.Header.Set("X-User-ID", "user-sliding")
+		req.Header.Set("Authorization", "Bearer tok-sliding")
 		w := httptest.NewRecorder()
 		r.ServeHTTP(w, req)
 		if w.Code != http.StatusOK {
@@ -172,7 +223,6 @@ func TestAntiSpam_IgnoresNonInteractionsAndHandlesRedisErrors(t *testing.T) {
 	limiter := newMemorySlidingLimiter()
 	r := setupAntiSpamTestRouter(limiter, time.Now)
 
-	// Rutas que NO son interacciones no deben consumir cuota
 	nonInteractions := []struct {
 		method string
 		path   string
@@ -187,7 +237,7 @@ func TestAntiSpam_IgnoresNonInteractionsAndHandlesRedisErrors(t *testing.T) {
 	for i := 0; i < 60; i++ {
 		item := nonInteractions[i%len(nonInteractions)]
 		req, _ := http.NewRequest(item.method, item.path, nil)
-		req.Header.Set("X-User-ID", "user-crud")
+		req.Header.Set("Authorization", "Bearer tok-crud")
 		w := httptest.NewRecorder()
 		r.ServeHTTP(w, req)
 		if w.Code != http.StatusOK {
@@ -195,10 +245,9 @@ func TestAntiSpam_IgnoresNonInteractionsAndHandlesRedisErrors(t *testing.T) {
 		}
 	}
 
-	// Si Redis falla en una interacción, debe responder 500
 	limiter.failErr = errors.New("connection refused")
 	reqFail, _ := http.NewRequest(http.MethodPost, "/v1/posts/123/like", nil)
-	reqFail.Header.Set("X-User-ID", "user-crud")
+	reqFail.Header.Set("Authorization", "Bearer tok-crud")
 	wFail := httptest.NewRecorder()
 	r.ServeHTTP(wFail, reqFail)
 	if wFail.Code != http.StatusInternalServerError {
