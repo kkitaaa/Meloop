@@ -8,28 +8,8 @@ on:
 
 jobs:
   go:
-    name: Go tests
+    name: Go tests (all modules)
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        service:
-          - api-gateway
-          - auth-service
-          - chat-service
-          - common
-          - gamification-service
-          - media-service
-          - moderation-service
-          - music-service
-          - notification-service
-          - post-service
-          - recommendation-service
-          - social-service
-          - test-service
-          - user-service
-    defaults:
-      run:
-        working-directory: services/${{ matrix.service }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -38,8 +18,31 @@ jobs:
         with:
           go-version: '1.27'
           cache: true
-          cache-dependency-path: services/${{ matrix.service }}/go.mod
-      - name: Check formatting
-        run: test -z "$(gofmt -l .)"
-      - name: Run tests
-        run: go test ./...
+          cache-dependency-path: |
+            services/**/go.mod
+            services/**/go.sum
+      - name: Check formatting and run tests for every module
+        shell: bash
+        run: |
+          failed=0
+          module_count=0
+          for module in services/*/; do
+            if [ -f "${module}go.mod" ]; then
+              module_count=$((module_count + 1))
+              echo "::group::${module%/}"
+              unformatted=$(gofmt -l "$module")
+              if [ -n "$unformatted" ]; then
+                echo "$unformatted"
+                failed=1
+              fi
+              if ! (cd "$module" && go test ./...); then
+                failed=1
+              fi
+              echo "::endgroup::"
+            fi
+          done
+          if [ "$module_count" -eq 0 ]; then
+            echo "::error::No Go modules found under services/"
+            failed=1
+          fi
+          exit "$failed"

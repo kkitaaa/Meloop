@@ -37,4 +37,21 @@ func SetupRoutes(router *gin.Engine) {
 	router.Any("/v1/users/*any", controllers.ProxyToService("USER_SERVICE_URL", "http://localhost:8082", ""))
 	router.Any("/v1/media", controllers.ProxyToService("MEDIA_SERVICE_URL", "http://localhost:8085", ""))
 	router.Any("/v1/media/*any", controllers.ProxyToService("MEDIA_SERVICE_URL", "http://localhost:8085", ""))
+
+	// Enrutar peticiones de gamificación
+	router.Any("/api/v1/gamification",
+		controllers.ProxyToService(
+			"GAMIFICATION_SERVICE_URL",
+			"http://gamification-service.student-amanda-garcia-4679dc667f08.svc.cluster.local:8089",
+			"",
+		),
+	)
+
+	router.Any("/api/v1/gamification/*any",
+		controllers.ProxyToService(
+			"GAMIFICATION_SERVICE_URL",
+			"http://gamification-service.student-amanda-garcia-4679dc667f08.svc.cluster.local:8089",
+			"",
+		),
+	)
 }
