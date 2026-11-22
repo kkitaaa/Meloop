@@ -50,6 +50,20 @@ func ProxyToService(targetEnvVar string, defaultTarget string, stripPrefix strin
 	return func(c *gin.Context) {
 		originalPath := c.Request.URL.Path
 
+		c.Request.Header.Del("X-User-ID")
+		c.Request.Header.Del("X-User-Id")
+		c.Request.Header.Del("X-User-Role")
+		if userID, exists := c.Get(ContextUserIDKey); exists {
+			if value, ok := userID.(string); ok && strings.TrimSpace(value) != "" {
+				c.Request.Header.Set("X-User-ID", strings.TrimSpace(value))
+			}
+		}
+		if role, exists := c.Get(ContextUserRoleKey); exists {
+			if value, ok := role.(string); ok && strings.TrimSpace(value) != "" {
+				c.Request.Header.Set("X-User-Role", strings.TrimSpace(value))
+			}
+		}
+
 		// Recortar prefijo si está configurado
 		if stripPrefix != "" && strings.HasPrefix(originalPath, stripPrefix) {
 			c.Request.URL.Path = strings.TrimPrefix(originalPath, stripPrefix)
