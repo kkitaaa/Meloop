@@ -6,6 +6,7 @@ import "os"
 type Config struct {
 	DatabaseURL     string
 	Port            string
+	AuthServiceURL  string
 	MediaServiceURL string
 }
 
@@ -21,6 +22,11 @@ func Load() *Config {
 		port = "8082"
 	}
 
+	authServiceURL := os.Getenv("AUTH_SERVICE_URL")
+	if authServiceURL == "" {
+		authServiceURL = "http://localhost:8083"
+	}
+
 	mediaServiceURL := os.Getenv("MEDIA_SERVICE_URL")
 	if mediaServiceURL == "" {
 		mediaServiceURL = "http://localhost:8085"
@@ -29,6 +35,7 @@ func Load() *Config {
 	return &Config{
 		DatabaseURL:     dbURL,
 		Port:            port,
+		AuthServiceURL:  authServiceURL,
 		MediaServiceURL: mediaServiceURL,
 	}
 }

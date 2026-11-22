@@ -22,13 +22,14 @@ func main() {
 
 	dbPool, err := repositories.InitDB(ctx, cfg.DatabaseURL)
 	if err != nil {
-		logger.Warn("database_connection_failed", "error", err, "url", cfg.DatabaseURL)
+		logger.Warn("database_connection_failed", "component", "postgres")
 	} else {
 		defer dbPool.Close()
-		logger.Info("database_connected", "url", cfg.DatabaseURL)
+		logger.Info("database_connected", "component", "postgres")
 	}
 
 	userRepo := repositories.NewUserRepository(dbPool)
+	authClient := services.NewAuthClient(cfg.AuthServiceURL)
 	privacyRepo := repositories.NewPrivacyRepository(dbPool)
 	notifRepo := repositories.NewNotificationConfigRepository(dbPool)
 	inventoryRepo := repositories.NewInventoryRepository(dbPool)
@@ -59,10 +60,10 @@ func main() {
 
 	// Rutas protegidas de gestión de cuenta (RF-05, RF-08, RF-09)
 	protected := router.Group("/users")
-	protected.Use(controllers.AuthRequired())
+	protected.Use(controllers.AuthRequired(authClient))
 	{
 		adminRoutes := protected.Group("/admin")
-		adminRoutes.Use(controllers.AdminRequired())
+		adminRoutes.Use(controllers.AdminRequired(userRepo))
 		{
 			adminRoutes.GET("/users", adminCtrl.ListUsers)
 			adminRoutes.PATCH("/users/:id/suspend", adminCtrl.SuspendUser)
@@ -108,7 +109,7 @@ func main() {
 
 	// Rutas protegidas versionadas v1 bajo /v1/users (RF-07, RF-08, RF-09)
 	v1Protected := router.Group("/v1/users")
-	v1Protected.Use(controllers.AuthRequired())
+	v1Protected.Use(controllers.AuthRequired(authClient))
 	{
 		// Consulta y edición de perfil (RF-06, RF-07)
 		v1Protected.GET("/me/profile", profileCtrl.GetOwnProfile)
