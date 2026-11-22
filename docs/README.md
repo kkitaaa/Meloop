@@ -19,7 +19,8 @@ docker compose --profile dev up api-gateway swagger-ui
 Abrir [http://localhost:8090](http://localhost:8090). La especificación se
 monta desde el archivo fuente del Gateway. El perfil `dev` evita publicar la UI
 como parte de un despliegue normal. Algunas rutas siguen sin destino en Compose
-(Social y Recomendaciones) y no pueden probarse con esa configuración.
+(Publicaciones, Música, Chat, Notificaciones generales y Gamificación) y no
+pueden probarse hasta que sus microservicios se incorporen al despliegue.
 
 ## Validar el contrato
 

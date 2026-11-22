@@ -26,24 +26,12 @@ ni rutas para Publicaciones, Música, Chat, Notificaciones generales o
 Gamificación. Las preferencias de notificación y el inventario existentes son
 operaciones del prefijo de Usuarios.
 
-## Compatibilidad de seguridad pendiente
+## Seguridad y propagación de identidad
 
-El proxy reenvía `Authorization` pero no autentica por sí mismo. En su estado
-actual, `user-service` y `social-service` esperan `X-User-ID` (y algunas rutas
-administrativas `X-User-Role`), mientras que `auth-service` emite
-`session_token`. El contrato declara Bearer/JWT como objetivo, pero esa
-integración debe completarse antes de considerar operativas las pruebas
-protegidas de Swagger UI.
+El Gateway valida las peticiones protegidas de `/users`, `/friends`,
+`/recommendations` y `/media` llamando a `GET /auth/validate` con el Bearer
+`session_token`. Antes del proxy elimina `X-User-ID`, `X-User-Id` y
+`X-User-Role`, y solo propaga la identidad devuelta por Auth.
 
 El Gateway permite CORS únicamente desde `http://localhost:8090` para habilitar
 el botón “Try it out” de Swagger UI en desarrollo.
-
-La especificación marca las rutas protegidas con Bearer y `x-required-roles`;
-esto aún no está aplicado uniformemente por los servicios. En particular,
-`GET/POST /users`, las verificaciones de Media, Social y Recomendaciones no
-validan hoy ese esquema de forma consistente.
-
-Además, el Compose raíz no define `social-service` ni
-`recommendation-service`, y el Gateway no configura sus URLs en ese Compose.
-Esas rutas están registradas en el código, pero no son ejercitables con la
-configuración Compose actual.
