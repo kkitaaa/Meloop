@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"mime/multipart"
+	"net/url"
 	"regexp"
 	"strings"
 
@@ -46,6 +47,29 @@ func ValidateMusicReferences(refs []models.MusicReference) error {
 		}
 	}
 	return nil
+}
+
+// ValidateClientMediaURL valida URLs enviadas en JSON: permite enlaces externos o claves propias de MinIO
+func ValidateClientMediaURL(rawURL string, authorID string, minioHost string) (string, error) {
+	trimmed := strings.TrimSpace(rawURL)
+	parsed, err := url.ParseRequestURI(trimmed)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || strings.TrimSpace(parsed.Host) == "" {
+		return "", fmt.Errorf("%w: la URL multimedia no es válida", ErrInvalidPostInput)
+	}
+
+	cleanHost := strings.TrimSpace(minioHost)
+	if cleanHost != "" && strings.EqualFold(parsed.Host, cleanHost) {
+		if _, ok := ExtractOwnedMinioObjectKey(trimmed, authorID, cleanHost); !ok {
+			return "", fmt.Errorf("%w: %v", ErrInvalidPostInput, ErrUnauthorizedMediaAccess)
+		}
+		return trimmed, nil
+	}
+
+	if cleanHost == "" && strings.Contains(parsed.Path, "/"+bucketName+"/") {
+		return "", fmt.Errorf("%w: %v", ErrInvalidPostInput, ErrUnauthorizedMediaAccess)
+	}
+
+	return trimmed, nil
 }
 
 // CreatePostInput representa la entrada validada desde el controlador
@@ -99,7 +123,7 @@ func (s *PostService) CreatePost(ctx context.Context, input CreatePostInput) (*r
 		}
 	}
 
-	// 3. Subir archivo a MinIO si viene en la petición
+	// 3. Subir archivo a MinIO si viene en la petición o validar URL enviada por el cliente
 	var finalMediaURL *string
 	var uploadedInThisRequest string
 
@@ -108,9 +132,8 @@ func (s *PostService) CreatePost(ctx context.Context, input CreatePostInput) (*r
 			log.Printf("[CreatePost] Almacenamiento multimedia no configurado")
 			return nil, ErrInternalPostCreation
 		}
-		uploadedURL, err := s.storage.Upload(ctx, input.MediaFile)
+		uploadedURL, err := s.storage.Upload(ctx, input.AuthorID, input.MediaFile)
 		if err != nil {
-			// Si el error es de formato o tamaño inválido, se clasifica como 400
 			errMsg := err.Error()
 			if strings.Contains(errMsg, "formato no soportado") || strings.Contains(errMsg, "supera el tamaño") {
 				return nil, fmt.Errorf("%w: %v", ErrInvalidPostInput, err)
@@ -121,8 +144,15 @@ func (s *PostService) CreatePost(ctx context.Context, input CreatePostInput) (*r
 		uploadedInThisRequest = uploadedURL
 		finalMediaURL = &uploadedURL
 	} else if hasMediaURL {
-		url := strings.TrimSpace(input.MediaURLs[0])
-		finalMediaURL = &url
+		minioHost := ""
+		if s.storage != nil {
+			minioHost = s.storage.EndpointHost()
+		}
+		validatedURL, err := ValidateClientMediaURL(input.MediaURLs[0], input.AuthorID, minioHost)
+		if err != nil {
+			return nil, err
+		}
+		finalMediaURL = &validatedURL
 	}
 
 	// 4. Insertar en PostgreSQL dentro de una transacción
@@ -135,9 +165,9 @@ func (s *PostService) CreatePost(ctx context.Context, input CreatePostInput) (*r
 	if err != nil {
 		log.Printf("[CreatePost] Falló inserción transaccional en PostgreSQL: %v", err)
 
-		// 5. Compensación: eliminar de MinIO el objeto recién subido para no dejar archivos huérfanos
+		// 5. Compensación: eliminar de MinIO el objeto recién subido por este usuario para no dejar huérfanos
 		if uploadedInThisRequest != "" && s.storage != nil {
-			if compErr := s.storage.Delete(ctx, uploadedInThisRequest); compErr != nil {
+			if compErr := s.storage.Delete(ctx, input.AuthorID, uploadedInThisRequest); compErr != nil {
 				log.Printf("[CreatePost] Error en compensación MinIO (%s): %v", uploadedInThisRequest, compErr)
 			}
 		}
@@ -156,7 +186,7 @@ func (s *PostService) EditPost(ctx context.Context, postID string, authorID stri
 	return s.repo.UpdatePost(ctx, postID, authorID, newContent)
 }
 
-// DeletePost elimina la publicación y limpia su archivo en MinIO (RF-18)
+// DeletePost elimina la publicación y limpia su archivo en MinIO solo si pertenece al autor (RF-18)
 func (s *PostService) DeletePost(ctx context.Context, postID string, authorID string) error {
 	mediaURL, err := s.repo.DeletePost(ctx, postID, authorID)
 	if err != nil {
@@ -164,7 +194,7 @@ func (s *PostService) DeletePost(ctx context.Context, postID string, authorID st
 	}
 
 	if mediaURL != "" && s.storage != nil {
-		if delErr := s.storage.Delete(ctx, mediaURL); delErr != nil {
+		if delErr := s.storage.Delete(ctx, authorID, mediaURL); delErr != nil {
 			log.Printf("[DeletePost] Post %s borrado en BD, fallo limpieza MinIO (%s): %v", postID, mediaURL, delErr)
 		}
 	}

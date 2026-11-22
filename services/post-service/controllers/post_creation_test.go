@@ -19,19 +19,25 @@ import (
 )
 
 type fakeMediaStorage struct {
-	uploaded []string
-	deleted  []string
+	uploaded      []string
+	deleted       []string
+	deletedOwners []string
 }
 
-func (f *fakeMediaStorage) Upload(ctx context.Context, file *multipart.FileHeader) (string, error) {
-	url := "http://localhost:9000/meloop-media/test-uuid-" + file.Filename
+func (f *fakeMediaStorage) Upload(ctx context.Context, ownerID string, file *multipart.FileHeader) (string, error) {
+	url := "http://localhost:9000/meloop-media/users/" + ownerID + "/550e8400-e29b-41d4-a716-446655440000-" + file.Filename
 	f.uploaded = append(f.uploaded, url)
 	return url, nil
 }
 
-func (f *fakeMediaStorage) Delete(ctx context.Context, mediaURL string) error {
+func (f *fakeMediaStorage) Delete(ctx context.Context, ownerID string, mediaURL string) error {
 	f.deleted = append(f.deleted, mediaURL)
+	f.deletedOwners = append(f.deletedOwners, ownerID)
 	return nil
+}
+
+func (f *fakeMediaStorage) EndpointHost() string {
+	return "localhost:9000"
 }
 
 type fakePostRepo struct {
@@ -212,5 +218,8 @@ func TestCreatePost_LifecycleAndCompensation(t *testing.T) {
 	}
 	if len(storage.deleted) != 1 || storage.deleted[0] != storage.uploaded[1] {
 		t.Fatalf("compensación fallida: esperado borrado de %s, borrados=%v", storage.uploaded[1], storage.deleted)
+	}
+	if len(storage.deletedOwners) != 1 || storage.deletedOwners[0] != "real-user-1" {
+		t.Fatalf("compensación fallida: esperado ownerID 'real-user-1', obtenido=%v", storage.deletedOwners)
 	}
 }
