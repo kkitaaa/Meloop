@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/meloop/services/common/httpresponse"
 	"github.com/meloop/services/common/logging"
+	"github.com/meloop/social-service/client"
 	"github.com/meloop/social-service/config"
 	"github.com/meloop/social-service/controllers"
 	"github.com/meloop/social-service/messaging"
@@ -30,10 +31,11 @@ func main() {
 	compatRepository := repositories.NewCompatibilityRepository(dbPool)
 	service := services.NewFriendshipService(repository, messaging.NewPublisher(cfg.RabbitMQURL), compatRepository)
 	controller := controllers.NewFriendshipController(service)
+	authClient := client.NewAuthClient(cfg.AuthServiceURL)
 	router := gin.New()
 	router.Use(logging.GinMiddleware(logger))
 	router.Use(httpresponse.GinRecoveryWithLogger(logger))
-	routes.SetupRoutes(router, controller)
+	routes.SetupRoutes(router, controller, authClient)
 
 	logger.Info("service_listening", "port", cfg.Port)
 	if err := router.Run(":" + cfg.Port); err != nil {

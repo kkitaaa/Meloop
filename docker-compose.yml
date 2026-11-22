@@ -31,6 +31,7 @@ services:
       TEST_SERVICE_URL: http://test-service:8081
       USER_SERVICE_URL: http://user-service:8082
       AUTH_SERVICE_URL: http://auth-service:8083
+      SOCIAL_SERVICE_URL: http://social-service:8086
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/
       MINIO_ENDPOINT: http://minio:9000
@@ -40,6 +41,7 @@ services:
       - test-service
       - user-service
       - auth-service
+      - social-service
       - media-service
       - redis
       - rabbitmq
@@ -79,6 +81,35 @@ services:
     container_name: meloop-auth-service
     ports:
       - "8083:8083"
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+    depends_on:
+      - redis
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - meloop-network
+
+  social-service:
+    build:
+      context: .
+      dockerfile: services/social-service/Dockerfile
+    container_name: meloop-social-service
+    ports:
+      - "8086:8086"
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/
+      AUTH_SERVICE_URL: http://auth-service:8083
+      SOCIAL_SERVICE_PORT: 8086
+    depends_on:
+      - auth-service
+      - rabbitmq
+      - redis
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - meloop-network
 

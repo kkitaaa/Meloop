@@ -18,6 +18,8 @@ type friendshipRepositoryFake struct {
 	removeFriendErr   error
 	getProfileErr     error
 	mutualQuery       models.MutualFriendsQuery
+	mutualPageIDs     []string
+	mutualHasMore     bool
 	mutualProfiles    []models.MutualFriend
 	blockUserErr      error
 	validateErr       error
@@ -96,6 +98,10 @@ func (f *friendshipRepositoryFake) GetFriendProfile(ctx context.Context, userID,
 
 func (f *friendshipRepositoryFake) GetMutualFriendsQuery(context.Context, string, string) (models.MutualFriendsQuery, error) {
 	return f.mutualQuery, nil
+}
+
+func (f *friendshipRepositoryFake) GetMutualFriendsPage(context.Context, string, string, string, int) ([]string, bool, error) {
+	return f.mutualPageIDs, f.mutualHasMore, nil
 }
 
 func (f *friendshipRepositoryFake) ListMutualFriendProfiles(context.Context, []string) ([]models.MutualFriend, error) {
@@ -267,6 +273,14 @@ func TestFriendshipServiceActionsEnforceAuthorizationAndState(t *testing.T) {
 				t.Fatalf("error = %v, want %v", err, test.err)
 			}
 		})
+	}
+}
+
+func TestFriendshipServiceRejectsMutualFriendsLimitAboveMaximum(t *testing.T) {
+	service := NewFriendshipService(&friendshipRepositoryFake{}, nil)
+	_, err := service.GetMutualFriends(context.Background(), "viewer", "target", MaxMutualFriendsLimit+1, "")
+	if !errors.Is(err, ErrInvalidPagination) {
+		t.Fatalf("error = %v, want %v", err, ErrInvalidPagination)
 	}
 }
 

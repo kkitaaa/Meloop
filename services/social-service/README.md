@@ -51,7 +51,16 @@ bloqueados con el usuario consultante. La visibilidad de la lista se configura m
 en la configuración existente de privacidad. No interpreta `USUARIO.suspendido` como inactividad RN-05, porque
 el repositorio no define esa equivalencia; esa regla queda pendiente de aclaración.
 
-Las rutas protegidas de social-service siguen usando el middleware `AuthRequired` existente: acepta un `user_id`
-ya presente en el contexto o un encabezado `X-User-ID` no vacío. Ese middleware no valida JWT ni prueba que el
-encabezado provenga de una fuente confiable; el gateway sólo hace proxy. Por ello, este endpoint no debe
-considerarse protegido por validación de tokens hasta que se integre una autenticación confiable.
+Las rutas protegidas de social-service requieren `Authorization: Bearer <token>` y validan la sesión mediante
+`GET /auth/validate` de auth-service. La identidad del contexto se toma únicamente de la respuesta validada;
+`X-User-ID` no se acepta como prueba de identidad. Configura `AUTH_SERVICE_URL` con la URL interna de auth-service
+(por defecto `http://localhost:8083`). Si auth-service no está disponible, las rutas protegidas responden
+`503 Service Unavailable` y no permiten el acceso.
+
+RN-05 considera inactiva una cuenta sin inicio de sesión, publicación ni interacción durante seis meses consecutivos.
+
+El filtrado actual excluye acciones de moderación BAN, SUSPENSION, INACTIVO y DESACTIVADO, pero no implementa la inactividad temporal de RN-05.
+
+USUARIO.suspendido no equivale a inactividad.
+
+La aplicación de RN-05 queda pendiente de disponer del estado de actividad gestionado conforme a RF-60.

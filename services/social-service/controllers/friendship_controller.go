@@ -117,8 +117,8 @@ func (ctrl *FriendshipController) GetMutualFriends(c *gin.Context) {
 	limit := 20
 	if rawLimit := strings.TrimSpace(c.Query("limit")); rawLimit != "" {
 		parsedLimit, err := strconv.Atoi(rawLimit)
-		if err != nil || parsedLimit <= 0 {
-			httpresponse.BadRequestGin(c, "El parámetro limit debe ser un entero positivo")
+		if err != nil || parsedLimit <= 0 || parsedLimit > services.MaxMutualFriendsLimit {
+			httpresponse.BadRequestGin(c, "El parámetro limit debe ser un entero entre 1 y 100")
 			return
 		}
 		limit = parsedLimit

@@ -99,5 +99,5 @@ type MutualFriendsQuery struct {
 	TargetExists bool
 	ViewerFriend bool
 	Visibility   string
-	FriendIDs    []string
+	Count        int
 }

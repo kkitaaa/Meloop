@@ -45,6 +45,9 @@ func TestFriendshipRepository_NilPool(t *testing.T) {
 	if _, err := repo.GetMutualFriendsQuery(ctx, "u1", "u2"); err == nil {
 		t.Error("expected error with nil pool on GetMutualFriendsQuery")
 	}
+	if _, _, err := repo.GetMutualFriendsPage(ctx, "u1", "u2", "", 20); err == nil {
+		t.Error("expected error with nil pool on GetMutualFriendsPage")
+	}
 	if _, err := repo.ListMutualFriendProfiles(ctx, []string{"u3"}); err == nil {
 		t.Error("expected error with nil pool on ListMutualFriendProfiles")
 	}

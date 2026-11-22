@@ -52,6 +52,9 @@ func (m *mockFriendshipRepoForSuggestions) IsBlocked(ctx context.Context, user1I
 func (m *mockFriendshipRepoForSuggestions) GetMutualFriendsQuery(ctx context.Context, userID, targetID string) (models.MutualFriendsQuery, error) {
 	return models.MutualFriendsQuery{}, nil
 }
+func (m *mockFriendshipRepoForSuggestions) GetMutualFriendsPage(context.Context, string, string, string, int) ([]string, bool, error) {
+	return []string{}, false, nil
+}
 func (m *mockFriendshipRepoForSuggestions) ListMutualFriendProfiles(ctx context.Context, userIDs []string) ([]models.MutualFriend, error) {
 	return []models.MutualFriend{}, nil
 }

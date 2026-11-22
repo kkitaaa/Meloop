@@ -3,9 +3,10 @@ package config
 import "os"
 
 type Config struct {
-	DatabaseURL string
-	RabbitMQURL string
-	Port        string
+	DatabaseURL    string
+	RabbitMQURL    string
+	AuthServiceURL string
+	Port           string
 }
 
 func Load() *Config {
@@ -24,5 +25,15 @@ func Load() *Config {
 		port = "8086"
 	}
 
-	return &Config{DatabaseURL: databaseURL, RabbitMQURL: rabbitMQURL, Port: port}
+	authServiceURL := os.Getenv("AUTH_SERVICE_URL")
+	if authServiceURL == "" {
+		authServiceURL = "http://localhost:8083"
+	}
+
+	return &Config{
+		DatabaseURL:    databaseURL,
+		RabbitMQURL:    rabbitMQURL,
+		AuthServiceURL: authServiceURL,
+		Port:           port,
+	}
 }

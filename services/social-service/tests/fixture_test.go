@@ -3,12 +3,14 @@ package tests
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/meloop/social-service/client"
 	"github.com/meloop/social-service/repositories"
 	"github.com/meloop/social-service/services"
 	"github.com/stretchr/testify/require"
@@ -18,6 +20,20 @@ type fixture struct {
 	pool       *pgxpool.Pool
 	userIDs    [4]string
 	friendship int64
+}
+
+type testSessionValidator struct{}
+
+func (testSessionValidator) ValidateToken(_ context.Context, token string) (string, error) {
+	const prefix = "test-session:"
+	if !strings.HasPrefix(token, prefix) || strings.TrimPrefix(token, prefix) == "" {
+		return "", client.ErrInvalidSession
+	}
+	return strings.TrimPrefix(token, prefix), nil
+}
+
+func setTestSession(request *http.Request, userID string) {
+	request.Header.Set("Authorization", "Bearer test-session:"+userID)
 }
 
 func setupFixture(t *testing.T) *fixture {
@@ -35,6 +51,18 @@ func setupFixture(t *testing.T) *fixture {
 	pool, err := pgxpool.NewWithConfig(context.Background(), poolConfig)
 	require.NoError(t, err)
 	require.NoError(t, pool.Ping(context.Background()))
+
+	var visibilityDefault, visibilityNullable string
+	err = pool.QueryRow(context.Background(), `
+		SELECT column_default, is_nullable
+		FROM information_schema.columns
+		WHERE table_schema = current_schema()
+		  AND table_name = 'configuracion_privacidad'
+		  AND column_name = 'visibilidad_amigos'`,
+	).Scan(&visibilityDefault, &visibilityNullable)
+	require.NoError(t, err, "visibilidad_amigos migration must be applied")
+	require.Contains(t, visibilityDefault, "PUBLICO")
+	require.Equal(t, "NO", visibilityNullable)
 
 	runID := fmt.Sprintf("%d", time.Now().UnixNano())
 	testFixture := &fixture{pool: pool}

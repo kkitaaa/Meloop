@@ -31,6 +31,8 @@ var (
 	ErrInvalidPagination      = errors.New("invalid mutual-friends pagination")
 )
 
+const MaxMutualFriendsLimit = 100
+
 type EventPublisher interface {
 	PublishFriendAccepted(ctx context.Context, request *models.FriendRequest) error
 }
@@ -160,7 +162,7 @@ func (s *friendshipService) GetMutualFriends(ctx context.Context, userID, target
 	if userID == targetID {
 		return nil, ErrSelfMutualFriends
 	}
-	if limit <= 0 || len(cursor) > 64 {
+	if limit <= 0 || limit > MaxMutualFriendsLimit || len(cursor) > 64 {
 		return nil, ErrInvalidPagination
 	}
 
@@ -179,13 +181,8 @@ func (s *friendshipService) GetMutualFriends(ctx context.Context, userID, target
 		return nil, ErrBlocked
 	}
 
-	visibleIDs, err := s.ExcludeBlocked(ctx, userID, query.FriendIDs)
-	if err != nil {
-		return nil, err
-	}
-
 	result := &models.MutualFriendsResponse{
-		Count:   len(visibleIDs),
+		Count:   query.Count,
 		Friends: []models.MutualFriend{},
 	}
 	if query.Visibility == "PRIVADO" || (query.Visibility == "AMIGOS" && !query.ViewerFriend) {
@@ -193,23 +190,15 @@ func (s *friendshipService) GetMutualFriends(ctx context.Context, userID, target
 		return result, nil
 	}
 
-	pageCapacity := limit
-	if pageCapacity > len(visibleIDs) {
-		pageCapacity = len(visibleIDs)
-	}
-	pageIDs := make([]string, 0, pageCapacity)
-	for _, id := range visibleIDs {
-		if id <= cursor {
-			continue
-		}
-		if len(pageIDs) == limit {
-			result.NextCursor = pageIDs[len(pageIDs)-1]
-			break
-		}
-		pageIDs = append(pageIDs, id)
+	pageIDs, hasMore, err := s.repo.GetMutualFriendsPage(ctx, userID, targetID, cursor, limit)
+	if err != nil {
+		return nil, mapRepositoryError(err)
 	}
 	if len(pageIDs) == 0 {
 		return result, nil
+	}
+	if hasMore {
+		result.NextCursor = pageIDs[len(pageIDs)-1]
 	}
 
 	result.Friends, err = s.repo.ListMutualFriendProfiles(ctx, pageIDs)

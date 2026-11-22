@@ -114,9 +114,9 @@ func TestInvalidFriendRequestsReturnContractHTTPStatus(t *testing.T) {
 			payload, err := json.Marshal(models.SendFriendRequest{ReceiverID: f.userIDs[test.receiver]})
 			require.NoError(t, err)
 			request := httptest.NewRequest(http.MethodPost, "/friends/requests", strings.NewReader(string(payload)))
-			request.Header.Set("X-User-ID", f.userIDs[test.sender])
+			setTestSession(request, f.userIDs[test.sender])
 			router := gin.New()
-			routes.SetupRoutes(router, controllers.NewFriendshipController(service))
+			routes.SetupRoutes(router, controllers.NewFriendshipController(service), testSessionValidator{})
 			router.ServeHTTP(recorder, request)
 			assert.Equal(t, test.wantStatus, recorder.Code)
 		})
@@ -128,12 +128,12 @@ func TestFriendRequestsPersistAndProcessTextIDsThroughHTTP(t *testing.T) {
 	f := setupFixture(t)
 	service := f.databaseService()
 	router := gin.New()
-	routes.SetupRoutes(router, controllers.NewFriendshipController(service))
+	routes.SetupRoutes(router, controllers.NewFriendshipController(service), testSessionValidator{})
 
 	doRequest := func(method, path, userID, body string) *httptest.ResponseRecorder {
 		recorder := httptest.NewRecorder()
 		request := httptest.NewRequest(method, path, strings.NewReader(body))
-		request.Header.Set("X-User-ID", userID)
+		setTestSession(request, userID)
 		if body != "" {
 			request.Header.Set("Content-Type", "application/json")
 		}
@@ -298,9 +298,9 @@ func TestBlockedFriendProfileReturnsNotFound(t *testing.T) {
 
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/friends/%s/profile", f.userIDs[1]), nil)
-	request.Header.Set("X-User-ID", f.userIDs[0])
+	setTestSession(request, f.userIDs[0])
 	router := gin.New()
-	routes.SetupRoutes(router, controllers.NewFriendshipController(service))
+	routes.SetupRoutes(router, controllers.NewFriendshipController(service), testSessionValidator{})
 	router.ServeHTTP(recorder, request)
 	assert.Equal(t, http.StatusNotFound, recorder.Code)
 }
@@ -317,7 +317,7 @@ func mutualFriendsRequest(t *testing.T, f *fixture, viewerID, targetID, query st
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	routes.SetupRoutes(router, controllers.NewFriendshipController(f.databaseService()))
+	routes.SetupRoutes(router, controllers.NewFriendshipController(f.databaseService()), testSessionValidator{})
 
 	path := fmt.Sprintf("/v1/social/users/%s/mutual-friends", targetID)
 	if query != "" {
@@ -325,7 +325,7 @@ func mutualFriendsRequest(t *testing.T, f *fixture, viewerID, targetID, query st
 	}
 	request := httptest.NewRequest(http.MethodGet, path, nil)
 	if viewerID != "" {
-		request.Header.Set("X-User-ID", viewerID)
+		setTestSession(request, viewerID)
 	}
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, request)
@@ -494,6 +494,33 @@ func TestMutualFriendsPrivateListAndInactiveCandidatesPostgres(t *testing.T) {
 	})
 }
 
+func TestMutualFriendsFriendsVisibilityUsesValidatedIdentityPostgres(t *testing.T) {
+	f := setupFixture(t)
+	f.createFriendship(t, 0, 2, models.FriendshipAccepted)
+	f.createFriendship(t, 1, 2, models.FriendshipAccepted)
+	f.createFriendship(t, 1, 3, models.FriendshipAccepted)
+	setFriendListVisibility(t, f, 1, "AMIGOS")
+
+	router := gin.New()
+	routes.SetupRoutes(router, controllers.NewFriendshipController(f.databaseService()), testSessionValidator{})
+	request := httptest.NewRequest(
+		http.MethodGet,
+		fmt.Sprintf("/v1/social/users/%s/mutual-friends", f.userIDs[1]),
+		nil,
+	)
+	setTestSession(request, f.userIDs[0])
+	request.Header.Set("X-User-ID", f.userIDs[3])
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, request)
+
+	var response mutualFriendsEnvelope
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &response))
+	require.Equal(t, http.StatusOK, recorder.Code)
+	assert.True(t, response.Data.Hidden)
+	assert.Equal(t, 1, response.Data.Count)
+	assert.Empty(t, response.Data.Friends)
+}
+
 func TestMutualFriendsPaginationAndHTTPValidationPostgres(t *testing.T) {
 	t.Run("limit and cursor return deterministic pages and total count", func(t *testing.T) {
 		f := setupFixture(t)
@@ -514,7 +541,30 @@ func TestMutualFriendsPaginationAndHTTPValidationPostgres(t *testing.T) {
 		require.Equal(t, 2, secondPage.Data.Count)
 		require.Len(t, secondPage.Data.Friends, 1)
 		assert.Equal(t, f.userIDs[3], secondPage.Data.Friends[0].ID)
+		assert.NotEqual(t, firstPage.Data.Friends[0].ID, secondPage.Data.Friends[0].ID)
 		assert.Empty(t, secondPage.Data.NextCursor)
+	})
+
+	t.Run("maximum limit is accepted", func(t *testing.T) {
+		f := setupFixture(t)
+		f.createFriendship(t, 0, 2, models.FriendshipAccepted)
+		f.createFriendship(t, 1, 2, models.FriendshipAccepted)
+
+		status, response := mutualFriendsRequest(t, f, f.userIDs[0], f.userIDs[1], "limit=100")
+		require.Equal(t, http.StatusOK, status)
+		require.Equal(t, 1, response.Data.Count)
+		require.Len(t, response.Data.Friends, 1)
+		assert.Empty(t, response.Data.NextCursor)
+	})
+
+	t.Run("invalid limits are rejected", func(t *testing.T) {
+		for _, limit := range []string{"0", "-1", "101"} {
+			t.Run(limit, func(t *testing.T) {
+				f := setupFixture(t)
+				status, _ := mutualFriendsRequest(t, f, f.userIDs[0], f.userIDs[1], "limit="+limit)
+				assert.Equal(t, http.StatusBadRequest, status)
+			})
+		}
 	})
 
 	t.Run("self query returns SELF_QUERY", func(t *testing.T) {
