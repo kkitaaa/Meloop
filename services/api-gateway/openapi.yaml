@@ -31,7 +31,7 @@ tags:
   - name: Chat
     description: "Pendiente: no hay rutas REST de chat en el Gateway; el WebSocket se documentará aparte."
   - name: Notificaciones
-    description: Solo están disponibles las preferencias de notificación del usuario.
+    description: Consulta y gestión de notificaciones, además de las preferencias del usuario.
   - name: Gamificación
     description: "Pendiente: el Gateway aún no enruta gamification-service."
   - name: Moderación
@@ -701,6 +701,91 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /notifications:
+    get:
+      tags: [Notificaciones]
+      operationId: listNotifications
+      summary: Consultar las notificaciones del usuario autenticado
+      description: Devuelve primero las notificaciones más recientes. La identidad se obtiene de la sesión validada.
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          description: Notificaciones ordenadas por fecha descendente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /notifications/read:
+    patch:
+      tags: [Notificaciones]
+      operationId: markAllNotificationsRead
+      summary: Marcar todas las notificaciones como leídas
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      responses:
+        '200':
+          description: Notificaciones marcadas como leídas
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /notifications/{id}/read:
+    patch:
+      tags: [Notificaciones]
+      operationId: markNotificationRead
+      summary: Marcar una notificación como leída
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Notificación marcada como leída
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalError'
 

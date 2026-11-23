@@ -32,6 +32,10 @@ func SetupRoutes(router *gin.Engine) {
 	router.Any("/media", controllers.SessionAuth(), controllers.ProxyToService("MEDIA_SERVICE_URL", "http://localhost:8085", ""))
 	router.Any("/media/*any", controllers.SessionAuth(), controllers.ProxyToService("MEDIA_SERVICE_URL", "http://localhost:8085", ""))
 
+	// Enrutar notificaciones (conservando el prefijo /notifications en el destino)
+	router.Any("/notifications", controllers.SessionAuth(), controllers.ProxyToService("NOTIFICATION_SERVICE_URL", "http://localhost:8088", ""))
+	router.Any("/notifications/*any", controllers.SessionAuth(), controllers.ProxyToService("NOTIFICATION_SERVICE_URL", "http://localhost:8088", ""))
+
 	// Enrutar peticiones versionadas v1
 	router.Any("/v1/users", controllers.ProxyToService("USER_SERVICE_URL", "http://localhost:8082", ""))
 	router.Any("/v1/users/*any", controllers.ProxyToService("USER_SERVICE_URL", "http://localhost:8082", ""))
