@@ -5,7 +5,9 @@ enum UserRole {
 
   static UserRole fromBackend(Object? value) {
     if (value is! String) {
-      throw const FormatException('El servidor no devolvió el rol del usuario.');
+      throw const FormatException(
+        'El servidor no devolvió el rol del usuario.',
+      );
     }
 
     return switch (value.trim().toLowerCase()) {

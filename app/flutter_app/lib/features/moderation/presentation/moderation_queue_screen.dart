@@ -34,8 +34,7 @@ class _ModerationQueueScreenState extends State<ModerationQueueScreen> {
   bool _hasMore = true;
   String? _errorMessage;
 
-  bool get _isAdmin =>
-      _session.permissions.canAccessAdministration;
+  bool get _isAdmin => _session.permissions.canAccessAdministration;
   bool get _canModerate => _session.permissions.canModerateReports;
 
   @override

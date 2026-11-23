@@ -25,8 +25,7 @@ class RoleGuard extends StatelessWidget {
         final permissions = authSession.permissions;
         final allowed = switch (permission) {
           AppPermission.moderation => permissions.canModerateReports,
-          AppPermission.administration =>
-            permissions.canAccessAdministration,
+          AppPermission.administration => permissions.canAccessAdministration,
         };
         if (allowed) return child;
 

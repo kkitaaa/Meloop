@@ -9,10 +9,7 @@ import '../../widgets/desktop_chat.dart';
 import 'artists_and_songs_screen.dart';
 
 class ResponsiveNavigationShell extends StatefulWidget {
-  const ResponsiveNavigationShell({
-    super.key,
-    this.apiClient,
-  });
+  const ResponsiveNavigationShell({super.key, this.apiClient});
 
   final ApiClient? apiClient;
 
