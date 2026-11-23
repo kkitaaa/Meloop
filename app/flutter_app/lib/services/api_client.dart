@@ -497,16 +497,18 @@ class ApiClient implements PostPublisher {
   Future<ApiResponse<Map<String, dynamic>>> sendFriendRequest(
     String targetUserId,
   ) {
-    return post('${ApiConfig.friendsEndpoint}/requests', {
-      'id_usuario': targetUserId,
-    }, (json) {
-      if (json is! Map<String, dynamic>) {
-        throw const FormatException(
-          'La respuesta de solicitud de amistad es inválida.',
-        );
-      }
-      return json;
-    });
+    return post(
+      '${ApiConfig.friendsEndpoint}/requests',
+      {'id_usuario': targetUserId},
+      (json) {
+        if (json is! Map<String, dynamic>) {
+          throw const FormatException(
+            'La respuesta de solicitud de amistad es inválida.',
+          );
+        }
+        return json;
+      },
+    );
   }
 
   Future<ApiResponse<T>> _searchGet<T>(

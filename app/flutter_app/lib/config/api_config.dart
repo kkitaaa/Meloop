@@ -28,8 +28,8 @@ class ApiConfig {
   static String get gatewayRouteSummary => switch (environment) {
     Environment.development =>
       '/auth, /users, /friends, /api/v1/gamification, /api/demo, /api/feed',
-    Environment.staging || Environment.production =>
-      '/auth, /users, /friends, /api/v1/gamification',
+    Environment.staging ||
+    Environment.production => '/auth, /users, /friends, /api/v1/gamification',
   };
 
   static String get baseUrl {
