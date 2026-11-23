@@ -88,16 +88,19 @@ func (r *postgresFriendshipRepository) CreatePending(ctx context.Context, sender
 		return nil, ErrBlocked
 	}
 
-	var reception string
+	var allowed bool
 	err = tx.QueryRow(ctx, `
-		SELECT UPPER(TRIM(COALESCE(permitir_solicitudes_amistad, 'TODOS')))
-		FROM configuracion_privacidad WHERE id_usuario = $1`, receiverID).Scan(&reception)
-	if errors.Is(err, pgx.ErrNoRows) {
-		reception = "TODOS"
-	} else if err != nil {
+		SELECT meloop_privacy_allows_friend_request(
+			$1::text,
+			$2::text,
+			(SELECT cp.permitir_solicitudes_amistad
+			 FROM configuracion_privacidad cp
+			 WHERE cp.id_usuario = $2)
+		)`, senderID, receiverID).Scan(&allowed)
+	if err != nil {
 		return nil, err
 	}
-	if reception != "TODOS" {
+	if !allowed {
 		return nil, ErrPrivacyRestricted
 	}
 
@@ -146,16 +149,7 @@ func (r *postgresFriendshipRepository) CanSendMessage(ctx context.Context, sende
 				WHERE (id_usuario_bloqueador = $1 AND id_usuario_bloqueado = $2)
 				   OR (id_usuario_bloqueador = $2 AND id_usuario_bloqueado = $1)
 			)
-			AND CASE UPPER(TRIM(COALESCE(cp.permitir_mensajes, 'AMIGOS')))
-				WHEN 'TODOS' THEN TRUE
-				WHEN 'AMIGOS' THEN EXISTS (
-					SELECT 1 FROM amistad
-					WHERE ((id_usuario_1 = $1 AND id_usuario_2 = $2)
-					    OR (id_usuario_1 = $2 AND id_usuario_2 = $1))
-					  AND UPPER(estado) = 'ACEPTADA'
-				)
-				ELSE FALSE
-			END
+			AND meloop_privacy_allows_message($1::text, $2::text, cp.permitir_mensajes)
 		FROM (SELECT $2::varchar AS id_usuario) target
 		LEFT JOIN configuracion_privacidad cp ON cp.id_usuario = target.id_usuario
 	`, senderID, receiverID).Scan(&allowed)

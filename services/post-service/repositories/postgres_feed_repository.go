@@ -43,35 +43,19 @@ func (r *PostgresFeedRepository) GetMainFeed(userID string, limit, offset int) (
 			SELECT id_publicacion, COUNT(id_interaccion) as comments_count 
 			FROM INTERACCION WHERE tipo = 'comentario' GROUP BY id_publicacion
 		) c ON p.id_publicacion = c.id_publicacion
-		WHERE (
-			p.id_usuario = ?
-			OR COALESCE((
-				SELECT UPPER(TRIM(cp.visibilidad_publicaciones))
-				FROM CONFIGURACION_PRIVACIDAD cp
-				WHERE cp.id_usuario = p.id_usuario
-			), 'PUBLICO') = 'PUBLICO'
-			OR (
-				COALESCE((
-					SELECT UPPER(TRIM(cp.visibilidad_publicaciones))
-					FROM CONFIGURACION_PRIVACIDAD cp
-					WHERE cp.id_usuario = p.id_usuario
-				), 'PUBLICO') = 'AMIGOS'
-				AND p.id_usuario IN (
-					SELECT id_usuario_2 FROM AMISTAD
-					WHERE id_usuario_1 = ? AND UPPER(estado) = 'ACEPTADA'
-					UNION
-					SELECT id_usuario_1 FROM AMISTAD
-					WHERE id_usuario_2 = ? AND UPPER(estado) = 'ACEPTADA'
-				)
-			)
+		WHERE meloop_privacy_allows_visibility(
+			p.id_usuario::text,
+			?::text,
+			(SELECT cp.visibilidad_publicaciones
+			 FROM CONFIGURACION_PRIVACIDAD cp
+			 WHERE cp.id_usuario = p.id_usuario)
 		)
 		-- AND p.id_usuario NOT IN (SELECT id_bloqueado FROM BLOQUEO...) (Falta definir en BD)
 		ORDER BY p.fecha_creacion DESC
 		LIMIT ? OFFSET ?
 	`
 
-	// El userID se usa para autoría y para ambas direcciones de AMISTAD.
-	err := r.db.Raw(query, userID, userID, userID, limit, offset).Scan(&feed).Error
+	err := r.db.Raw(query, userID, limit, offset).Scan(&feed).Error
 	if err != nil {
 		return nil, err
 	}

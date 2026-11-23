@@ -63,6 +63,60 @@ func TestBlockedUsersCannotRequestOrAppearInSuggestions(t *testing.T) {
 	}
 }
 
+func TestPrivacyRulesPostgresIntegration(t *testing.T) {
+	f := setupFixture(t)
+	ctx := context.Background()
+	service := f.databaseService()
+
+	f.createFriendship(t, 0, 2, models.FriendshipAccepted)
+	f.createFriendship(t, 1, 2, models.FriendshipAccepted)
+	setPrivacyReception(t, f, 1, "AMIGOS", "AMIGOS")
+
+	var canViewAsStranger, canViewAsFriend, canViewPublic bool
+	require.NoError(t, f.pool.QueryRow(ctx, `
+		SELECT
+			meloop_privacy_allows_visibility($1, $2, 'AMIGOS'),
+			meloop_privacy_allows_visibility($1, $3, 'AMIGOS'),
+			meloop_privacy_allows_visibility($1, $2, 'PUBLICO')
+	`, f.userIDs[1], f.userIDs[0], f.userIDs[2]).Scan(
+		&canViewAsStranger, &canViewAsFriend, &canViewPublic,
+	))
+	assert.False(t, canViewAsStranger)
+	assert.True(t, canViewAsFriend)
+	assert.True(t, canViewPublic)
+
+	_, err := service.SendRequest(ctx, f.userIDs[0], f.userIDs[1])
+	require.NoError(t, err, "AMIGOS debe permitir solicitudes entre personas con un amigo en común")
+	_, err = service.SendRequest(ctx, f.userIDs[3], f.userIDs[1])
+	require.ErrorIs(t, err, services.ErrPrivacyRestricted, "sin amigo en común, AMIGOS debe denegar la solicitud")
+
+	require.ErrorIs(t, service.ValidateMessage(ctx, f.userIDs[0], f.userIDs[1]), services.ErrMessageNotAllowed)
+	require.NoError(t, service.ValidateMessage(ctx, f.userIDs[2], f.userIDs[1]))
+
+	setPrivacyReception(t, f, 1, "TODOS", "TODOS")
+	require.NoError(t, service.ValidateMessage(ctx, f.userIDs[3], f.userIDs[1]))
+	_, err = service.SendRequest(ctx, f.userIDs[3], f.userIDs[1])
+	require.NoError(t, err, "TODOS debe permitir solicitudes sin amistad en común")
+
+	setPrivacyReception(t, f, 1, "NADIE", "NADIE")
+	require.ErrorIs(t, service.ValidateMessage(ctx, f.userIDs[2], f.userIDs[1]), services.ErrMessageNotAllowed)
+	_, err = service.SendRequest(ctx, f.userIDs[2], f.userIDs[1])
+	require.ErrorIs(t, err, services.ErrPrivacyRestricted)
+}
+
+func setPrivacyReception(t *testing.T, f *fixture, userIndex int, messageReception, requestReception string) {
+	t.Helper()
+	_, err := f.pool.Exec(context.Background(), `
+		INSERT INTO configuracion_privacidad (
+			id_privacidad, id_usuario, permitir_mensajes, permitir_solicitudes_amistad
+		) VALUES (gen_random_uuid()::text, $1, $2, $3)
+		ON CONFLICT (id_usuario) DO UPDATE
+		SET permitir_mensajes = EXCLUDED.permitir_mensajes,
+		    permitir_solicitudes_amistad = EXCLUDED.permitir_solicitudes_amistad
+	`, f.userIDs[userIndex], messageReception, requestReception)
+	require.NoError(t, err)
+}
+
 func TestBlockingRemovesExistingFriendship(t *testing.T) {
 	f := setupFixture(t)
 	service := f.databaseService()

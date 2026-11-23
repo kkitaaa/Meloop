@@ -2334,18 +2334,23 @@ components:
       properties:
         visibilidad_perfil:
           type: string
+          description: PUBLICO, AMIGOS aceptados o PRIVADO.
           enum: [PUBLICO, AMIGOS, PRIVADO]
         visibilidad_publicaciones:
           type: string
+          description: PUBLICO, AMIGOS aceptados o PRIVADO.
           enum: [PUBLICO, AMIGOS, PRIVADO]
         visibilidad_interacciones:
           type: string
+          description: PUBLICO, AMIGOS aceptados o PRIVADO.
           enum: [PUBLICO, AMIGOS, PRIVADO]
         recepcion_mensajes:
           type: string
+          description: AMIGOS permite solo amistades aceptadas.
           enum: [TODOS, AMIGOS, NADIE]
         recepcion_solicitudes_amistad:
           type: string
+          description: AMIGOS permite solicitantes con al menos un amigo aceptado en común.
           enum: [TODOS, AMIGOS, NADIE]
         recepcion_solicitudes:
           type: string

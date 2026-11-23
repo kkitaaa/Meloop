@@ -23,6 +23,7 @@ type ProfileRepository interface {
 	GetFullProfileData(ctx context.Context, userID string) (*models.UserProfileData, error)
 	IsBlocked(ctx context.Context, user1ID, user2ID string) (bool, error)
 	IsFriend(ctx context.Context, user1ID, user2ID string) (bool, error)
+	CanViewVisibility(ctx context.Context, ownerID, viewerID, visibility string) (bool, error)
 }
 
 type postgresProfileRepository struct {
@@ -488,4 +489,19 @@ func (r *postgresProfileRepository) IsFriend(ctx context.Context, user1ID, user2
 		return false, fmt.Errorf("error al verificar amistad entre usuarios: %w", err)
 	}
 	return isFriend, nil
+}
+
+func (r *postgresProfileRepository) CanViewVisibility(ctx context.Context, ownerID, viewerID, visibility string) (bool, error) {
+	if r.pool == nil {
+		return false, errors.New("el pool de base de datos no está inicializado")
+	}
+
+	var allowed bool
+	err := r.pool.QueryRow(ctx, `
+		SELECT meloop_privacy_allows_visibility($1::text, $2::text, $3::text)
+	`, ownerID, viewerID, visibility).Scan(&allowed)
+	if err != nil {
+		return false, fmt.Errorf("error al evaluar visibilidad de privacidad: %w", err)
+	}
+	return allowed, nil
 }

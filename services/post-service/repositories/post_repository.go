@@ -88,26 +88,12 @@ func (r *SQLPostRepository) GetPostByID(ctx context.Context, postID string, requ
 		SELECT p.id_publicacion, p.id_usuario, p.texto, p.id_cancion, p.url_multimedia, p.fecha_creacion
 		FROM publicacion p
 		WHERE p.id_publicacion = $1
-		  AND (
-			p.id_usuario = $2
-			OR COALESCE((
-				SELECT UPPER(TRIM(cp.visibilidad_publicaciones))
-				FROM configuracion_privacidad cp
-				WHERE cp.id_usuario = p.id_usuario
-			), 'PUBLICO') = 'PUBLICO'
-			OR (
-				COALESCE((
-					SELECT UPPER(TRIM(cp.visibilidad_publicaciones))
-					FROM configuracion_privacidad cp
-					WHERE cp.id_usuario = p.id_usuario
-				), 'PUBLICO') = 'AMIGOS'
-				AND EXISTS (
-					SELECT 1 FROM amistad a
-					WHERE ((a.id_usuario_1 = p.id_usuario AND a.id_usuario_2 = $2)
-					    OR (a.id_usuario_1 = $2 AND a.id_usuario_2 = p.id_usuario))
-					  AND UPPER(a.estado) = 'ACEPTADA'
-				)
-			)
+		  AND meloop_privacy_allows_visibility(
+			p.id_usuario::text,
+			$2::text,
+			(SELECT cp.visibilidad_publicaciones
+			 FROM configuracion_privacidad cp
+			 WHERE cp.id_usuario = p.id_usuario)
 		  )
 	`
 	row := r.db.QueryRowContext(ctx, query, postID, requesterID)
@@ -130,26 +116,12 @@ func (r *SQLPostRepository) GetPostsByAuthor(ctx context.Context, authorID strin
 		SELECT p.id_publicacion, p.id_usuario, p.texto, p.id_cancion, p.url_multimedia, p.fecha_creacion
 		FROM publicacion p
 		WHERE p.id_usuario = $1
-		  AND (
-			p.id_usuario = $2
-			OR COALESCE((
-				SELECT UPPER(TRIM(cp.visibilidad_publicaciones))
-				FROM configuracion_privacidad cp
-				WHERE cp.id_usuario = p.id_usuario
-			), 'PUBLICO') = 'PUBLICO'
-			OR (
-				COALESCE((
-					SELECT UPPER(TRIM(cp.visibilidad_publicaciones))
-					FROM configuracion_privacidad cp
-					WHERE cp.id_usuario = p.id_usuario
-				), 'PUBLICO') = 'AMIGOS'
-				AND EXISTS (
-					SELECT 1 FROM amistad a
-					WHERE ((a.id_usuario_1 = p.id_usuario AND a.id_usuario_2 = $2)
-					    OR (a.id_usuario_1 = $2 AND a.id_usuario_2 = p.id_usuario))
-					  AND UPPER(a.estado) = 'ACEPTADA'
-				)
-			)
+		  AND meloop_privacy_allows_visibility(
+			p.id_usuario::text,
+			$2::text,
+			(SELECT cp.visibilidad_publicaciones
+			 FROM configuracion_privacidad cp
+			 WHERE cp.id_usuario = p.id_usuario)
 		  )
 		ORDER BY fecha_creacion DESC
 		LIMIT $3 OFFSET $4
@@ -183,26 +155,12 @@ func (r *SQLPostRepository) SearchPosts(ctx context.Context, searchTerm string, 
 		SELECT p.id_publicacion, p.id_usuario, p.texto, p.id_cancion, p.url_multimedia, p.fecha_creacion
 		FROM publicacion p
 		WHERE (p.texto ILIKE $1 OR p.id_cancion ILIKE $1)
-		  AND (
-			p.id_usuario = $2
-			OR COALESCE((
-				SELECT UPPER(TRIM(cp.visibilidad_publicaciones))
-				FROM configuracion_privacidad cp
-				WHERE cp.id_usuario = p.id_usuario
-			), 'PUBLICO') = 'PUBLICO'
-			OR (
-				COALESCE((
-					SELECT UPPER(TRIM(cp.visibilidad_publicaciones))
-					FROM configuracion_privacidad cp
-					WHERE cp.id_usuario = p.id_usuario
-				), 'PUBLICO') = 'AMIGOS'
-				AND EXISTS (
-					SELECT 1 FROM amistad a
-					WHERE ((a.id_usuario_1 = p.id_usuario AND a.id_usuario_2 = $2)
-					    OR (a.id_usuario_1 = $2 AND a.id_usuario_2 = p.id_usuario))
-					  AND UPPER(a.estado) = 'ACEPTADA'
-				)
-			)
+		  AND meloop_privacy_allows_visibility(
+			p.id_usuario::text,
+			$2::text,
+			(SELECT cp.visibilidad_publicaciones
+			 FROM configuracion_privacidad cp
+			 WHERE cp.id_usuario = p.id_usuario)
 		  )
 		ORDER BY fecha_creacion DESC
 		LIMIT $3 OFFSET $4

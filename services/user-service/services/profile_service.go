@@ -179,14 +179,14 @@ func (s *profileService) GetThirdPartyProfile(ctx context.Context, requestingUse
 		return nil, err
 	}
 
-	// 5. Aplicar reglas de privacidad del perfil (RF-55)
-	visPerfil := strings.ToUpper(strings.TrimSpace(privacy.VisibilidadPerfil))
-	if visPerfil == "" {
-		visPerfil = models.VisibilidadPublico
+	// 5. Aplicar reglas centralizadas de privacidad (RF-52)
+	canViewProfile, err := s.profileRepo.CanViewVisibility(
+		ctx, targetUserID, requestingUserID, privacy.VisibilidadPerfil,
+	)
+	if err != nil {
+		return nil, err
 	}
-
-	// Caso: Perfil privado o visible solo para amigos cuando NO existe amistad aceptada
-	if visPerfil != models.VisibilidadPublico && !(visPerfil == models.VisibilidadAmigos && isFriend) {
+	if !canViewProfile {
 		// Retornar exclusivamente la información básica de identificación permitida
 		return &models.ThirdPartyProfileResponse{
 			IDUsuario:     data.IDUsuario,
@@ -199,21 +199,23 @@ func (s *profileService) GetThirdPartyProfile(ctx context.Context, requestingUse
 		}, nil
 	}
 
-	// Caso: Perfil público o visible para amigos con amistad aceptada
-	visPub := strings.ToUpper(strings.TrimSpace(privacy.VisibilidadPublicaciones))
-	if visPub == "" {
-		visPub = models.VisibilidadPublico
+	canViewPublications, err := s.profileRepo.CanViewVisibility(
+		ctx, targetUserID, requestingUserID, privacy.VisibilidadPublicaciones,
+	)
+	if err != nil {
+		return nil, err
 	}
-
+	canViewInteractions, err := s.profileRepo.CanViewVisibility(
+		ctx, targetUserID, requestingUserID, privacy.VisibilidadInteracciones,
+	)
+	if err != nil {
+		return nil, err
+	}
 	stats := &models.ProfileStatsDTO{}
-	visInteracciones := strings.ToUpper(strings.TrimSpace(privacy.VisibilidadInteracciones))
-	if visInteracciones == "" {
-		visInteracciones = models.VisibilidadPublico
-	}
-	if visInteracciones == models.VisibilidadPublico || (visInteracciones == models.VisibilidadAmigos && isFriend) {
+	if canViewInteractions {
 		stats.Amigos = data.Estadisticas.Amigos
 	}
-	if visPub == models.VisibilidadPublico || (visPub == models.VisibilidadAmigos && isFriend) {
+	if canViewPublications {
 		stats.Publicaciones = data.Estadisticas.Publicaciones
 	}
 

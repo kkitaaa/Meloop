@@ -2,6 +2,7 @@
 
 Microservicio encargado de la gestión de relaciones sociales en Meloop:
 - Solicitudes de amistad (RF-10, RF-11).
+- Privacidad: `AMIGOS` para solicitudes significa que emisor y receptor comparten al menos un amigo aceptado.
 - Amigos y perfiles de amistad (RF-12).
 - Bloqueo bidireccional y validación de interacciones (RF-13).
 - Sugerencias de amistad con motor de compatibilidad (RF-14, RF-15).

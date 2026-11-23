@@ -103,6 +103,20 @@ func (m *mockProfileRepository) IsFriend(ctx context.Context, user1ID, user2ID s
 	return false, nil
 }
 
+func (m *mockProfileRepository) CanViewVisibility(ctx context.Context, ownerID, viewerID, visibility string) (bool, error) {
+	if ownerID == viewerID {
+		return true, nil
+	}
+	switch strings.ToUpper(strings.TrimSpace(visibility)) {
+	case "", models.VisibilidadPublico:
+		return true, nil
+	case models.VisibilidadAmigos:
+		return m.IsFriend(ctx, viewerID, ownerID)
+	default:
+		return false, nil
+	}
+}
+
 type mockMediaVerifier struct {
 	verifyMediaFunc func(ctx context.Context, objectKey string) (bool, error)
 	verifiedKeys    []string
