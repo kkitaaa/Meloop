@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../services/api_client.dart';
-import '../../features/moderation/data/moderation_models.dart';
 import '../../features/profile/presentation/profile_screen.dart';
 import '../../screens/feed_screen.dart';
 import '../../screens/friends_screen.dart';
@@ -12,11 +11,9 @@ import 'artists_and_songs_screen.dart';
 class ResponsiveNavigationShell extends StatefulWidget {
   const ResponsiveNavigationShell({
     super.key,
-    this.userRole = ModerationRole.user,
     this.apiClient,
   });
 
-  final ModerationRole userRole;
   final ApiClient? apiClient;
 
   @override
@@ -33,7 +30,7 @@ class _ResponsiveNavigationShellState extends State<ResponsiveNavigationShell> {
   final GlobalKey<FeedScreenState> _feedKey = GlobalKey<FeedScreenState>();
 
   late final List<Widget> _screens = [
-    FeedScreen(key: _feedKey, apiClient: _apiClient, userRole: widget.userRole),
+    FeedScreen(key: _feedKey, apiClient: _apiClient),
     const FriendsScreen(),
     const ArtistsAndSongsScreen(),
     DesktopChat(

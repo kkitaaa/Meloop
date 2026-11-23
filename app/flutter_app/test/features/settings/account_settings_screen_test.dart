@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_app/features/settings/presentation/account_settings_screen.dart';
 import 'package:flutter_app/services/api_client.dart';
 import 'package:flutter_app/services/auth_session.dart';
+import 'package:flutter_app/services/user_permissions.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -18,6 +19,7 @@ void main() {
         id: 'user-1',
         username: 'Ana',
         email: 'ana@example.test',
+        role: UserRole.user,
       ),
     );
     var privacyUpdates = 0;

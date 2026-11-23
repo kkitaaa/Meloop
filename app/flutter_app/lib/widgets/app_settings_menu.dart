@@ -2,11 +2,18 @@ import 'package:flutter/material.dart';
 
 import '../features/music/presentation/music_preferences_screen.dart';
 import '../features/profile/presentation/blocked_users_screen.dart';
+import '../features/admin/presentation/admin_dashboard_screen.dart';
 import '../features/settings/presentation/account_settings_screen.dart';
 import '../features/settings/presentation/settings_page_shell.dart';
 import '../services/api_client.dart';
+import '../services/auth_session.dart';
 
-enum _AppSettingsAction { accountSettings, musicPreferences, blockedUsers }
+enum _AppSettingsAction {
+  accountSettings,
+  musicPreferences,
+  blockedUsers,
+  administration,
+}
 
 class AppSettingsMenu extends StatelessWidget {
   const AppSettingsMenu({super.key, this.apiClient});
@@ -14,72 +21,100 @@ class AppSettingsMenu extends StatelessWidget {
   final ApiClient? apiClient;
 
   @override
-  Widget build(BuildContext context) => PopupMenuButton<_AppSettingsAction>(
-    tooltip: 'Ajustes',
-    icon: const Icon(Icons.settings, color: Colors.white),
-    color: Colors.white,
-    surfaceTintColor: Colors.transparent,
-    elevation: 10,
-    offset: const Offset(0, 8),
-    shape: RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(14),
-      side: const BorderSide(color: SettingsColors.border),
+  Widget build(BuildContext context) => AnimatedBuilder(
+    animation: AuthSession.shared,
+    builder: (context, _) => PopupMenuButton<_AppSettingsAction>(
+      tooltip: 'Ajustes',
+      icon: const Icon(Icons.settings, color: Colors.white),
+      color: Colors.white,
+      surfaceTintColor: Colors.transparent,
+      elevation: 10,
+      offset: const Offset(0, 8),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: const BorderSide(color: SettingsColors.border),
+      ),
+      onSelected: (action) {
+        if (action == _AppSettingsAction.administration &&
+            !AuthSession.shared.permissions.canAccessAdministration) {
+          return;
+        }
+        final screen = switch (action) {
+          _AppSettingsAction.accountSettings => AccountSettingsScreen(
+            apiClient: apiClient,
+          ),
+          _AppSettingsAction.musicPreferences => MusicPreferencesScreen(
+            apiClient: apiClient,
+          ),
+          _AppSettingsAction.blockedUsers => const BlockedUsersScreen(),
+          _AppSettingsAction.administration => AdminDashboardScreen(
+            apiClient: apiClient,
+          ),
+        };
+        Navigator.push(
+          context,
+          MaterialPageRoute<void>(builder: (_) => screen),
+        );
+      },
+      itemBuilder: (context) => [
+        PopupMenuItem(
+          value: _AppSettingsAction.accountSettings,
+          child: ListTile(
+            leading: const Icon(
+              Icons.manage_accounts_outlined,
+              color: SettingsColors.accent,
+            ),
+            title: const Text(
+              'Configuración de cuenta',
+              style: TextStyle(color: SettingsColors.text),
+            ),
+            contentPadding: EdgeInsets.zero,
+          ),
+        ),
+        PopupMenuItem(
+          value: _AppSettingsAction.musicPreferences,
+          child: ListTile(
+            leading: const Icon(
+              Icons.queue_music_rounded,
+              color: SettingsColors.accent,
+            ),
+            title: const Text(
+              'Preferencias musicales',
+              style: TextStyle(color: SettingsColors.text),
+            ),
+            contentPadding: EdgeInsets.zero,
+          ),
+        ),
+        PopupMenuItem(
+          value: _AppSettingsAction.blockedUsers,
+          child: ListTile(
+            leading: const Icon(
+              Icons.block_rounded,
+              color: SettingsColors.accent,
+            ),
+            title: const Text(
+              'Usuarios bloqueados',
+              style: TextStyle(color: SettingsColors.text),
+            ),
+            contentPadding: EdgeInsets.zero,
+          ),
+        ),
+        if (AuthSession.shared.permissions.canAccessAdministration)
+          const PopupMenuItem(
+            value: _AppSettingsAction.administration,
+            child: ListTile(
+              leading: Icon(
+                Icons.admin_panel_settings_outlined,
+                color: SettingsColors.accent,
+              ),
+              title: Text(
+                'Administración',
+                style: TextStyle(color: SettingsColors.text),
+              ),
+              contentPadding: EdgeInsets.zero,
+            ),
+          ),
+      ],
     ),
-    onSelected: (action) {
-      final screen = switch (action) {
-        _AppSettingsAction.accountSettings => AccountSettingsScreen(
-          apiClient: apiClient,
-        ),
-        _AppSettingsAction.musicPreferences => MusicPreferencesScreen(
-          apiClient: apiClient,
-        ),
-        _AppSettingsAction.blockedUsers => const BlockedUsersScreen(),
-      };
-      Navigator.push(context, MaterialPageRoute<void>(builder: (_) => screen));
-    },
-    itemBuilder: (context) => [
-      PopupMenuItem(
-        value: _AppSettingsAction.accountSettings,
-        child: ListTile(
-          leading: const Icon(
-            Icons.manage_accounts_outlined,
-            color: SettingsColors.accent,
-          ),
-          title: const Text(
-            'Configuración de cuenta',
-            style: TextStyle(color: SettingsColors.text),
-          ),
-          contentPadding: EdgeInsets.zero,
-        ),
-      ),
-      PopupMenuItem(
-        value: _AppSettingsAction.musicPreferences,
-        child: ListTile(
-          leading: const Icon(
-            Icons.queue_music_rounded,
-            color: SettingsColors.accent,
-          ),
-          title: const Text(
-            'Preferencias musicales',
-            style: TextStyle(color: SettingsColors.text),
-          ),
-          contentPadding: EdgeInsets.zero,
-        ),
-      ),
-      PopupMenuItem(
-        value: _AppSettingsAction.blockedUsers,
-        child: ListTile(
-          leading: const Icon(
-            Icons.block_rounded,
-            color: SettingsColors.accent,
-          ),
-          title: const Text(
-            'Usuarios bloqueados',
-            style: TextStyle(color: SettingsColors.text),
-          ),
-          contentPadding: EdgeInsets.zero,
-        ),
-      ),
-    ],
   );
 }

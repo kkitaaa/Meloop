@@ -55,6 +55,64 @@ class ApiClient implements PostPublisher {
     if (userId.isNotEmpty) {
       _dio.options.headers['X-User-ID'] = userId;
     }
+    _dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) async {
+          try {
+            await _refreshSessionIfNeeded();
+          } on Exception catch (error) {
+            handler.reject(DioException(requestOptions: options, error: error));
+            return;
+          }
+          options.headers.addAll(_sessionHeaders);
+          handler.next(options);
+        },
+        onError: (error, handler) async {
+          final statusCode = error.response?.statusCode;
+          if (statusCode == 401 && _session.hasToken) {
+            if (error.requestOptions.extra['meloopAuthRetried'] == true) {
+              await _session.clear();
+              handler.next(error);
+              return;
+            }
+
+            try {
+              await _refreshSession(force: true);
+              final requestOptions = error.requestOptions
+                ..extra['meloopAuthRetried'] = true
+                ..headers.addAll(_sessionHeaders);
+              final response = await _dio.fetch<Object?>(requestOptions);
+              handler.resolve(response);
+            } on DioException catch (retryError) {
+              handler.next(retryError);
+            } on Exception catch (refreshError) {
+              handler.reject(
+                DioException(
+                  requestOptions: error.requestOptions,
+                  error: refreshError,
+                ),
+              );
+            }
+            return;
+          }
+
+          if (statusCode == 403 && _session.hasToken) {
+            try {
+              await validateSession();
+            } on ApiException catch (syncError) {
+              handler.reject(
+                DioException(
+                  requestOptions: error.requestOptions,
+                  error: syncError,
+                ),
+              );
+              return;
+            }
+          }
+          handler.next(error);
+        },
+      ),
+    );
   }
 
   Future<ApiResponse<T>> get<T>(
@@ -186,11 +244,17 @@ class ApiClient implements PostPublisher {
   }
 
   Future<AuthUser> validateSession() async {
-    final response = await get(
-      ApiConfig.authValidateEndpoint,
+    final response = await _send(
+      () => _httpClient.get(
+        _uriFor(ApiConfig.authValidateEndpoint),
+        headers: _headers,
+      ),
       AuthUser.fromJson,
+      syncRoleOnForbidden: false,
     );
-    return response.data!;
+    final user = response.data!;
+    await _session.updateUser(user);
+    return user;
   }
 
   Future<void> logout() async {
@@ -868,6 +932,19 @@ class ApiClient implements PostPublisher {
     return headers;
   }
 
+  Map<String, String> get _sessionHeaders {
+    final headers = <String, String>{'Accept': 'application/json'};
+    final token = _session.token;
+    if (token != null && token.isNotEmpty) {
+      headers['Authorization'] = 'Bearer $token';
+    }
+    final userId = _session.user?.id ?? ApiConfig.currentUserId.trim();
+    if (userId.isNotEmpty) {
+      headers['X-User-ID'] = userId;
+    }
+    return headers;
+  }
+
   Uri _uriFor(String path) {
     final normalizedPath = path.startsWith('/') ? path.substring(1) : path;
     return Uri.parse('${ApiConfig.baseUrl}/').resolve(normalizedPath);
@@ -878,6 +955,7 @@ class ApiClient implements PostPublisher {
     T Function(Object? json) parseData, {
     bool refreshSession = true,
     bool retryUnauthorized = true,
+    bool syncRoleOnForbidden = true,
   }) async {
     try {
       if (refreshSession) await _refreshSessionIfNeeded();
@@ -888,6 +966,14 @@ class ApiClient implements PostPublisher {
           _session.hasToken) {
         await _refreshSession(force: true);
         response = await send().timeout(_timeout);
+      }
+      if (response.statusCode == 401 && _session.hasToken) {
+        await _session.clear();
+      }
+      if (response.statusCode == 403 &&
+          _session.hasToken &&
+          syncRoleOnForbidden) {
+        await validateSession();
       }
       return _decodeResponse(response, parseData);
     } on ApiException {

@@ -3,7 +3,6 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/foundation.dart';
 
 import '../core/navigation/responsive_navigation_shell.dart';
-import '../features/moderation/data/moderation_models.dart';
 import '../features/notifications/presentation/notification_scope.dart';
 import '../services/api_client.dart';
 import '../services/auth_session.dart';
@@ -126,10 +125,9 @@ class _AuthScreenState extends State<AuthScreen> {
   void _openHome() {
     final context = this.context;
     NotificationScope.maybeOf(context)?.start();
-    const userRole = ModerationRole.user;
     final Widget destination = defaultTargetPlatform == TargetPlatform.android
-        ? const ResponsiveNavigationShell(userRole: userRole)
-        : FeedScreen(userRole: userRole);
+        ? const ResponsiveNavigationShell()
+        : FeedScreen();
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(builder: (_) => destination),

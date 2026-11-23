@@ -50,8 +50,6 @@ enum ModerationReportStatus {
   final String label;
 }
 
-enum ModerationRole { user, moderator, admin }
-
 class ModerationReport {
   const ModerationReport({
     required this.id,

@@ -141,8 +141,23 @@ func (ctrl *AuthController) Logout(c *gin.Context) {
 
 // Validate handles GET /auth/validate
 func (ctrl *AuthController) Validate(c *gin.Context) {
-	user, exists := c.Get("user")
-	if !exists {
+	tokenValue, exists := c.Get("session_token")
+	token, isString := tokenValue.(string)
+	if !exists || !isString || token == "" {
+		httpresponse.UnauthorizedGin(c, "No se encontró sesión activa")
+		return
+	}
+
+	user, err := ctrl.authService.SyncSessionUser(c.Request.Context(), token)
+	if err != nil {
+		if errors.Is(err, services.ErrInvalidSession) {
+			httpresponse.UnauthorizedGin(c, "Sesión inválida o expirada")
+			return
+		}
+		httpresponse.InternalErrorGin(c)
+		return
+	}
+	if user == nil {
 		httpresponse.UnauthorizedGin(c, "No se encontró sesión activa")
 		return
 	}

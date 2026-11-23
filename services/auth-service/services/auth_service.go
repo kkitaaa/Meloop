@@ -45,6 +45,7 @@ type AuthService interface {
 	Login(ctx context.Context, req *models.LoginRequest) (*models.LoginResponse, error)
 	Logout(ctx context.Context, token string) error
 	ValidateSession(ctx context.Context, token string) (*models.SessionUser, error)
+	SyncSessionUser(ctx context.Context, token string) (*models.SessionUser, error)
 	RefreshSession(ctx context.Context, token string) (*models.LoginResponse, error)
 	ChangePassword(ctx context.Context, userID string, req *models.ChangePasswordRequest) error
 	RequestPasswordRecovery(ctx context.Context, req *models.PasswordRecoveryRequest) error
@@ -248,6 +249,7 @@ func (s *authService) Login(ctx context.Context, req *models.LoginRequest) (*mod
 		ID:       usuario.IDUsuario,
 		Username: usuario.Username,
 		Email:    usuario.Correo,
+		Role:     usuario.Rol,
 	}
 
 	err = s.sessionRepo.Create(ctx, token, sessionUser, s.config.SessionTTL)
@@ -285,6 +287,28 @@ func (s *authService) ValidateSession(ctx context.Context, token string) (*model
 	return user, nil
 }
 
+func (s *authService) SyncSessionUser(ctx context.Context, token string) (*models.SessionUser, error) {
+	user, err := s.ValidateSession(ctx, token)
+	if err != nil {
+		return nil, err
+	}
+
+	currentUser, err := s.repo.GetByID(ctx, user.ID)
+	if err != nil {
+		return nil, err
+	}
+	if currentUser == nil {
+		return nil, ErrInvalidSession
+	}
+
+	return &models.SessionUser{
+		ID:       currentUser.IDUsuario,
+		Username: currentUser.Username,
+		Email:    currentUser.Correo,
+		Role:     currentUser.Rol,
+	}, nil
+}
+
 func (s *authService) RefreshSession(
 	ctx context.Context,
 	token string,
@@ -307,6 +331,19 @@ func (s *authService) RefreshSession(
 	}
 	if !renewed {
 		return nil, ErrInvalidSession
+	}
+
+	currentUser, err := s.repo.GetByID(ctx, user.ID)
+	if err != nil {
+		return nil, err
+	}
+	if currentUser != nil {
+		user = &models.SessionUser{
+			ID:       currentUser.IDUsuario,
+			Username: currentUser.Username,
+			Email:    currentUser.Correo,
+			Role:     currentUser.Rol,
+		}
 	}
 
 	return &models.LoginResponse{

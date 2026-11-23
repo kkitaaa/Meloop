@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 
-import '../../moderation/data/moderation_models.dart';
+import '../../../core/auth/role_guard.dart';
 import '../../moderation/presentation/moderation_queue_screen.dart';
 import '../../notifications/presentation/notification_scope.dart';
-import '../../../screens/auth_screen.dart';
 import '../../../screens/api_test_screen.dart';
 import '../../../services/api_client.dart';
+import '../../../services/auth_session.dart';
 import '../data/admin_repository.dart';
 import 'admin_moderators_screen.dart';
 import 'admin_rewards_screen.dart';
@@ -26,12 +26,12 @@ enum _AdminSection {
 class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({
     super.key,
-    required this.role,
+    this.session,
     this.repository,
     this.apiClient,
   });
 
-  final ModerationRole role;
+  final AuthSession? session;
   final AdminRepository? repository;
   final ApiClient? apiClient;
 
@@ -40,24 +40,21 @@ class AdminDashboardScreen extends StatefulWidget {
 }
 
 class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
+  late final AuthSession _session = widget.session ?? AuthSession.shared;
   late final AdminRepository _repository =
       widget.repository ?? DemoAdminRepository();
   _AdminSection _section = _AdminSection.users;
 
   @override
   Widget build(BuildContext context) {
-    if (widget.role != ModerationRole.admin) {
-      return Scaffold(
-        backgroundColor: Colors.transparent,
-        appBar: AppBar(title: const Text('Administración')),
-        body: const Center(
-          child: Text(
-            'Esta sección está disponible solo para administradores.',
-          ),
-        ),
-      );
-    }
+    return RoleGuard(
+      permission: AppPermission.administration,
+      session: _session,
+      child: _buildDashboard(context),
+    );
+  }
 
+  Widget _buildDashboard(BuildContext context) {
     final wide = MediaQuery.sizeOf(context).width >= 900;
     return Theme(
       data: Theme.of(context).copyWith(
@@ -178,20 +175,29 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
-  void _logout() {
+  Future<void> _logout() async {
     NotificationScope.maybeOf(context)?.stop();
-    Navigator.of(context).pushAndRemoveUntil<void>(
-      MaterialPageRoute<void>(builder: (_) => const AuthScreen()),
-      (route) => false,
-    );
+    try {
+      if (widget.apiClient == null) {
+        await _session.clear();
+      } else {
+        await widget.apiClient!.logout();
+      }
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Se cerró la sesión localmente: ${error.message}'),
+        ),
+      );
+      await _session.clear();
+    }
   }
 
   Widget _buildSection() => switch (_section) {
     _AdminSection.users => AdminUsersScreen(repository: _repository),
     _AdminSection.moderators => AdminModeratorsScreen(repository: _repository),
     _AdminSection.rewards => AdminRewardsScreen(repository: _repository),
-    _AdminSection.moderation => const ModerationQueueScreen(
-      role: ModerationRole.admin,
-    ),
+    _AdminSection.moderation => ModerationQueueScreen(session: _session),
   };
 }

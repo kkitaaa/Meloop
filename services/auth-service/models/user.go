@@ -7,6 +7,7 @@ type Usuario struct {
 	Username       string `json:"username"`
 	Correo         string `json:"correo"`
 	ContrasenaHash string `json:"-"`
+	Rol            string `json:"rol"`
 	IDNivel        *int   `json:"id_nivel,omitempty"`
 	Experiencia    int    `json:"experiencia"`
 }
@@ -50,6 +51,7 @@ type SessionUser struct {
 	ID       string `json:"id"`
 	Username string `json:"username"`
 	Email    string `json:"email"`
+	Role     string `json:"role"`
 }
 
 // ChangePasswordRequest representa los datos para solicitar la actualización de contraseña

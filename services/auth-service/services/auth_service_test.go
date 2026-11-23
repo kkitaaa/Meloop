@@ -540,6 +540,7 @@ func TestLogin_Success(t *testing.T) {
 				Username:       "alan",
 				Correo:         "alan@meloop.com",
 				ContrasenaHash: string(hashedPassword),
+				Rol:            "admin",
 			},
 		},
 	}
@@ -565,6 +566,9 @@ func TestLogin_Success(t *testing.T) {
 	if res.User.ID != "user-uuid-1" || res.User.Username != "alan" || res.User.Email != "alan@meloop.com" {
 		t.Errorf("unexpected user details returned: %+v", res.User)
 	}
+	if res.User.Role != "admin" {
+		t.Errorf("expected role admin from the user repository, got %q", res.User.Role)
+	}
 
 	// Verify it was saved in session repository
 	savedSession := sessionRepo.sessions[res.SessionToken]
@@ -573,6 +577,9 @@ func TestLogin_Success(t *testing.T) {
 	}
 	if savedSession.ID != "user-uuid-1" {
 		t.Errorf("expected saved session user ID to be user-uuid-1, got %s", savedSession.ID)
+	}
+	if savedSession.Role != "admin" {
+		t.Errorf("expected saved session role admin, got %q", savedSession.Role)
 	}
 }
 
@@ -681,6 +688,39 @@ func TestValidateSession(t *testing.T) {
 	_, err = srv.ValidateSession(context.Background(), "never-existed-token")
 	if err == nil {
 		t.Error("expected error for non-existent session token, got nil")
+	}
+}
+
+func TestSyncSessionUserReturnsCurrentBackendRole(t *testing.T) {
+	cfg := &config.Config{PasswordMinLength: 8, SessionTTL: time.Hour}
+	repo := &mockUserRepository{
+		users: map[string]*models.Usuario{
+			"alan": {
+				IDUsuario: "user-uuid-1",
+				Username:  "alan",
+				Correo:    "alan@meloop.com",
+				Rol:       "moderador",
+			},
+		},
+	}
+	sessionRepo := &mockSessionRepository{
+		sessions: map[string]*models.SessionUser{
+			"valid-token": {
+				ID:       "user-uuid-1",
+				Username: "alan",
+				Email:    "alan@meloop.com",
+				Role:     "usuario",
+			},
+		},
+	}
+	srv := createTestAuthService(cfg, repo, sessionRepo, nil, nil)
+
+	user, err := srv.SyncSessionUser(context.Background(), "valid-token")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if user.Role != "moderador" {
+		t.Fatalf("expected current backend role moderador, got %q", user.Role)
 	}
 }
 

@@ -1,7 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
+import 'package:dio/dio.dart';
 import 'package:flutter_app/services/api_client.dart';
 import 'package:flutter_app/services/auth_session.dart';
+import 'package:flutter_app/services/user_permissions.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -37,6 +41,7 @@ void main() {
         expect(user.id, 'user-1');
         expect(session.token, 'session-token');
         expect(session.user?.email, 'ana@example.test');
+        expect(session.user?.role, UserRole.user);
         client.close();
         await session.clear();
       },
@@ -53,6 +58,7 @@ void main() {
             id: 'user-1',
             username: 'Ana',
             email: 'ana@example.test',
+            role: UserRole.user,
           ),
         );
         final client = ApiClient(
@@ -115,6 +121,175 @@ void main() {
 
       expect(response.success, isTrue);
       expect(response.data?.message, 'Gateway disponible');
+    });
+
+    test(
+      'refreshes the saved role from the authenticated backend response',
+      () async {
+        final session = AuthSession(persistent: false);
+        await session.establish(
+          sessionToken: 'role-token',
+          expiresInSeconds: 3600,
+          sessionUser: const AuthUser(
+            id: 'user-1',
+            username: 'Ana',
+            email: 'ana@example.test',
+            role: UserRole.user,
+          ),
+        );
+        final client = ApiClient(
+          session: session,
+          httpClient: MockClient((request) async {
+            expect(request.url.path, '/auth/validate');
+            return _jsonResponse(
+              statusCode: 200,
+              body: {
+                'success': true,
+                'data': {
+                  'id': 'user-1',
+                  'username': 'Ana',
+                  'email': 'ana@example.test',
+                  'role': 'moderador',
+                },
+                'error': null,
+              },
+            );
+          }),
+        );
+
+        final user = await client.validateSession();
+
+        expect(user.role, UserRole.moderator);
+        expect(session.user?.role, UserRole.moderator);
+        expect(session.permissions.canModerateReports, isTrue);
+        client.close();
+        await session.clear();
+      },
+    );
+
+    test('syncs permissions after a forbidden response', () async {
+      final session = AuthSession(persistent: false);
+      await session.establish(
+        sessionToken: 'role-token',
+        expiresInSeconds: 3600,
+        sessionUser: const AuthUser(
+          id: 'user-1',
+          username: 'Ana',
+          email: 'ana@example.test',
+          role: UserRole.admin,
+        ),
+      );
+      final client = ApiClient(
+        session: session,
+        httpClient: MockClient((request) async {
+          if (request.url.path == '/api/demo') {
+            return _jsonResponse(
+              statusCode: 403,
+              body: {
+                'success': false,
+                'data': null,
+                'error': {'code': 'FORBIDDEN', 'message': 'Permiso revocado.'},
+              },
+            );
+          }
+          expect(request.url.path, '/auth/validate');
+          return _jsonResponse(
+            statusCode: 200,
+            body: {
+              'success': true,
+              'data': {
+                'id': 'user-1',
+                'username': 'Ana',
+                'email': 'ana@example.test',
+                'role': 'usuario',
+              },
+              'error': null,
+            },
+          );
+        }),
+      );
+
+      await expectLater(
+        client.getDemo(),
+        throwsA(
+          isA<ApiException>().having(
+            (error) => error.statusCode,
+            'statusCode',
+            403,
+          ),
+        ),
+      );
+
+      expect(session.user?.role, UserRole.user);
+      expect(session.permissions.canAccessAdministration, isFalse);
+      client.close();
+      await session.clear();
+    });
+
+    test('syncs permissions after a Dio request is forbidden', () async {
+      final session = AuthSession(persistent: false);
+      await session.establish(
+        sessionToken: 'role-token',
+        expiresInSeconds: 3600,
+        sessionUser: const AuthUser(
+          id: 'user-1',
+          username: 'Ana',
+          email: 'ana@example.test',
+          role: UserRole.admin,
+        ),
+      );
+      final dio = Dio();
+      dio.httpClientAdapter = _DioMockAdapter((options) {
+        expect(options.uri.path, '/v1/search/users');
+        expect(options.headers['Authorization'], 'Bearer role-token');
+        return ResponseBody.fromString(
+          jsonEncode({
+            'success': false,
+            'data': null,
+            'error': {'code': 'FORBIDDEN', 'message': 'Permiso revocado.'},
+          }),
+          403,
+          headers: {
+            Headers.contentTypeHeader: ['application/json'],
+          },
+        );
+      });
+      final client = ApiClient(
+        dio: dio,
+        session: session,
+        httpClient: MockClient((request) async {
+          expect(request.url.path, '/auth/validate');
+          return _jsonResponse(
+            statusCode: 200,
+            body: {
+              'success': true,
+              'data': {
+                'id': 'user-1',
+                'username': 'Ana',
+                'email': 'ana@example.test',
+                'role': 'usuario',
+              },
+              'error': null,
+            },
+          );
+        }),
+      );
+
+      await expectLater(
+        client.searchUsers('Ana'),
+        throwsA(
+          isA<ApiException>().having(
+            (error) => error.statusCode,
+            'statusCode',
+            403,
+          ),
+        ),
+      );
+
+      expect(session.user?.role, UserRole.user);
+      dio.close(force: true);
+      client.close();
+      await session.clear();
     });
 
     test('sends and decodes a successful POST response', () async {
@@ -263,6 +438,7 @@ void main() {
             id: 'user-1',
             username: 'Ana',
             email: 'ana@example.test',
+            role: UserRole.user,
           ),
         );
         final client = ApiClient(
@@ -359,6 +535,24 @@ void main() {
   });
 }
 
+class _DioMockAdapter implements HttpClientAdapter {
+  _DioMockAdapter(this.respond);
+
+  final ResponseBody Function(RequestOptions options) respond;
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    return respond(options);
+  }
+
+  @override
+  void close({bool force = false}) {}
+}
+
 Map<String, Object?> _feedPost(int id) => {
   'id': id,
   'user': 'Usuario_$id',
@@ -388,6 +582,7 @@ http.Response _sessionResponse({
   required int statusCode,
   required String token,
   required int expiresIn,
+  String role = 'usuario',
 }) {
   return _jsonResponse(
     statusCode: statusCode,
@@ -400,6 +595,7 @@ http.Response _sessionResponse({
           'id': 'user-1',
           'username': 'Ana',
           'email': 'ana@example.test',
+          'role': role,
         },
       },
       'error': null,

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 
 import '../services/api_client.dart';
+import '../services/auth_session.dart';
 import 'friends_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
 import '../features/posts/presentation/post_editor_dialog.dart';
@@ -13,7 +14,6 @@ import '../widgets/app_settings_menu.dart';
 import '../widgets/desktop_app_header.dart';
 import '../widgets/desktop_chat.dart';
 import '../widgets/mobile_app_header.dart';
-import '../features/moderation/data/moderation_models.dart';
 import '../features/moderation/presentation/moderation_queue_screen.dart';
 import '../core/navigation/artists_and_songs_screen.dart';
 import '../features/gamification/presentation/gamification_demo_controller.dart';
@@ -26,13 +26,8 @@ import '../../widgets/states/error_state.dart';
 
 class FeedScreen extends StatefulWidget {
   final ApiClient? apiClient;
-  final ModerationRole userRole;
 
-  const FeedScreen({
-    super.key,
-    this.apiClient,
-    this.userRole = ModerationRole.user,
-  });
+  const FeedScreen({super.key, this.apiClient});
 
   @override
   State<FeedScreen> createState() => FeedScreenState();
@@ -45,6 +40,7 @@ class FeedScreenState extends State<FeedScreen> {
 
   late final ApiClient _apiClient;
   late final bool _ownsApiClient;
+  final AuthSession _authSession = AuthSession.shared;
   final ScrollController _scrollController = ScrollController();
   final List<Map<String, dynamic>> _posts = [];
 
@@ -57,10 +53,12 @@ class FeedScreenState extends State<FeedScreen> {
   bool _hasError = false;
   String? _feedError;
   int _errorCode = 0;
+  bool get _canModerate => _authSession.permissions.canModerateReports;
 
   @override
   void initState() {
     super.initState();
+    _authSession.addListener(_onSessionChanged);
     _apiClient = widget.apiClient ?? ApiClient();
     _ownsApiClient = widget.apiClient == null;
 
@@ -78,9 +76,14 @@ class FeedScreenState extends State<FeedScreen> {
 
   @override
   void dispose() {
+    _authSession.removeListener(_onSessionChanged);
     _scrollController.dispose();
     if (_ownsApiClient) _apiClient.close();
     super.dispose();
+  }
+
+  void _onSessionChanged() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _fetchInitialPosts({String? category}) async {
@@ -210,10 +213,11 @@ class FeedScreenState extends State<FeedScreen> {
   Future<void> createPost() => _createPost();
 
   void _openModerationQueue() {
+    if (!_canModerate) return;
     Navigator.push(
       context,
       MaterialPageRoute<void>(
-        builder: (_) => ModerationQueueScreen(role: widget.userRole),
+        builder: (_) => ModerationQueueScreen(session: _authSession),
       ),
     );
   }
@@ -252,7 +256,6 @@ class FeedScreenState extends State<FeedScreen> {
   }
 
   Widget _buildTopBar(bool isDesktop) {
-    final canModerate = widget.userRole != ModerationRole.user;
     if (isDesktop) {
       return DesktopAppHeader(
         activeSection: DesktopNavigationSection.home,
@@ -269,7 +272,7 @@ class FeedScreenState extends State<FeedScreen> {
             builder: (_) => ProfileScreen(apiClient: _apiClient),
           ),
         ),
-        onModerationTap: canModerate ? _openModerationQueue : null,
+        onModerationTap: _canModerate ? _openModerationQueue : null,
         onSearchTap: _openSearch,
         apiClient: _apiClient,
       );
@@ -278,7 +281,7 @@ class FeedScreenState extends State<FeedScreen> {
     if (defaultTargetPlatform == TargetPlatform.android) {
       return MobileAppHeader(
         onSearchTap: _openSearch,
-        onModerationTap: canModerate ? _openModerationQueue : null,
+        onModerationTap: _canModerate ? _openModerationQueue : null,
         apiClient: _apiClient,
       );
     }

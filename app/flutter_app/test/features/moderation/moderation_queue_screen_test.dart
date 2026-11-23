@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_app/features/moderation/data/moderation_models.dart';
 import 'package:flutter_app/features/moderation/data/moderation_repository.dart';
 import 'package:flutter_app/features/moderation/presentation/moderation_queue_screen.dart';
+import 'package:flutter_app/services/auth_session.dart';
+import 'package:flutter_app/services/user_permissions.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   testWidgets('denies access to regular users', (tester) async {
+    final session = await _sessionFor(UserRole.user);
     await tester.pumpWidget(
-      const MaterialApp(home: ModerationQueueScreen(role: ModerationRole.user)),
+      MaterialApp(home: ModerationQueueScreen(session: session)),
     );
     expect(
       find.text('Esta sección está disponible solo para moderadores.'),
@@ -23,10 +25,11 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
+    final session = await _sessionFor(UserRole.moderator);
     await tester.pumpWidget(
       MaterialApp(
         home: ModerationQueueScreen(
-          role: ModerationRole.moderator,
+          session: session,
           repository: DemoModerationRepository(),
         ),
       ),
@@ -51,10 +54,11 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
+    final session = await _sessionFor(UserRole.admin);
     await tester.pumpWidget(
       MaterialApp(
         home: ModerationQueueScreen(
-          role: ModerationRole.admin,
+          session: session,
           repository: DemoModerationRepository(),
         ),
       ),
@@ -72,4 +76,19 @@ void main() {
       findsOneWidget,
     );
   });
+}
+
+Future<AuthSession> _sessionFor(UserRole role) async {
+  final session = AuthSession(persistent: false);
+  await session.establish(
+    sessionToken: 'test-token',
+    expiresInSeconds: 3600,
+    sessionUser: AuthUser(
+      id: 'user-1',
+      username: 'Ana',
+      email: 'ana@example.test',
+      role: role,
+    ),
+  );
+  return session;
 }

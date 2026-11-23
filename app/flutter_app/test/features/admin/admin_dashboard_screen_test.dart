@@ -8,10 +8,10 @@ import 'package:flutter_app/features/admin/presentation/admin_dashboard_screen.d
 import 'package:flutter_app/features/admin/presentation/admin_moderators_screen.dart';
 import 'package:flutter_app/features/admin/presentation/admin_rewards_screen.dart';
 import 'package:flutter_app/features/admin/presentation/admin_users_screen.dart';
-import 'package:flutter_app/features/moderation/data/moderation_models.dart';
 import 'package:flutter_app/screens/auth_screen.dart';
 import 'package:flutter_app/services/api_client.dart';
 import 'package:flutter_app/services/auth_session.dart';
+import 'package:flutter_app/services/user_permissions.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -61,8 +61,9 @@ void main() {
   });
 
   testWidgets('admin tools reject non-admin roles', (tester) async {
+    final session = await _sessionFor(UserRole.user);
     await tester.pumpWidget(
-      const MaterialApp(home: AdminDashboardScreen(role: ModerationRole.user)),
+      MaterialApp(home: AdminDashboardScreen(session: session)),
     );
 
     expect(
@@ -72,7 +73,35 @@ void main() {
     expect(find.byType(AdminUsersScreen), findsNothing);
   });
 
+  testWidgets('removes admin content when the backend role is revoked', (
+    tester,
+  ) async {
+    final session = await _sessionFor(UserRole.admin);
+    await tester.pumpWidget(
+      MaterialApp(home: AdminDashboardScreen(session: session)),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(AdminUsersScreen), findsOneWidget);
+
+    await session.updateUser(
+      const AuthUser(
+        id: 'user-1',
+        username: 'Ana',
+        email: 'ana@example.test',
+        role: UserRole.user,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AdminUsersScreen), findsNothing);
+    expect(
+      find.text('Esta sección está disponible solo para administradores.'),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('admin dashboard opens API connection test', (tester) async {
+    final session = await _sessionFor(UserRole.admin);
     final apiClient = ApiClient(
       httpClient: MockClient((request) async {
         expect(request.method, 'GET');
@@ -95,10 +124,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: AdminDashboardScreen(
-          role: ModerationRole.admin,
-          apiClient: apiClient,
-        ),
+        home: AdminDashboardScreen(session: session, apiClient: apiClient),
       ),
     );
     await tester.pumpAndSettle();
@@ -112,20 +138,27 @@ void main() {
     );
   });
 
-  testWidgets('mobile admin logout action returns to login', (tester) async {
+  testWidgets('mobile admin logout clears the authenticated role', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(500, 900);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
+    final session = await _sessionFor(UserRole.admin);
     await tester.pumpWidget(
-      const MaterialApp(home: AdminDashboardScreen(role: ModerationRole.admin)),
+      MaterialApp(home: AdminDashboardScreen(session: session)),
     );
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('Cerrar sesión'));
     await tester.pumpAndSettle();
 
-    expect(find.byType(AuthScreen), findsOneWidget);
+    expect(session.isAuthenticated, isFalse);
+    expect(
+      find.text('Esta sección está disponible solo para administradores.'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('admin dashboard opens all three panels', (tester) async {
@@ -135,12 +168,10 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     final repository = DemoAdminRepository();
+    final session = await _sessionFor(UserRole.admin);
     await tester.pumpWidget(
       MaterialApp(
-        home: AdminDashboardScreen(
-          role: ModerationRole.admin,
-          repository: repository,
-        ),
+        home: AdminDashboardScreen(session: session, repository: repository),
       ),
     );
     await tester.pumpAndSettle();
@@ -233,8 +264,9 @@ void main() {
   testWidgets('admin dashboard exposes the API test action in its header', (
     tester,
   ) async {
+    final session = await _sessionFor(UserRole.admin);
     await tester.pumpWidget(
-      const MaterialApp(home: AdminDashboardScreen(role: ModerationRole.admin)),
+      MaterialApp(home: AdminDashboardScreen(session: session)),
     );
     await tester.pumpAndSettle();
 
@@ -250,10 +282,11 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
 
+      final session = await _sessionFor(UserRole.admin);
       await tester.pumpWidget(
         MaterialApp(
           home: AdminDashboardScreen(
-            role: ModerationRole.admin,
+            session: session,
             repository: DemoAdminRepository(),
           ),
         ),
@@ -321,7 +354,26 @@ void main() {
       await tester.pump(const Duration(seconds: 5));
       await tester.tap(find.byKey(const ValueKey('admin-logout')));
       await tester.pumpAndSettle();
-      expect(find.byType(AuthScreen), findsOneWidget);
+      expect(session.isAuthenticated, isFalse);
+      expect(
+        find.text('Esta sección está disponible solo para administradores.'),
+        findsOneWidget,
+      );
     },
   );
+}
+
+Future<AuthSession> _sessionFor(UserRole role) async {
+  final session = AuthSession(persistent: false);
+  await session.establish(
+    sessionToken: 'test-token',
+    expiresInSeconds: 3600,
+    sessionUser: AuthUser(
+      id: 'user-1',
+      username: 'Ana',
+      email: 'ana@example.test',
+      role: role,
+    ),
+  );
+  return session;
 }

@@ -1,17 +1,22 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+
+import 'user_permissions.dart';
 
 class AuthUser {
   const AuthUser({
     required this.id,
     required this.username,
     required this.email,
+    required this.role,
   });
 
   final String id;
   final String username;
   final String email;
+  final UserRole role;
 
   factory AuthUser.fromJson(Object? value) {
     if (value is! Map<String, dynamic>) {
@@ -21,23 +26,34 @@ class AuthUser {
     final id = value['id'];
     final username = value['username'];
     final email = value['email'];
+    final role = value['role'] ?? value['rol'];
     if (id is! String || username is! String || email is! String) {
       throw const FormatException(
         'El servidor devolvió un usuario incompleto.',
       );
     }
 
-    return AuthUser(id: id, username: username, email: email);
+    return AuthUser(
+      id: id,
+      username: username,
+      email: email,
+      role: UserRole.fromBackend(role),
+    );
   }
 
-  Map<String, String> toJson() => {
+  Map<String, Object> toJson() => {
     'id': id,
     'username': username,
     'email': email,
+    'role': switch (role) {
+      UserRole.user => 'user',
+      UserRole.moderator => 'moderator',
+      UserRole.admin => 'admin',
+    },
   };
 }
 
-class AuthSession {
+class AuthSession extends ChangeNotifier {
   AuthSession({bool persistent = true, FlutterSecureStorage? storage})
     : _storage = persistent ? (storage ?? FlutterSecureStorage()) : null;
 
@@ -58,6 +74,9 @@ class AuthSession {
 
   bool get isAuthenticated =>
       hasToken && expiresAt != null && expiresAt!.isAfter(DateTime.now());
+
+  UserPermissions get permissions =>
+      UserPermissions(user?.role ?? UserRole.user);
 
   bool get shouldRefresh {
     final expiry = expiresAt;
@@ -116,6 +135,31 @@ class AuthSession {
     token = sessionToken;
     expiresAt = expiry;
     user = sessionUser;
+    notifyListeners();
+  }
+
+  Future<void> updateUser(AuthUser sessionUser) async {
+    final currentUser = user;
+    if (currentUser == null || currentUser.id != sessionUser.id) {
+      throw const FormatException(
+        'El servidor devolvió un usuario distinto al de la sesión.',
+      );
+    }
+    if (currentUser.role == sessionUser.role &&
+        currentUser.username == sessionUser.username &&
+        currentUser.email == sessionUser.email) {
+      return;
+    }
+
+    final storage = _storage;
+    if (storage != null) {
+      await storage.write(
+        key: _userKey,
+        value: jsonEncode(sessionUser.toJson()),
+      );
+    }
+    user = sessionUser;
+    notifyListeners();
   }
 
   Future<void> refreshOnce(Future<void> Function() refresh) {
@@ -136,10 +180,14 @@ class AuthSession {
     expiresAt = null;
     user = null;
     final storage = _storage;
-    if (storage != null) {
-      await storage.delete(key: _tokenKey);
-      await storage.delete(key: _expiryKey);
-      await storage.delete(key: _userKey);
+    try {
+      if (storage != null) {
+        await storage.delete(key: _tokenKey);
+        await storage.delete(key: _expiryKey);
+        await storage.delete(key: _userKey);
+      }
+    } finally {
+      notifyListeners();
     }
   }
 }

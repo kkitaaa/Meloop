@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/auth/role_guard.dart';
+import '../../../services/auth_session.dart';
 import '../data/moderation_models.dart';
 import '../data/moderation_repository.dart';
 
 class ModerationQueueScreen extends StatefulWidget {
-  const ModerationQueueScreen({super.key, required this.role, this.repository});
+  const ModerationQueueScreen({super.key, this.session, this.repository});
 
-  final ModerationRole role;
+  final AuthSession? session;
   final ModerationRepository? repository;
 
   @override
@@ -16,6 +18,7 @@ class ModerationQueueScreen extends StatefulWidget {
 class _ModerationQueueScreenState extends State<ModerationQueueScreen> {
   static const _pageSize = 10;
 
+  late final AuthSession _session = widget.session ?? AuthSession.shared;
   late final ModerationRepository _repository =
       widget.repository ?? DemoModerationRepository();
   final ScrollController _scrollController = ScrollController();
@@ -31,14 +34,14 @@ class _ModerationQueueScreenState extends State<ModerationQueueScreen> {
   bool _hasMore = true;
   String? _errorMessage;
 
-  bool get _isAdmin => widget.role == ModerationRole.admin;
-  bool get _canModerate =>
-      widget.role == ModerationRole.admin ||
-      widget.role == ModerationRole.moderator;
+  bool get _isAdmin =>
+      _session.permissions.canAccessAdministration;
+  bool get _canModerate => _session.permissions.canModerateReports;
 
   @override
   void initState() {
     super.initState();
+    _session.addListener(_onSessionChanged);
     _scrollController.addListener(_onScroll);
     if (_canModerate) {
       _loadCounts();
@@ -48,10 +51,20 @@ class _ModerationQueueScreenState extends State<ModerationQueueScreen> {
 
   @override
   void dispose() {
+    _session.removeListener(_onSessionChanged);
     _scrollController
       ..removeListener(_onScroll)
       ..dispose();
     super.dispose();
+  }
+
+  void _onSessionChanged() {
+    if (!mounted) return;
+    setState(() {});
+    if (_canModerate && _reports.isEmpty) {
+      _loadCounts();
+      _loadReports(reset: true);
+    }
   }
 
   void _onScroll() {
@@ -162,16 +175,14 @@ class _ModerationQueueScreenState extends State<ModerationQueueScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (!_canModerate) {
-      return Scaffold(
-        backgroundColor: Colors.transparent,
-        appBar: AppBar(title: const Text('Moderación')),
-        body: const Center(
-          child: Text('Esta sección está disponible solo para moderadores.'),
-        ),
-      );
-    }
+    return RoleGuard(
+      permission: AppPermission.moderation,
+      session: _session,
+      child: _buildAuthorizedContent(context),
+    );
+  }
 
+  Widget _buildAuthorizedContent(BuildContext context) {
     final isDesktop = MediaQuery.sizeOf(context).width > 900;
     return Scaffold(
       backgroundColor: Colors.transparent,
