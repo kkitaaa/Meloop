@@ -33,7 +33,7 @@ Consulta la documentación completa en [`docs/centralized_block_exclusion.md`](.
 
 ### Paginación de amigos (RF-12)
 
-`GET /friends?limit=20&cursor=...&q=...` acepta `limit` (predeterminado 20, máximo 50), `cursor` (base64 devuelto por la página anterior) y `q` (búsqueda parcial por nombre de usuario). Mantén el mismo `q` al enviar cada `cursor`. El mismo endpoint está disponible tanto en el servicio social como a través del gateway.
+`GET /friends?limit=20&cursor=...&q=...` acepta `limit` (predeterminado 20, máximo 50; cualquier valor positivo superior a 50 se ajusta automáticamente a 50), `cursor` (base64 devuelto por la página anterior) y `q` (búsqueda parcial por nombre de usuario). Mantén el mismo `q` al enviar cada `cursor`. El mismo endpoint está disponible tanto en el servicio social como a través del gateway.
 
 Ejemplo: `GET /friends?limit=20&cursor=eyJmZWNoYV9hbWlzdGFkIjoi...&q=usuario`.
 
