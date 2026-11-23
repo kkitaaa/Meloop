@@ -47,6 +47,8 @@ type FriendshipService interface {
 	RemoveFriend(ctx context.Context, userID, targetID string) error
 	GetFriendProfile(ctx context.Context, userID, friendID string) (*models.FriendProfile, error)
 	BlockUser(ctx context.Context, blockerID, blockedID string) error
+	UnblockUser(ctx context.Context, blockerID, blockedID string) error
+	GetFriendsCount(ctx context.Context, userID string) (int, error)
 	ValidateInteraction(ctx context.Context, user1ID, user2ID string) error
 	GetFriendSuggestions(ctx context.Context, userID string) ([]models.FriendSuggestion, error)
 	ExcludeBlocked(ctx context.Context, userID string, candidateIDs []string) ([]string, error)
@@ -190,6 +192,26 @@ func (s *friendshipService) BlockUser(ctx context.Context, blockerID, blockedID 
 		}
 	}
 	return nil
+}
+
+func (s *friendshipService) UnblockUser(ctx context.Context, blockerID, blockedID string) error {
+	blockerID = strings.TrimSpace(blockerID)
+	blockedID = strings.TrimSpace(blockedID)
+	if blockerID == "" || blockedID == "" {
+		return ErrInvalidUser
+	}
+	if blockerID == blockedID {
+		return ErrSelfBlock
+	}
+	return mapRepositoryError(s.repo.UnblockUser(ctx, blockerID, blockedID))
+}
+
+func (s *friendshipService) GetFriendsCount(ctx context.Context, userID string) (int, error) {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return 0, ErrInvalidUser
+	}
+	return s.repo.GetAcceptedFriendsCount(ctx, userID)
 }
 
 func (s *friendshipService) ValidateInteraction(ctx context.Context, user1ID, user2ID string) error {

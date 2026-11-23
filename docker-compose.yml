@@ -85,7 +85,11 @@ services:
       - "8082:8082"
     environment:
       MEDIA_SERVICE_URL: http://media-service:8085
-      DATABASE_URL: ${DATABASE_URL:-postgres://postgres:postgres@host.docker.internal:5432/postgres?sslmode=disable}
+      DATABASE_URL: ${DATABASE_URL:?Debes configurar DATABASE_URL en .env}
+      SOCIAL_SERVICE_URL: http://social-service:8086
+      SOCIAL_SERVICE_INTERNAL_TOKEN: ${SOCIAL_SERVICE_INTERNAL_TOKEN:?Debes configurar SOCIAL_SERVICE_INTERNAL_TOKEN en .env}
+    depends_on:
+      - social-service
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
@@ -104,6 +108,26 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
+      - redis
+    networks:
+      - meloop-network
+
+  social-service:
+    build:
+      context: .
+      dockerfile: services/social-service/Dockerfile
+    container_name: meloop-social-service
+    ports:
+      - "8086:8086"
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?Debes configurar DATABASE_URL en .env}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/
+      SOCIAL_SERVICE_INTERNAL_TOKEN: ${SOCIAL_SERVICE_INTERNAL_TOKEN:?Debes configurar SOCIAL_SERVICE_INTERNAL_TOKEN en .env}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - rabbitmq
       - redis
     networks:
       - meloop-network

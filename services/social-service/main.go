@@ -33,7 +33,7 @@ func run() error {
 	defer dbPool.Close()
 	logger.Info("database_connected", "component", "postgres")
 
-	repository := repositories.NewFriendshipRepository(dbPool)
+	repository := repositories.NewFriendshipRepository(dbPool, cfg.RedisURL)
 	compatRepository := repositories.NewCompatibilityRepository(dbPool)
 	service := services.NewFriendshipService(repository, messaging.NewPublisher(cfg.RabbitMQURL), compatRepository)
 	controller := controllers.NewFriendshipController(service)
@@ -41,6 +41,7 @@ func run() error {
 	router.Use(logging.GinMiddleware(logger))
 	router.Use(httpresponse.GinRecoveryWithLogger(logger))
 	routes.SetupRoutes(router, controller, client.NewAuthClient(cfg.AuthServiceURL))
+	routes.SetupInternalCountRoutes(router, controller, cfg.InternalServiceToken)
 
 	logger.Info("service_listening", "port", cfg.Port)
 	if err := router.Run(":" + cfg.Port); err != nil {

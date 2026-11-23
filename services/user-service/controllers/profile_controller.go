@@ -119,6 +119,10 @@ func (ctrl *ProfileController) GetUserProfile(c *gin.Context) {
 
 	profile, err := ctrl.profileService.GetThirdPartyProfile(c.Request.Context(), requestingUserID, targetID)
 	if err != nil {
+		if errors.Is(err, services.ErrSocialCounterUnavailable) {
+			httpresponse.ErrorGin(c, http.StatusBadGateway, httpresponse.ErrInternal, "No fue posible consultar las estadísticas sociales")
+			return
+		}
 		if errors.Is(err, services.ErrBlocked) {
 			// RN-09: Recurso no disponible ante bloqueo bidireccional sin confirmar existencia
 			httpresponse.NotFoundGin(c, "Perfil no disponible")
@@ -139,6 +143,10 @@ func (ctrl *ProfileController) GetUserProfile(c *gin.Context) {
 func (ctrl *ProfileController) handleOwnProfile(c *gin.Context, userID string) {
 	profile, err := ctrl.profileService.GetOwnProfile(c.Request.Context(), userID)
 	if err != nil {
+		if errors.Is(err, services.ErrSocialCounterUnavailable) {
+			httpresponse.ErrorGin(c, http.StatusBadGateway, httpresponse.ErrInternal, "No fue posible consultar las estadísticas sociales")
+			return
+		}
 		if errors.Is(err, services.ErrUserNotFound) {
 			httpresponse.NotFoundGin(c, "Usuario no encontrado")
 			return

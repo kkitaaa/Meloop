@@ -74,6 +74,26 @@ func (m *mockFriendshipRepoForSuggestions) GetBlockedCandidateIDs(ctx context.Co
 	return []string{}, nil
 }
 
+func (m *mockFriendshipRepoForSuggestions) UnblockUser(ctx context.Context, blockerID, blockedID string) error {
+	return nil
+}
+
+func (m *mockFriendshipRepoForSuggestions) GetAcceptedFriendsCount(ctx context.Context, userID string) (int, error) {
+	return 0, nil
+}
+
+func (m *mockFriendshipRepoForSuggestions) GetFriendsCount(ctx context.Context, userID string) (int, error) {
+	return 0, nil
+}
+
+func (m *mockFriendshipRepoForSuggestions) GetBlockedUsersCount(ctx context.Context, userID string) (int, error) {
+	return 0, nil
+}
+
+func (m *mockFriendshipRepoForSuggestions) GetBlockedCount(ctx context.Context, userID string) (int, error) {
+	return 0, nil
+}
+
 type mockCompatibilityRepoForSuggestions struct {
 	profiles map[string]*models.UserMusicalData
 	err      error
