@@ -82,6 +82,65 @@ class ApiClient implements PostPublisher {
     );
   }
 
+  Future<ApiResponse<T>> patch<T>(
+    String path,
+    Object body,
+    T Function(Object? json) parseData,
+  ) {
+    return _send(
+      () => _httpClient.patch(
+        _uriFor(path),
+        headers: _headers,
+        body: jsonEncode(body),
+      ),
+      parseData,
+    );
+  }
+
+  Future<Map<String, dynamic>> getPrivacySettings() async {
+    final response = await get('/users/me/privacy', _settingsObject);
+    return response.data!;
+  }
+
+  Future<Map<String, dynamic>> updatePrivacySetting(
+    String field,
+    String value,
+  ) async {
+    final response = await patch('/users/me/privacy', {
+      field: value,
+    }, _settingsObject);
+    return response.data!;
+  }
+
+  Future<List<Map<String, dynamic>>> getNotificationSettings() async {
+    final response = await get(
+      '/users/me/notifications/settings',
+      _notificationSettings,
+    );
+    return response.data!;
+  }
+
+  Future<void> updateNotificationSetting({
+    required String type,
+    required bool enabled,
+  }) async {
+    await patch(
+      '/users/me/notifications/settings/${Uri.encodeComponent(type)}',
+      {'habilitada': enabled},
+      _settingsObject,
+    );
+  }
+
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    await post('/auth/change-password', {
+      'current_password': currentPassword,
+      'new_password': newPassword,
+    }, _settingsObject);
+  }
+
   Future<AuthUser> login({
     required String email,
     required String password,
@@ -259,6 +318,31 @@ class ApiClient implements PostPublisher {
     throw const FormatException(
       'El API Gateway devolvió una respuesta inválida.',
     );
+  }
+
+  Map<String, dynamic> _settingsObject(Object? json) {
+    if (json is Map<String, dynamic>) return json;
+    throw const FormatException(
+      'El API Gateway devolvió una configuración inválida.',
+    );
+  }
+
+  List<Map<String, dynamic>> _notificationSettings(Object? json) {
+    if (json is! List) {
+      throw const FormatException(
+        'El API Gateway devolvió preferencias de notificación inválidas.',
+      );
+    }
+    return json
+        .map((item) {
+          if (item is! Map<String, dynamic>) {
+            throw const FormatException(
+              'El API Gateway devolvió una preferencia inválida.',
+            );
+          }
+          return item;
+        })
+        .toList(growable: false);
   }
 
   Future<ApiResponse<T>> _requestEnvelope<T>(

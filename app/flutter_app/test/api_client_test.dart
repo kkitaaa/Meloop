@@ -251,6 +251,111 @@ void main() {
         ),
       );
     });
+
+    test(
+      'uses authenticated account settings and password endpoints',
+      () async {
+        final session = AuthSession(persistent: false);
+        await session.establish(
+          sessionToken: 'settings-token',
+          expiresInSeconds: 3600,
+          sessionUser: const AuthUser(
+            id: 'user-1',
+            username: 'Ana',
+            email: 'ana@example.test',
+          ),
+        );
+        final client = ApiClient(
+          session: session,
+          httpClient: MockClient((request) async {
+            expect(request.headers['authorization'], 'Bearer settings-token');
+            switch ('${request.method} ${request.url.path}') {
+              case 'GET /users/me/privacy':
+                return _jsonResponse(
+                  statusCode: 200,
+                  body: {
+                    'success': true,
+                    'data': {'visibilidad_perfil': 'AMIGOS'},
+                    'error': null,
+                  },
+                );
+              case 'PATCH /users/me/privacy':
+                expect(jsonDecode(request.body), {
+                  'visibilidad_perfil': 'PRIVADO',
+                });
+                return _jsonResponse(
+                  statusCode: 200,
+                  body: {
+                    'success': true,
+                    'data': {'visibilidad_perfil': 'PRIVADO'},
+                    'error': null,
+                  },
+                );
+              case 'GET /users/me/notifications/settings':
+                return _jsonResponse(
+                  statusCode: 200,
+                  body: {
+                    'success': true,
+                    'data': [
+                      {'tipo_notificacion': 'LIKE', 'habilitada': false},
+                    ],
+                    'error': null,
+                  },
+                );
+              case 'PATCH /users/me/notifications/settings/LIKE':
+                expect(jsonDecode(request.body), {'habilitada': true});
+                return _jsonResponse(
+                  statusCode: 200,
+                  body: {
+                    'success': true,
+                    'data': {'tipo_notificacion': 'LIKE', 'habilitada': true},
+                    'error': null,
+                  },
+                );
+              case 'POST /auth/change-password':
+                expect(jsonDecode(request.body), {
+                  'current_password': 'current-pass',
+                  'new_password': 'new-password',
+                });
+                return _jsonResponse(
+                  statusCode: 200,
+                  body: {
+                    'success': true,
+                    'data': {'message': 'Contraseña actualizada correctamente'},
+                    'error': null,
+                  },
+                );
+              default:
+                fail('Solicitud inesperada: ${request.method} ${request.url}');
+            }
+          }),
+        );
+
+        expect(
+          (await client.getPrivacySettings())['visibilidad_perfil'],
+          'AMIGOS',
+        );
+        expect(
+          (await client.updatePrivacySetting(
+            'visibilidad_perfil',
+            'PRIVADO',
+          ))['visibilidad_perfil'],
+          'PRIVADO',
+        );
+        expect(
+          (await client.getNotificationSettings()).single['habilitada'],
+          isFalse,
+        );
+        await client.updateNotificationSetting(type: 'LIKE', enabled: true);
+        await client.changePassword(
+          currentPassword: 'current-pass',
+          newPassword: 'new-password',
+        );
+
+        client.close();
+        await session.clear();
+      },
+    );
   });
 }
 
