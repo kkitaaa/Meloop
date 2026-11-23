@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"github.com/meloop/social-service/controllers"
 	"github.com/meloop/social-service/models"
 	"github.com/meloop/social-service/routes"
@@ -18,7 +17,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
 
 func TestBlockedUsersCannotRequestOrAppearInSuggestions(t *testing.T) {
 	gin.SetMode(gin.TestMode)
