@@ -19,6 +19,8 @@ type friendshipRepositoryFake struct {
 	getProfileErr     error
 	blockUserErr      error
 	validateErr       error
+	messageAllowed    bool
+	messageErr        error
 	request           *models.FriendRequest
 	friends           []models.Friend
 	profile           *models.FriendProfile
@@ -115,6 +117,10 @@ func (f *friendshipRepositoryFake) ValidateInteraction(ctx context.Context, user
 	return nil
 }
 
+func (f *friendshipRepositoryFake) CanSendMessage(context.Context, string, string) (bool, error) {
+	return f.messageAllowed, f.messageErr
+}
+
 func (f *friendshipRepositoryFake) GetEligibleCandidates(ctx context.Context, userID string) ([]models.CandidateUser, error) {
 	return []models.CandidateUser{}, nil
 }
@@ -174,6 +180,7 @@ func TestFriendshipServiceSendRequest(t *testing.T) {
 		{name: "duplicate request", err: repositories.ErrRequestConflict, want: ErrRequestConflict},
 		{name: "inverse pending request", err: repositories.ErrRequestConflict, want: ErrRequestConflict},
 		{name: "blocked users", err: repositories.ErrBlocked, want: ErrBlocked},
+		{name: "privacy restricted", err: repositories.ErrPrivacyRestricted, want: ErrPrivacyRestricted},
 		{name: "accepted friendship", err: repositories.ErrRequestConflict, want: ErrRequestConflict},
 	}
 
@@ -190,6 +197,37 @@ func TestFriendshipServiceSendRequest(t *testing.T) {
 			}
 			if test.want == nil && !repo.created {
 				t.Fatal("expected repository to create the request")
+			}
+		})
+	}
+}
+
+func TestFriendshipServiceValidateMessage(t *testing.T) {
+	tests := []struct {
+		name       string
+		allowed    bool
+		repoErr    error
+		wantErr    error
+		senderID   string
+		receiverID string
+	}{
+		{name: "allowed", allowed: true, senderID: "u1", receiverID: "u2"},
+		{name: "privacy denied", senderID: "u1", receiverID: "u2", wantErr: ErrMessageNotAllowed},
+		{name: "blank sender", receiverID: "u2", wantErr: ErrInvalidUser},
+		{name: "same user", senderID: "u1", receiverID: "u1"},
+		{name: "repository error", senderID: "u1", receiverID: "u2", repoErr: errors.New("database error"), wantErr: errors.New("database error")},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			repo := &friendshipRepositoryFake{messageAllowed: test.allowed, messageErr: test.repoErr}
+			service := NewFriendshipService(repo, nil)
+			err := service.ValidateMessage(context.Background(), test.senderID, test.receiverID)
+			if test.wantErr == nil && err != nil {
+				t.Fatalf("expected no error, got %v", err)
+			}
+			if test.wantErr != nil && (err == nil || err.Error() != test.wantErr.Error()) {
+				t.Fatalf("expected error %v, got %v", test.wantErr, err)
 			}
 		})
 	}

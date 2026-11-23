@@ -24,6 +24,7 @@ var (
 	ErrNotFriends         = errors.New("users are not friends")
 	ErrNotAuthorized      = errors.New("user is not authorized for this operation")
 	ErrUserNotFound       = errors.New("user not found")
+	ErrPrivacyRestricted  = errors.New("privacy settings do not allow this interaction")
 )
 
 type FriendshipRepository interface {
@@ -39,6 +40,7 @@ type FriendshipRepository interface {
 	BlockUser(ctx context.Context, blockerID, blockedID string) error
 	IsBlocked(ctx context.Context, user1ID, user2ID string) (bool, error)
 	ValidateInteraction(ctx context.Context, user1ID, user2ID string) error
+	CanSendMessage(ctx context.Context, senderID, receiverID string) (bool, error)
 	GetEligibleCandidates(ctx context.Context, userID string) ([]models.CandidateUser, error)
 	GetMutualFriendsCount(ctx context.Context, userID string, candidateIDs []string) (map[string]int, error)
 	ExcludeBlocked(ctx context.Context, userID string, candidateIDs []string) ([]string, error)
@@ -88,15 +90,15 @@ func (r *postgresFriendshipRepository) CreatePending(ctx context.Context, sender
 
 	var reception string
 	err = tx.QueryRow(ctx, `
-		SELECT COALESCE(permitir_solicitudes_amistad, 'TODOS')
+		SELECT UPPER(TRIM(COALESCE(permitir_solicitudes_amistad, 'TODOS')))
 		FROM configuracion_privacidad WHERE id_usuario = $1`, receiverID).Scan(&reception)
 	if errors.Is(err, pgx.ErrNoRows) {
 		reception = "TODOS"
 	} else if err != nil {
 		return nil, err
 	}
-	if reception == "NADIE" || reception == "AMIGOS" {
-		return nil, ErrBlocked
+	if reception != "TODOS" {
+		return nil, ErrPrivacyRestricted
 	}
 
 	var relationshipExists bool
@@ -129,6 +131,38 @@ func (r *postgresFriendshipRepository) CreatePending(ctx context.Context, sender
 		return nil, err
 	}
 	return &request, nil
+}
+
+func (r *postgresFriendshipRepository) CanSendMessage(ctx context.Context, senderID, receiverID string) (bool, error) {
+	if r.pool == nil {
+		return false, errors.New("database connection pool is not initialized")
+	}
+
+	var allowed bool
+	err := r.pool.QueryRow(ctx, `
+		SELECT
+			NOT EXISTS (
+				SELECT 1 FROM bloqueo
+				WHERE (id_usuario_bloqueador = $1 AND id_usuario_bloqueado = $2)
+				   OR (id_usuario_bloqueador = $2 AND id_usuario_bloqueado = $1)
+			)
+			AND CASE UPPER(TRIM(COALESCE(cp.permitir_mensajes, 'AMIGOS')))
+				WHEN 'TODOS' THEN TRUE
+				WHEN 'AMIGOS' THEN EXISTS (
+					SELECT 1 FROM amistad
+					WHERE ((id_usuario_1 = $1 AND id_usuario_2 = $2)
+					    OR (id_usuario_1 = $2 AND id_usuario_2 = $1))
+					  AND UPPER(estado) = 'ACEPTADA'
+				)
+				ELSE FALSE
+			END
+		FROM (SELECT $2::varchar AS id_usuario) target
+		LEFT JOIN configuracion_privacidad cp ON cp.id_usuario = target.id_usuario
+	`, senderID, receiverID).Scan(&allowed)
+	if err != nil {
+		return false, err
+	}
+	return allowed, nil
 }
 
 func (r *postgresFriendshipRepository) ListReceived(ctx context.Context, userID string) ([]models.FriendRequest, error) {

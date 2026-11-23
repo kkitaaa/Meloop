@@ -600,6 +600,31 @@ func TestProfileService_GetThirdPartyProfile_PublicationsPrivate_StatsHidden(t *
 	}
 }
 
+func TestProfileService_GetThirdPartyProfile_InteractionsPrivate_FriendCountHidden(t *testing.T) {
+	profileRepo := &mockProfileRepository{}
+	userRepo := &mockUserRepository{}
+	mediaVerifier := &mockMediaVerifier{}
+	privacyRepo := &mockPrivacyRepository{
+		configs: map[string]*models.ConfiguracionPrivacidad{
+			"usr-target": {
+				IDUsuario:                "usr-target",
+				VisibilidadPerfil:        models.VisibilidadPublico,
+				VisibilidadPublicaciones: models.VisibilidadPublico,
+				VisibilidadInteracciones: models.VisibilidadPrivado,
+			},
+		},
+	}
+
+	srv := services.NewProfileService(profileRepo, userRepo, mediaVerifier, privacyRepo)
+	profile, err := srv.GetThirdPartyProfile(context.Background(), "usr-requester", "usr-target")
+	if err != nil {
+		t.Fatalf("error inesperado: %v", err)
+	}
+	if profile.Estadisticas == nil || profile.Estadisticas.Amigos != 0 {
+		t.Fatalf("el contador de amigos debe ocultarse según la privacidad de interacciones: %+v", profile.Estadisticas)
+	}
+}
+
 func TestProfileService_GetThirdPartyProfile_Blocked_RequesterBlockedOwner_RN09(t *testing.T) {
 	profileRepo := &mockProfileRepository{
 		isBlockedFunc: func(ctx context.Context, user1ID, user2ID string) (bool, error) {

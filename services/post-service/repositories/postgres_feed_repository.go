@@ -44,20 +44,34 @@ func (r *PostgresFeedRepository) GetMainFeed(userID string, limit, offset int) (
 			FROM INTERACCION WHERE tipo = 'comentario' GROUP BY id_publicacion
 		) c ON p.id_publicacion = c.id_publicacion
 		WHERE (
-			p.id_usuario IN (
-				SELECT id_usuario_2 FROM AMISTAD WHERE id_usuario_1 = ? AND estado = 'aceptada'
-				UNION
-				SELECT id_usuario_1 FROM AMISTAD WHERE id_usuario_2 = ? AND estado = 'aceptada'
-			) 
-			-- OR p.es_publico = true (Falta definir en BD)
+			p.id_usuario = ?
+			OR COALESCE((
+				SELECT UPPER(TRIM(cp.visibilidad_publicaciones))
+				FROM CONFIGURACION_PRIVACIDAD cp
+				WHERE cp.id_usuario = p.id_usuario
+			), 'PUBLICO') = 'PUBLICO'
+			OR (
+				COALESCE((
+					SELECT UPPER(TRIM(cp.visibilidad_publicaciones))
+					FROM CONFIGURACION_PRIVACIDAD cp
+					WHERE cp.id_usuario = p.id_usuario
+				), 'PUBLICO') = 'AMIGOS'
+				AND p.id_usuario IN (
+					SELECT id_usuario_2 FROM AMISTAD
+					WHERE id_usuario_1 = ? AND UPPER(estado) = 'ACEPTADA'
+					UNION
+					SELECT id_usuario_1 FROM AMISTAD
+					WHERE id_usuario_2 = ? AND UPPER(estado) = 'ACEPTADA'
+				)
+			)
 		)
 		-- AND p.id_usuario NOT IN (SELECT id_bloqueado FROM BLOQUEO...) (Falta definir en BD)
 		ORDER BY p.fecha_creacion DESC
 		LIMIT ? OFFSET ?
 	`
 
-	// Pasamos el userID 2 veces para verificar ambas direcciones de la AMISTAD
-	err := r.db.Raw(query, userID, userID, limit, offset).Scan(&feed).Error
+	// El userID se usa para autoría y para ambas direcciones de AMISTAD.
+	err := r.db.Raw(query, userID, userID, userID, limit, offset).Scan(&feed).Error
 	if err != nil {
 		return nil, err
 	}

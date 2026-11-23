@@ -52,6 +52,9 @@ func (m *mockFriendshipRepoForSuggestions) IsBlocked(ctx context.Context, user1I
 func (m *mockFriendshipRepoForSuggestions) ValidateInteraction(ctx context.Context, user1ID, user2ID string) error {
 	return nil
 }
+func (m *mockFriendshipRepoForSuggestions) CanSendMessage(ctx context.Context, senderID, receiverID string) (bool, error) {
+	return true, nil
+}
 func (m *mockFriendshipRepoForSuggestions) GetEligibleCandidates(ctx context.Context, userID string) ([]models.CandidateUser, error) {
 	if m.candErr != nil {
 		return nil, m.candErr

@@ -186,7 +186,7 @@ func (s *profileService) GetThirdPartyProfile(ctx context.Context, requestingUse
 	}
 
 	// Caso: Perfil privado o visible solo para amigos cuando NO existe amistad aceptada
-	if visPerfil == models.VisibilidadPrivado || (visPerfil == models.VisibilidadAmigos && !isFriend) {
+	if visPerfil != models.VisibilidadPublico && !(visPerfil == models.VisibilidadAmigos && isFriend) {
 		// Retornar exclusivamente la información básica de identificación permitida
 		return &models.ThirdPartyProfileResponse{
 			IDUsuario:     data.IDUsuario,
@@ -205,8 +205,13 @@ func (s *profileService) GetThirdPartyProfile(ctx context.Context, requestingUse
 		visPub = models.VisibilidadPublico
 	}
 
-	stats := &models.ProfileStatsDTO{
-		Amigos: data.Estadisticas.Amigos,
+	stats := &models.ProfileStatsDTO{}
+	visInteracciones := strings.ToUpper(strings.TrimSpace(privacy.VisibilidadInteracciones))
+	if visInteracciones == "" {
+		visInteracciones = models.VisibilidadPublico
+	}
+	if visInteracciones == models.VisibilidadPublico || (visInteracciones == models.VisibilidadAmigos && isFriend) {
+		stats.Amigos = data.Estadisticas.Amigos
 	}
 	if visPub == models.VisibilidadPublico || (visPub == models.VisibilidadAmigos && isFriend) {
 		stats.Publicaciones = data.Estadisticas.Publicaciones

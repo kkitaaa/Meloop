@@ -21,6 +21,7 @@ Microservicio encargado de la gestión de relaciones sociales en Meloop:
 - `GET /friends/:id/profile`: Consultar perfil de amigo.
 - `POST /friends/blocks`: Bloquear a un usuario.
 - `GET /friends/validate-interaction`: Validar interacción bidireccional entre usuarios.
+- `POST /friends/validate-message`: Validar bloqueo y preferencias de recepción antes de iniciar un mensaje privado (`{"id_usuario":"..."}`).
 - `GET /friends/suggestions`: Obtener sugerencias de amistad ordenadas por compatibilidad.
 - `POST /friends/blocks/exclude`: Excluir usuarios bloqueados para el usuario autenticado.
 

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -42,6 +43,7 @@ type mockFriendshipService struct {
 	getFriendProfileFunc       func(ctx context.Context, userID, friendID string) (*models.FriendProfile, error)
 	blockUserFunc              func(ctx context.Context, blockerID, blockedID string) error
 	validateInteractionFunc    func(ctx context.Context, user1ID, user2ID string) error
+	validateMessageFunc        func(ctx context.Context, senderID, receiverID string) error
 	getFriendSuggestionsFunc   func(ctx context.Context, userID string) ([]models.FriendSuggestion, error)
 	excludeBlockedFunc         func(ctx context.Context, userID string, candidateIDs []string) ([]string, error)
 	getBlockedCandidateIDsFunc func(ctx context.Context, userID string, candidateIDs []string) ([]string, error)
@@ -163,6 +165,13 @@ func (m *mockFriendshipService) ValidateInteraction(ctx context.Context, user1ID
 	return nil
 }
 
+func (m *mockFriendshipService) ValidateMessage(ctx context.Context, senderID, receiverID string) error {
+	if m.validateMessageFunc != nil {
+		return m.validateMessageFunc(ctx, senderID, receiverID)
+	}
+	return nil
+}
+
 func setupTestRouter(svc services.FriendshipService) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
@@ -256,6 +265,25 @@ func TestListFriends_HTTP_Exitoso(t *testing.T) {
 	data, ok := resp["data"].([]interface{})
 	if !ok || len(data) != 1 {
 		t.Fatalf("se esperaba 1 amigo en la lista")
+	}
+}
+
+func TestValidateMessage_HTTP_PrivacyRestricted(t *testing.T) {
+	service := &mockFriendshipService{
+		validateMessageFunc: func(context.Context, string, string) error {
+			return services.ErrMessageNotAllowed
+		},
+	}
+	router := setupTestRouter(service)
+
+	request := httptest.NewRequest(http.MethodPost, "/friends/validate-message", strings.NewReader(`{"id_usuario":"target"}`))
+	request.Header.Set("Content-Type", "application/json")
+	setAuthenticatedUser(request, "sender")
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d: %s", recorder.Code, http.StatusForbidden, recorder.Body.String())
 	}
 }
 

@@ -89,7 +89,7 @@ func main() {
 		protected.PUT("/me/profile", profileCtrl.UpdateProfile)
 		protected.PUT("/me/perfil", profileCtrl.UpdateProfile)
 
-		// Configuración de Privacidad (RF-05 / RF-55)
+		// Configuración de Privacidad (RF-52)
 		protected.GET("/me/privacy", privacyCtrl.GetPrivacy)
 		protected.PATCH("/me/privacy", privacyCtrl.UpdatePrivacy)
 		protected.PUT("/me/privacy", privacyCtrl.UpdatePrivacy)
@@ -118,6 +118,10 @@ func main() {
 		v1Protected.GET("/:id/perfil", profileCtrl.GetUserProfile)
 		v1Protected.PUT("/me/profile", profileCtrl.UpdateProfile)
 		v1Protected.PUT("/me/perfil", profileCtrl.UpdateProfile)
+
+		v1Protected.GET("/me/privacy", privacyCtrl.GetPrivacy)
+		v1Protected.PATCH("/me/privacy", privacyCtrl.UpdatePrivacy)
+		v1Protected.PUT("/me/privacy", privacyCtrl.UpdatePrivacy)
 
 		// Gestión de inventario y equipamiento (RF-08 / RF-09 / RN-12)
 		v1Protected.GET("/me/inventory", inventoryCtrl.GetInventory)

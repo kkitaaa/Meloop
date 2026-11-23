@@ -54,4 +54,7 @@ func TestFriendshipRepository_NilPool(t *testing.T) {
 	if _, err := repo.GetBlockedCandidateIDs(ctx, "u1", []string{"u2"}); err == nil {
 		t.Error("expected error with nil pool on GetBlockedCandidateIDs")
 	}
+	if _, err := repo.CanSendMessage(ctx, "u1", "u2"); err == nil {
+		t.Error("expected error with nil pool on CanSendMessage")
+	}
 }

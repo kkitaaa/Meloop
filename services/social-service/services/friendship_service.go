@@ -27,6 +27,8 @@ var (
 	ErrNotFriends             = errors.New("users are not friends")
 	ErrNotAuthorized          = errors.New("user is not authorized for this operation")
 	ErrUserNotFound           = errors.New("user not found")
+	ErrMessageNotAllowed      = errors.New("recipient privacy settings do not allow messages")
+	ErrPrivacyRestricted      = errors.New("friendship request is not allowed by privacy settings")
 	ErrNoMusicalPreferences   = errors.New("no musical preferences found for user")
 	ErrInsufficientCandidates = errors.New("insufficient candidates found for suggestions")
 	ErrNoCandidates           = errors.New("no candidates available for suggestions")
@@ -48,6 +50,7 @@ type FriendshipService interface {
 	GetFriendProfile(ctx context.Context, userID, friendID string) (*models.FriendProfile, error)
 	BlockUser(ctx context.Context, blockerID, blockedID string) error
 	ValidateInteraction(ctx context.Context, user1ID, user2ID string) error
+	ValidateMessage(ctx context.Context, senderID, receiverID string) error
 	GetFriendSuggestions(ctx context.Context, userID string) ([]models.FriendSuggestion, error)
 	ExcludeBlocked(ctx context.Context, userID string, candidateIDs []string) ([]string, error)
 	GetBlockedCandidateIDs(ctx context.Context, userID string, candidateIDs []string) ([]string, error)
@@ -187,6 +190,26 @@ func (s *friendshipService) ValidateInteraction(ctx context.Context, user1ID, us
 	return mapRepositoryError(err)
 }
 
+func (s *friendshipService) ValidateMessage(ctx context.Context, senderID, receiverID string) error {
+	senderID = strings.TrimSpace(senderID)
+	receiverID = strings.TrimSpace(receiverID)
+	if senderID == "" || receiverID == "" {
+		return ErrInvalidUser
+	}
+	if senderID == receiverID {
+		return nil
+	}
+
+	allowed, err := s.repo.CanSendMessage(ctx, senderID, receiverID)
+	if err != nil {
+		return mapRepositoryError(err)
+	}
+	if !allowed {
+		return ErrMessageNotAllowed
+	}
+	return nil
+}
+
 // ExcludeBlocked filtra candidateIDs retornando los candidatos sin relación de bloqueo
 // bidireccional con el usuario de referencia. No modifica el slice original y gestiona listas vacías.
 func (s *friendshipService) ExcludeBlocked(ctx context.Context, userID string, candidateIDs []string) ([]string, error) {
@@ -267,6 +290,8 @@ func mapRepositoryError(err error) error {
 		return ErrRequestConflict
 	case errors.Is(err, repositories.ErrBlocked):
 		return ErrBlocked
+	case errors.Is(err, repositories.ErrPrivacyRestricted):
+		return ErrPrivacyRestricted
 	case errors.Is(err, repositories.ErrRequestNotFound):
 		return ErrRequestNotFound
 	case errors.Is(err, repositories.ErrNotReceiver):

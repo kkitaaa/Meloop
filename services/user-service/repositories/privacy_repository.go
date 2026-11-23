@@ -87,7 +87,7 @@ func (r *postgresPrivacyRepository) CreateDefault(ctx context.Context, userID st
 		models.VisibilidadPublico,
 		models.VisibilidadPublico,
 		models.VisibilidadPublico,
-		models.RecepcionTodos,
+		models.RecepcionAmigos,
 		models.RecepcionTodos,
 	).Scan(
 		&conf.IDPrivacidad,
@@ -112,25 +112,29 @@ func (r *postgresPrivacyRepository) Update(ctx context.Context, config *models.C
 
 	var conf models.ConfiguracionPrivacidad
 	query := `
-		UPDATE CONFIGURACION_PRIVACIDAD
-		SET visibilidad_perfil = $1,
-		    visibilidad_publicaciones = $2,
-		    visibilidad_interacciones = $3,
-		    permitir_mensajes = $4,
-		    permitir_solicitudes_amistad = $5
-		WHERE id_usuario = $6
+		INSERT INTO CONFIGURACION_PRIVACIDAD (
+			id_privacidad, id_usuario, visibilidad_perfil, visibilidad_publicaciones,
+			visibilidad_interacciones, permitir_mensajes, permitir_solicitudes_amistad
+		)
+		VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, $6)
+		ON CONFLICT (id_usuario) DO UPDATE
+		SET visibilidad_perfil = EXCLUDED.visibilidad_perfil,
+		    visibilidad_publicaciones = EXCLUDED.visibilidad_publicaciones,
+		    visibilidad_interacciones = EXCLUDED.visibilidad_interacciones,
+		    permitir_mensajes = EXCLUDED.permitir_mensajes,
+		    permitir_solicitudes_amistad = EXCLUDED.permitir_solicitudes_amistad
 		RETURNING id_privacidad, id_usuario::text, visibilidad_perfil, visibilidad_publicaciones,
 		          visibilidad_interacciones, permitir_mensajes, permitir_solicitudes_amistad
 	`
 	err := r.pool.QueryRow(
 		ctx,
 		query,
+		config.IDUsuario,
 		config.VisibilidadPerfil,
 		config.VisibilidadPublicaciones,
 		config.VisibilidadInteracciones,
 		config.RecepcionMensajes,
 		config.RecepcionSolicitudesAmistad,
-		config.IDUsuario,
 	).Scan(
 		&conf.IDPrivacidad,
 		&conf.IDUsuario,
@@ -141,45 +145,6 @@ func (r *postgresPrivacyRepository) Update(ctx context.Context, config *models.C
 		&conf.RecepcionSolicitudesAmistad,
 	)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			// Si no existía la fila para actualizar, se inserta con los valores especificados
-			insertQuery := `
-				INSERT INTO CONFIGURACION_PRIVACIDAD (
-					id_privacidad,
-					id_usuario,
-					visibilidad_perfil,
-					visibilidad_publicaciones,
-					visibilidad_interacciones,
-					permitir_mensajes,
-					permitir_solicitudes_amistad
-				)
-				VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, $6)
-				RETURNING id_privacidad, id_usuario::text, visibilidad_perfil, visibilidad_publicaciones,
-				          visibilidad_interacciones, permitir_mensajes, permitir_solicitudes_amistad
-			`
-			insErr := r.pool.QueryRow(
-				ctx,
-				insertQuery,
-				config.IDUsuario,
-				config.VisibilidadPerfil,
-				config.VisibilidadPublicaciones,
-				config.VisibilidadInteracciones,
-				config.RecepcionMensajes,
-				config.RecepcionSolicitudesAmistad,
-			).Scan(
-				&conf.IDPrivacidad,
-				&conf.IDUsuario,
-				&conf.VisibilidadPerfil,
-				&conf.VisibilidadPublicaciones,
-				&conf.VisibilidadInteracciones,
-				&conf.RecepcionMensajes,
-				&conf.RecepcionSolicitudesAmistad,
-			)
-			if insErr != nil {
-				return nil, insErr
-			}
-			return &conf, nil
-		}
 		return nil, err
 	}
 	return &conf, nil

@@ -10,7 +10,7 @@ import (
 	"github.com/meloop/user-service/services"
 )
 
-// PrivacyController gestiona los endpoints HTTP de configuración de privacidad (RF-05 / RF-55)
+// PrivacyController gestiona los endpoints HTTP de configuración de privacidad (RF-52)
 type PrivacyController struct {
 	privacyService services.PrivacyService
 }

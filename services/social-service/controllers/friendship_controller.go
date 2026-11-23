@@ -155,6 +155,25 @@ func (ctrl *FriendshipController) ValidateInteraction(c *gin.Context) {
 	})
 }
 
+func (ctrl *FriendshipController) ValidateMessage(c *gin.Context) {
+	var request models.ValidateMessageRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		httpresponse.BadRequestGin(c, "El campo id_usuario es obligatorio")
+		return
+	}
+
+	err := ctrl.service.ValidateMessage(c.Request.Context(), c.GetString(ContextUserIDKey), request.ReceiverID)
+	if err != nil {
+		if errors.Is(err, services.ErrMessageNotAllowed) || errors.Is(err, services.ErrBlocked) {
+			httpresponse.ForbiddenGin(c, "La configuración de privacidad no permite enviar mensajes a este usuario")
+			return
+		}
+		ctrl.handleError(c, err)
+		return
+	}
+	httpresponse.SuccessGin(c, http.StatusOK, models.InteractionValidationResponse{Allowed: true})
+}
+
 func (ctrl *FriendshipController) GetFriendSuggestions(c *gin.Context) {
 	userID := strings.TrimSpace(c.GetString(ContextUserIDKey))
 	if userID == "" {
@@ -273,6 +292,8 @@ func (ctrl *FriendshipController) handleError(c *gin.Context, err error) {
 		httpresponse.ConflictGin(c, "El usuario ya se encuentra bloqueado")
 	case errors.Is(err, services.ErrBlocked):
 		httpresponse.ForbiddenGin(c, "No se permiten interacciones entre estos usuarios debido a un bloqueo")
+	case errors.Is(err, services.ErrPrivacyRestricted):
+		httpresponse.ForbiddenGin(c, "La configuración de privacidad no permite recibir solicitudes de amistad")
 	case errors.Is(err, services.ErrRequestNotFound):
 		httpresponse.NotFoundGin(c, "Solicitud de amistad no encontrada")
 	case errors.Is(err, services.ErrFriendshipNotFound):

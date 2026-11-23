@@ -66,6 +66,10 @@ type SendFriendRequest struct {
 	ReceiverID string `json:"id_usuario" binding:"required"`
 }
 
+type ValidateMessageRequest struct {
+	ReceiverID string `json:"id_usuario" binding:"required"`
+}
+
 type Friend struct {
 	IDAmistad FriendshipID `json:"id_amistad"`
 	IDUsuario string       `json:"id_usuario"`

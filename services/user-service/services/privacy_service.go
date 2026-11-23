@@ -8,7 +8,7 @@ import (
 	"github.com/meloop/user-service/repositories"
 )
 
-// PrivacyService define los casos de uso para la gestión de configuración de privacidad (RF-05 / RF-55)
+// PrivacyService define los casos de uso para la gestión de configuración de privacidad (RF-52)
 type PrivacyService interface {
 	GetPrivacy(ctx context.Context, userID string) (*models.PrivacyResponse, error)
 	UpdatePrivacy(ctx context.Context, userID string, req *models.UpdatePrivacyRequest) (*models.PrivacyResponse, error)
@@ -149,7 +149,7 @@ func (s *privacyService) UpdatePrivacy(ctx context.Context, userID string, req *
 			VisibilidadPerfil:           models.VisibilidadPublico,
 			VisibilidadPublicaciones:    models.VisibilidadPublico,
 			VisibilidadInteracciones:    models.VisibilidadPublico,
-			RecepcionMensajes:           models.RecepcionTodos,
+			RecepcionMensajes:           models.RecepcionAmigos,
 			RecepcionSolicitudesAmistad: models.RecepcionTodos,
 		}
 	}

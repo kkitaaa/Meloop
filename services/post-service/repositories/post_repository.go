@@ -85,11 +85,32 @@ func (r *SQLPostRepository) DeletePost(ctx context.Context, postID string, autho
 // GetPostByID obtiene un post por su ID
 func (r *SQLPostRepository) GetPostByID(ctx context.Context, postID string, requesterID string) (*Post, error) {
 	query := `
-		SELECT id_publicacion, id_usuario, texto, id_cancion, url_multimedia, fecha_creacion
-		FROM publicacion
-		WHERE id_publicacion = $1
+		SELECT p.id_publicacion, p.id_usuario, p.texto, p.id_cancion, p.url_multimedia, p.fecha_creacion
+		FROM publicacion p
+		WHERE p.id_publicacion = $1
+		  AND (
+			p.id_usuario = $2
+			OR COALESCE((
+				SELECT UPPER(TRIM(cp.visibilidad_publicaciones))
+				FROM configuracion_privacidad cp
+				WHERE cp.id_usuario = p.id_usuario
+			), 'PUBLICO') = 'PUBLICO'
+			OR (
+				COALESCE((
+					SELECT UPPER(TRIM(cp.visibilidad_publicaciones))
+					FROM configuracion_privacidad cp
+					WHERE cp.id_usuario = p.id_usuario
+				), 'PUBLICO') = 'AMIGOS'
+				AND EXISTS (
+					SELECT 1 FROM amistad a
+					WHERE ((a.id_usuario_1 = p.id_usuario AND a.id_usuario_2 = $2)
+					    OR (a.id_usuario_1 = $2 AND a.id_usuario_2 = p.id_usuario))
+					  AND UPPER(a.estado) = 'ACEPTADA'
+				)
+			)
+		  )
 	`
-	row := r.db.QueryRowContext(ctx, query, postID)
+	row := r.db.QueryRowContext(ctx, query, postID, requesterID)
 
 	var post Post
 	err := row.Scan(&post.ID, &post.AuthorID, &post.Content, &post.MusicID, &post.UrlMultimedia, &post.CreatedAt)
@@ -106,13 +127,34 @@ func (r *SQLPostRepository) GetPostByID(ctx context.Context, postID string, requ
 // GetPostsByAuthor obtiene los posts de un perfil con paginación
 func (r *SQLPostRepository) GetPostsByAuthor(ctx context.Context, authorID string, requesterID string, limit int, offset int) ([]Post, error) {
 	query := `
-		SELECT id_publicacion, id_usuario, texto, id_cancion, url_multimedia, fecha_creacion
-		FROM publicacion
-		WHERE id_usuario = $1 
+		SELECT p.id_publicacion, p.id_usuario, p.texto, p.id_cancion, p.url_multimedia, p.fecha_creacion
+		FROM publicacion p
+		WHERE p.id_usuario = $1
+		  AND (
+			p.id_usuario = $2
+			OR COALESCE((
+				SELECT UPPER(TRIM(cp.visibilidad_publicaciones))
+				FROM configuracion_privacidad cp
+				WHERE cp.id_usuario = p.id_usuario
+			), 'PUBLICO') = 'PUBLICO'
+			OR (
+				COALESCE((
+					SELECT UPPER(TRIM(cp.visibilidad_publicaciones))
+					FROM configuracion_privacidad cp
+					WHERE cp.id_usuario = p.id_usuario
+				), 'PUBLICO') = 'AMIGOS'
+				AND EXISTS (
+					SELECT 1 FROM amistad a
+					WHERE ((a.id_usuario_1 = p.id_usuario AND a.id_usuario_2 = $2)
+					    OR (a.id_usuario_1 = $2 AND a.id_usuario_2 = p.id_usuario))
+					  AND UPPER(a.estado) = 'ACEPTADA'
+				)
+			)
+		  )
 		ORDER BY fecha_creacion DESC
-		LIMIT $2 OFFSET $3
+		LIMIT $3 OFFSET $4
 	`
-	rows, err := r.db.QueryContext(ctx, query, authorID, limit, offset)
+	rows, err := r.db.QueryContext(ctx, query, authorID, requesterID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("error al consultar posts por autor: %w", err)
 	}
@@ -138,13 +180,34 @@ func (r *SQLPostRepository) SearchPosts(ctx context.Context, searchTerm string, 
 	searchPattern := "%" + searchTerm + "%"
 
 	query := `
-		SELECT id_publicacion, id_usuario, texto, id_cancion, url_multimedia, fecha_creacion
-		FROM publicacion
-		WHERE (texto ILIKE $1 OR id_cancion ILIKE $1)
+		SELECT p.id_publicacion, p.id_usuario, p.texto, p.id_cancion, p.url_multimedia, p.fecha_creacion
+		FROM publicacion p
+		WHERE (p.texto ILIKE $1 OR p.id_cancion ILIKE $1)
+		  AND (
+			p.id_usuario = $2
+			OR COALESCE((
+				SELECT UPPER(TRIM(cp.visibilidad_publicaciones))
+				FROM configuracion_privacidad cp
+				WHERE cp.id_usuario = p.id_usuario
+			), 'PUBLICO') = 'PUBLICO'
+			OR (
+				COALESCE((
+					SELECT UPPER(TRIM(cp.visibilidad_publicaciones))
+					FROM configuracion_privacidad cp
+					WHERE cp.id_usuario = p.id_usuario
+				), 'PUBLICO') = 'AMIGOS'
+				AND EXISTS (
+					SELECT 1 FROM amistad a
+					WHERE ((a.id_usuario_1 = p.id_usuario AND a.id_usuario_2 = $2)
+					    OR (a.id_usuario_1 = $2 AND a.id_usuario_2 = p.id_usuario))
+					  AND UPPER(a.estado) = 'ACEPTADA'
+				)
+			)
+		  )
 		ORDER BY fecha_creacion DESC
-		LIMIT $2 OFFSET $3
+		LIMIT $3 OFFSET $4
 	`
-	rows, err := r.db.QueryContext(ctx, query, searchPattern, limit, offset)
+	rows, err := r.db.QueryContext(ctx, query, searchPattern, requesterID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("error al buscar posts: %w", err)
 	}

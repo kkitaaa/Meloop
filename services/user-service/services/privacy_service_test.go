@@ -33,7 +33,7 @@ func (m *mockPrivacyRepository) CreateDefault(ctx context.Context, userID string
 		VisibilidadPerfil:           models.VisibilidadPublico,
 		VisibilidadPublicaciones:    models.VisibilidadPublico,
 		VisibilidadInteracciones:    models.VisibilidadPublico,
-		RecepcionMensajes:           models.RecepcionTodos,
+		RecepcionMensajes:           models.RecepcionAmigos,
 		RecepcionSolicitudesAmistad: models.RecepcionTodos,
 	}
 	if m.configs == nil {
@@ -52,6 +52,24 @@ func (m *mockPrivacyRepository) Update(ctx context.Context, config *models.Confi
 	}
 	m.configs[config.IDUsuario] = config
 	return config, nil
+}
+
+func TestGetPrivacy_DefaultMessageReceptionIsFriendsOnly(t *testing.T) {
+	userRepo := &mockUserRepository{
+		users: map[string]*models.Usuario{
+			"usr-1": {IDUsuario: "usr-1", Username: "alan"},
+		},
+	}
+	privacyRepo := &mockPrivacyRepository{}
+	service := services.NewPrivacyService(privacyRepo, userRepo)
+
+	response, err := service.GetPrivacy(context.Background(), "usr-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if response.RecepcionMensajes != models.RecepcionAmigos {
+		t.Fatalf("default message reception = %q, want %q", response.RecepcionMensajes, models.RecepcionAmigos)
+	}
 }
 
 func TestGetPrivacy_Exitoso(t *testing.T) {
