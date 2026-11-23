@@ -157,7 +157,7 @@ class _PostsAdapter implements HttpClientAdapter {
         },
       });
     }
-    if (options.path == '/v1/social/friends') {
+    if (options.path == '/friends') {
       return _response(200, {
         'success': true,
         'data': {

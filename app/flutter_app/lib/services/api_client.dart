@@ -223,7 +223,7 @@ class ApiClient implements PostPublisher {
   Future<ApiResponse<SearchUserPage>> getFriends({int limit = 100}) {
     return _requestEnvelope(
       'GET',
-      '/v1/social/friends',
+      ApiConfig.friendsEndpoint,
       SearchUserPage.fromJson,
       queryParameters: {'limit': '$limit'},
     );
@@ -497,9 +497,9 @@ class ApiClient implements PostPublisher {
   Future<ApiResponse<Map<String, dynamic>>> sendFriendRequest(
     String targetUserId,
   ) {
-    return post('/v1/social/friends/requests', {'id_usuario': targetUserId}, (
-      json,
-    ) {
+    return post('${ApiConfig.friendsEndpoint}/requests', {
+      'id_usuario': targetUserId,
+    }, (json) {
       if (json is! Map<String, dynamic>) {
         throw const FormatException(
           'La respuesta de solicitud de amistad es inválida.',
@@ -816,10 +816,8 @@ class ApiClient implements PostPublisher {
       throw const ApiException(
         message: 'No se pudo conectar con el API Gateway. Revisa la URL y que esté activo.',
       );
-    } on FormatException {
-      throw const ApiException(
-        message: 'El API Gateway devolvió una respuesta inválida.',
-      );
+    } on FormatException catch (error) {
+      throw ApiException(message: error.message.toString());
     }
   }
 

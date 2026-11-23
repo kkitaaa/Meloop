@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:flutter_app/config/api_config.dart';
+import 'package:flutter_app/services/auth_session.dart';
 import 'package:http/http.dart' as http;
 
 import 'models/user_progress.dart';
@@ -12,25 +14,36 @@ abstract interface class GamificationRepository {
 
 class HttpGamificationRepository implements GamificationRepository {
   HttpGamificationRepository({
-    required this.endpoint,
+    Uri? endpoint,
     required this.accessToken,
+    Future<String?> Function()? userId,
     http.Client? client,
-  }) : _client = client ?? http.Client(),
+  }) : endpoint =
+           endpoint ??
+           Uri.parse(
+             '${ApiConfig.baseUrl}${ApiConfig.gamificationProgressEndpoint}',
+           ),
+       userId = userId ?? (() async => AuthSession.shared.user?.id),
+       _client = client ?? http.Client(),
        _ownsClient = client == null;
 
   final Uri endpoint;
   final Future<String?> Function() accessToken;
+  final Future<String?> Function() userId;
   final http.Client _client;
   final bool _ownsClient;
 
   @override
   Future<UserProgress> fetchUserProgress() async {
     final token = await accessToken();
+    final currentUserId = await userId();
     final response = await _client.get(
       endpoint,
       headers: {
         'Accept': 'application/json',
         if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
+        if (currentUserId != null && currentUserId.isNotEmpty)
+          'X-User-ID': currentUserId,
       },
     );
 

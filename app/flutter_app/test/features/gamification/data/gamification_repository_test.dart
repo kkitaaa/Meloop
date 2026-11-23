@@ -1,21 +1,24 @@
 import 'dart:convert';
 
+import 'package:flutter_app/config/api_config.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_app/features/gamification/data/gamification_repository.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
 void main() {
-  const endpoint = 'https://example.test/v1/gamification/me/progress';
+  const endpoint = 'https://example.test/api/v1/gamification/me/progress';
 
   test('fetches and parses user progress and rewards', () async {
     final repository = HttpGamificationRepository(
       endpoint: Uri.parse(endpoint),
       accessToken: () async => 'token',
+      userId: () async => 'user-1',
       client: MockClient((request) async {
         expect(request.method, 'GET');
         expect(request.url, Uri.parse(endpoint));
         expect(request.headers['Authorization'], 'Bearer token');
+        expect(request.headers['X-User-ID'], 'user-1');
         return http.Response(
           jsonEncode({
             'success': true,
@@ -51,6 +54,29 @@ void main() {
     expect(progress.rewards.single.type, 'Marco RGB');
     expect(progress.rewards.single.levelId, 3);
     expect(progress.rewards.single.equipped, isTrue);
+    repository.dispose();
+  });
+
+  test('defaults to the configured Gateway gamification route', () async {
+    final repository = HttpGamificationRepository(
+      accessToken: () async => null,
+      client: MockClient((request) async {
+        expect(request.url.origin, Uri.parse(ApiConfig.baseUrl).origin);
+        expect(request.url.path, ApiConfig.gamificationProgressEndpoint);
+        return http.Response(
+          jsonEncode({
+            'user_id': 'user-1',
+            'id_nivel': 1,
+            'level_number': 1,
+            'experiencia': 0,
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+
+    await repository.fetchUserProgress();
     repository.dispose();
   });
 

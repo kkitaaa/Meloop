@@ -40,6 +40,16 @@ void main() {
       expect(ApiConfig.demoEndpoint, '/api/demo');
       expect(ApiConfig.feedEndpoint, '/api/feed');
       expect(ApiConfig.usersEndpoint, '/users');
+      expect(ApiConfig.friendsEndpoint, '/friends');
+      expect(ApiConfig.gamificationEndpoint, '/api/v1/gamification');
+      expect(
+        ApiConfig.gamificationProgressEndpoint,
+        '/api/v1/gamification/me/progress',
+      );
+      expect(
+        ApiConfig.gatewayRouteSummary,
+        contains('/auth, /users, /friends, /api/v1/gamification'),
+      );
       expect(ApiConfig.recommendationsEndpoint, '/recommendations');
     });
 

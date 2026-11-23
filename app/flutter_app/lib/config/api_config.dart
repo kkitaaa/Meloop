@@ -25,6 +25,13 @@ class ApiConfig {
     };
   }
 
+  static String get gatewayRouteSummary => switch (environment) {
+    Environment.development =>
+      '/auth, /users, /friends, /api/v1/gamification, /api/demo, /api/feed',
+    Environment.staging || Environment.production =>
+      '/auth, /users, /friends, /api/v1/gamification',
+  };
+
   static String get baseUrl {
     final configuredUrl = _configuredBaseUrl.trim();
     final gatewayUrl = _k8sApiGatewayUrl.trim();
@@ -99,6 +106,10 @@ class ApiConfig {
   static const String demoEndpoint = '$apiPrefix/demo';
   static const String feedEndpoint = '$apiPrefix/feed';
   static const String usersEndpoint = '/users';
+  static const String friendsEndpoint = '/friends';
+  static const String gamificationEndpoint = '/api/v1/gamification';
+  static const String gamificationProgressEndpoint =
+      '$gamificationEndpoint/me/progress';
   static const String recommendationsEndpoint = '/recommendations';
 
   static const Duration connectTimeout = Duration(seconds: 10);

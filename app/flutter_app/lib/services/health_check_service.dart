@@ -125,14 +125,19 @@ class HealthCheckService {
   }
 
   /// Check health of a specific API endpoint
-  Future<bool> checkEndpoint(String endpoint) async {
+  Future<bool> checkEndpoint(
+    String endpoint, {
+    bool allowAuthorizationRequired = false,
+  }) async {
     try {
       final response = await _dio
           .get<dynamic>(endpoint, options: Options(validateStatus: (_) => true))
           .timeout(const Duration(seconds: 5));
-      return response.statusCode != null &&
-          response.statusCode! >= 200 &&
-          response.statusCode! < 300;
+      final statusCode = response.statusCode;
+      return statusCode != null &&
+          ((statusCode >= 200 && statusCode < 300) ||
+              (allowAuthorizationRequired &&
+                  (statusCode == 401 || statusCode == 403)));
     } catch (e) {
       debugPrint('[HealthCheck] Endpoint check failed for $endpoint: $e');
       return false;
@@ -140,14 +145,45 @@ class HealthCheckService {
   }
 
   /// Verify all major endpoints are accessible
-  Future<Map<String, bool>> verifyEndpoints() async {
-    final endpoints = <(String, Future<bool> Function())>[
-      ('health', () => checkEndpoint(ApiConfig.healthCheckEndpoint)),
-      ('demo', () => checkEndpoint(ApiConfig.demoEndpoint)),
-      ('feed', () => checkEndpoint(ApiConfig.feedEndpoint)),
-      ('recommendations', _checkRecommendationEndpoint),
-      ('auth', _checkAuthEndpoint),
-    ];
+  Future<Map<String, bool>> verifyEndpoints({
+    Environment? environment,
+  }) async {
+    final endpoints =
+        switch (environment ?? ApiConfig.environment) {
+          Environment.development => <(String, Future<bool> Function())>[
+            ('health', () => checkEndpoint(ApiConfig.healthCheckEndpoint)),
+            ('demo', () => checkEndpoint(ApiConfig.demoEndpoint)),
+            ('feed', () => checkEndpoint(ApiConfig.feedEndpoint)),
+            ('recommendations', _checkRecommendationEndpoint),
+            ('auth', _checkAuthEndpoint),
+          ],
+          Environment.staging || Environment.production =>
+            <(String, Future<bool> Function())>[
+              ('health', () => checkEndpoint(ApiConfig.healthCheckEndpoint)),
+              ('auth', _checkAuthEndpoint),
+              (
+                'users',
+                () => checkEndpoint(
+                  '${ApiConfig.usersEndpoint}/me',
+                  allowAuthorizationRequired: true,
+                ),
+              ),
+              (
+                'friends',
+                () => checkEndpoint(
+                  ApiConfig.friendsEndpoint,
+                  allowAuthorizationRequired: true,
+                ),
+              ),
+              (
+                'gamification',
+                () => checkEndpoint(
+                  ApiConfig.gamificationProgressEndpoint,
+                  allowAuthorizationRequired: true,
+                ),
+              ),
+            ],
+        };
 
     final results = <String, bool>{};
 

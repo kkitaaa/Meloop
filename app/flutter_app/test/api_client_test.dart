@@ -42,6 +42,42 @@ void main() {
       },
     );
 
+    test('reports a missing role in the login response', () async {
+      final client = ApiClient(
+        session: AuthSession(persistent: false),
+        httpClient: MockClient((_) async {
+          return _jsonResponse(
+            statusCode: 200,
+            body: {
+              'success': true,
+              'data': {
+                'session_token': 'session-token',
+                'expires_in': 3600,
+                'user': {
+                  'id': 'user-1',
+                  'username': 'Ana',
+                  'email': 'ana@example.test',
+                },
+              },
+              'error': null,
+            },
+          );
+        }),
+      );
+
+      await expectLater(
+        client.login(email: 'ana@example.test', password: 'password123'),
+        throwsA(
+          isA<ApiException>().having(
+            (error) => error.message,
+            'message',
+            'El servidor no devolvió el rol del usuario.',
+          ),
+        ),
+      );
+      client.close();
+    });
+
     test(
       'renews an expiring session before an authenticated request',
       () async {
@@ -219,6 +255,29 @@ void main() {
       expect(response.data?.totalCount, 3);
       expect(response.data?.nextCursor, 'cursor-2');
       expect(response.data?.hasMore, isTrue);
+    });
+
+    test('sends friend requests through the Gateway friends route', () async {
+      final client = ApiClient(
+        httpClient: MockClient((request) async {
+          expect(request.method, 'POST');
+          expect(request.url.path, '/friends/requests');
+          expect(jsonDecode(request.body), {'id_usuario': 'friend-1'});
+          return _jsonResponse(
+            statusCode: 201,
+            body: {
+              'success': true,
+              'data': {'id': 'request-1'},
+              'error': null,
+            },
+          );
+        }),
+      );
+
+      final response = await client.sendFriendRequest('friend-1');
+
+      expect(response.data?['id'], 'request-1');
+      client.close();
     });
 
     test('surfaces the backend message and HTTP status', () async {

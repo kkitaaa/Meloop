@@ -143,7 +143,7 @@ class _KubernetesConnectivityScreenState
                     _InfoRow('Environment', ApiConfig.environment.toString()),
                     _InfoRow('Base URL', ApiConfig.baseUrl),
                     _InfoRow('WebSocket URL', ApiConfig.webSocketUrl),
-                    _InfoRow('API Prefix', ApiConfig.apiPrefix),
+                    _InfoRow('Gateway Routes', ApiConfig.gatewayRouteSummary),
                   ],
                 ),
               ),

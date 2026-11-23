@@ -23,6 +23,26 @@ Emulator. Para un dispositivo Android físico, configura `API_BASE_URL` con una
 dirección alcanzable desde ese dispositivo; `localhost` y `10.0.2.2` no son
 direcciones para el host de un teléfono físico.
 
+## Staging
+
+Para probar el Gateway de staging desde Windows:
+
+```powershell
+cd app\flutter_app
+flutter run -d windows `
+  --dart-define=FLUTTER_ENV=staging `
+  --dart-define=API_BASE_URL=https://meloop-acofre.dev.censei.cl
+```
+
+En Android Emulator usa la misma URL HTTPS. `API_BASE_URL` debe ser solo el
+origen del Gateway; no agregues `/api` al final. El cliente define la ruta
+completa de cada servicio.
+
+El Gateway enruta autenticación por `/auth`, usuarios por `/users`, amistades
+por `/friends` y gamificación por `/api/v1/gamification`. Otras rutas de la app,
+como `/api/demo`, `/api/feed` y `/v1/social/users/.../mutual-friends`, conservan
+sus prefijos propios.
+
 ## Staging y producción
 
 Pasa la URL real del Ingress o LoadBalancer del API Gateway:
