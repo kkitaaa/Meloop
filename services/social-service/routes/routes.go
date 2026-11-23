@@ -26,6 +26,7 @@ func SetupRoutes(router *gin.Engine, controller *controllers.FriendshipControlle
 		// RF-13: Bloqueo de usuarios y validación de interacciones
 		protected.POST("/blocks", controller.BlockUser)
 		protected.POST("/block", controller.BlockUser)
+		protected.DELETE("/blocks/:id", controller.UnblockUser)
 		protected.GET("/validate-interaction", controller.ValidateInteraction)
 		protected.POST("/validate-interaction", controller.ValidateInteraction)
 		protected.POST("/blocks/exclude", controller.ExcludeBlocked)
@@ -47,6 +48,12 @@ func SetupRoutes(router *gin.Engine, controller *controllers.FriendshipControlle
 	{
 		suggestions.GET("", controller.GetFriendSuggestions)
 	}
+}
+
+func SetupInternalCountRoutes(router *gin.Engine, controller *controllers.FriendshipController, token string) {
+	internal := router.Group("/internal")
+	internal.Use(controllers.InternalServiceRequired(token))
+	internal.GET("/users/:id/friends/count", controller.GetFriendsCount)
 }
 
 // SetupSuggestionRoutes configura las rutas REST de sugerencias de amistad (RF-14).

@@ -153,6 +153,26 @@ func (f *friendshipRepositoryFake) GetBlockedCandidateIDs(ctx context.Context, u
 	return result, nil
 }
 
+func (f *friendshipRepositoryFake) UnblockUser(ctx context.Context, blockerID, blockedID string) error {
+	return nil
+}
+
+func (f *friendshipRepositoryFake) GetAcceptedFriendsCount(ctx context.Context, userID string) (int, error) {
+	return 0, nil
+}
+
+func (f *friendshipRepositoryFake) GetFriendsCount(ctx context.Context, userID string) (int, error) {
+	return 0, nil
+}
+
+func (f *friendshipRepositoryFake) GetBlockedUsersCount(ctx context.Context, userID string) (int, error) {
+	return 0, nil
+}
+
+func (f *friendshipRepositoryFake) GetBlockedCount(ctx context.Context, userID string) (int, error) {
+	return 0, nil
+}
+
 type eventPublisherFake struct {
 	called bool
 	err    error
