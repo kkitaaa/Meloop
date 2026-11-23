@@ -34,8 +34,8 @@ func (m *mockFriendshipRepoForSuggestions) Reject(ctx context.Context, requestID
 func (m *mockFriendshipRepoForSuggestions) Cancel(ctx context.Context, requestID string, senderID string) (*models.FriendRequest, error) {
 	return nil, nil
 }
-func (m *mockFriendshipRepoForSuggestions) ListFriends(ctx context.Context, userID string) ([]models.Friend, error) {
-	return nil, nil
+func (m *mockFriendshipRepoForSuggestions) ListFriends(ctx context.Context, userID string, limit int, query string, cursor *models.FriendCursor) (models.FriendPage, error) {
+	return models.FriendPage{}, nil
 }
 func (m *mockFriendshipRepoForSuggestions) RemoveFriend(ctx context.Context, userID, targetID string) error {
 	return nil
