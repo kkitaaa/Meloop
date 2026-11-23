@@ -4,10 +4,11 @@ import "os"
 
 type Config struct {
 	DatabaseURL          string
-	RedisURL             string
 	RabbitMQURL          string
+	RedisURL             string
 	InternalServiceToken string
 	Port                 string
+	AuthServiceURL       string
 }
 
 func Load() *Config {

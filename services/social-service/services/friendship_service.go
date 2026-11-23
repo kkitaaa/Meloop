@@ -3,8 +3,11 @@ package services
 import (
 	"context"
 	"errors"
+	"fmt"
+	"log/slog"
 	"strings"
 
+	"github.com/meloop/services/common/logging"
 	"github.com/meloop/social-service/models"
 	"github.com/meloop/social-service/repositories"
 )
@@ -40,7 +43,7 @@ type FriendshipService interface {
 	AcceptRequest(ctx context.Context, requestID string, receiverID string) (*models.FriendRequest, error)
 	RejectRequest(ctx context.Context, requestID string, receiverID string) (*models.FriendRequest, error)
 	CancelRequest(ctx context.Context, requestID string, senderID string) (*models.FriendRequest, error)
-	ListFriends(ctx context.Context, userID string) ([]models.Friend, error)
+	ListFriends(ctx context.Context, userID string, limit int, query string, cursor *models.FriendCursor) (models.FriendPage, error)
 	RemoveFriend(ctx context.Context, userID, targetID string) error
 	GetFriendProfile(ctx context.Context, userID, friendID string) (*models.FriendProfile, error)
 	BlockUser(ctx context.Context, blockerID, blockedID string) error
@@ -56,6 +59,9 @@ type friendshipService struct {
 	repo       repositories.FriendshipRepository
 	publisher  EventPublisher
 	compatRepo repositories.CompatibilityRepository
+	logger     interface {
+		Warn(string, ...any)
+	}
 }
 
 func NewFriendshipService(repo repositories.FriendshipRepository, publisher EventPublisher, compatRepo ...repositories.CompatibilityRepository) FriendshipService {
@@ -63,7 +69,12 @@ func NewFriendshipService(repo repositories.FriendshipRepository, publisher Even
 	if len(compatRepo) > 0 {
 		cr = compatRepo[0]
 	}
-	return &friendshipService{repo: repo, publisher: publisher, compatRepo: cr}
+	return &friendshipService{
+		repo:       repo,
+		publisher:  publisher,
+		compatRepo: cr,
+		logger:     logging.New("social-service"),
+	}
 }
 
 func (s *friendshipService) SendRequest(ctx context.Context, senderID, receiverID string) (*models.FriendRequest, error) {
@@ -99,7 +110,13 @@ func (s *friendshipService) AcceptRequest(ctx context.Context, requestID string,
 		return nil, mapRepositoryError(err)
 	}
 	if s.publisher != nil {
-		_ = s.publisher.PublishFriendAccepted(ctx, request)
+		if err := s.publisher.PublishFriendAccepted(ctx, request); err != nil {
+			if s.logger != nil {
+				s.logger.Warn("event_publish_failed", "event", "friend.accepted", "error_type", fmt.Sprintf("%T", err), "delivery", "best_effort")
+			} else {
+				slog.Warn("event_publish_failed", "event", "friend.accepted", "error_type", fmt.Sprintf("%T", err), "delivery", "best_effort")
+			}
+		}
 	}
 	return request, nil
 }
@@ -114,16 +131,16 @@ func (s *friendshipService) CancelRequest(ctx context.Context, requestID string,
 	return request, mapRepositoryError(err)
 }
 
-func (s *friendshipService) ListFriends(ctx context.Context, userID string) ([]models.Friend, error) {
+func (s *friendshipService) ListFriends(ctx context.Context, userID string, limit int, query string, cursor *models.FriendCursor) (models.FriendPage, error) {
 	userID = strings.TrimSpace(userID)
 	if userID == "" {
-		return nil, ErrInvalidUser
+		return models.FriendPage{}, ErrInvalidUser
 	}
-	friends, err := s.repo.ListFriends(ctx, userID)
+	page, err := s.repo.ListFriends(ctx, userID, limit, query, cursor)
 	if err != nil {
-		return nil, mapRepositoryError(err)
+		return models.FriendPage{}, mapRepositoryError(err)
 	}
-	return friends, nil
+	return page, nil
 }
 
 func (s *friendshipService) RemoveFriend(ctx context.Context, userID, targetID string) error {

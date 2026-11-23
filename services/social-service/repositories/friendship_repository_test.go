@@ -147,7 +147,7 @@ func TestFriendshipRepository_NilPool(t *testing.T) {
 	if _, err := repo.Cancel(ctx, "1", "u1"); err == nil {
 		t.Error("expected error with nil pool on Cancel")
 	}
-	if _, err := repo.ListFriends(ctx, "u1"); err == nil {
+	if _, err := repo.ListFriends(ctx, "u1", 20, "", nil); err == nil {
 		t.Error("expected error with nil pool on ListFriends")
 	}
 	if err := repo.RemoveFriend(ctx, "u1", "u2"); err == nil {

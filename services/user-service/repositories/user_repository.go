@@ -12,6 +12,7 @@ import (
 // UserRepository define las operaciones de acceso a datos para la entidad USUARIO
 type UserRepository interface {
 	GetByID(ctx context.Context, id string) (*models.Usuario, error)
+	GetRoleByID(ctx context.Context, id string) (string, error)
 	GetByUsername(ctx context.Context, username string) (*models.Usuario, error)
 	GetByEmail(ctx context.Context, email string) (*models.Usuario, error)
 	UpdateUsername(ctx context.Context, id string, newUsername string) (*models.Usuario, error)
@@ -58,6 +59,23 @@ func (r *postgresUserRepository) GetByID(ctx context.Context, id string) (*model
 		return nil, err
 	}
 	return &user, nil
+}
+
+func (r *postgresUserRepository) GetRoleByID(ctx context.Context, id string) (string, error) {
+	if r.pool == nil {
+		return "", errors.New("el pool de base de datos no está inicializado")
+	}
+
+	var role string
+	err := r.pool.QueryRow(ctx, `
+		SELECT COALESCE(rol, 'usuario')
+		FROM USUARIO
+		WHERE id_usuario = $1
+	`, id).Scan(&role)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	return role, err
 }
 
 // GetByUsername busca un usuario por su nombre de usuario
@@ -148,30 +166,9 @@ func (r *postgresUserRepository) UpdateUsername(ctx context.Context, id string, 
 	return &user, nil
 }
 
-func (r *postgresUserRepository) ensureAdminColumns(ctx context.Context) error {
-	if r.pool == nil {
-		return errors.New("el pool de base de datos no está inicializado")
-	}
-	queries := []string{
-		`ALTER TABLE USUARIO ADD COLUMN IF NOT EXISTS rol VARCHAR(30) NOT NULL DEFAULT 'usuario'`,
-		`ALTER TABLE USUARIO ADD COLUMN IF NOT EXISTS suspendido BOOLEAN NOT NULL DEFAULT FALSE`,
-		`ALTER TABLE USUARIO ADD COLUMN IF NOT EXISTS es_moderador BOOLEAN NOT NULL DEFAULT FALSE`,
-		`ALTER TABLE USUARIO ADD COLUMN IF NOT EXISTS motivo_suspension TEXT`,
-	}
-	for _, q := range queries {
-		if _, err := r.pool.Exec(ctx, q); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func (r *postgresUserRepository) ListUsers(ctx context.Context) ([]models.AdminUserSummary, error) {
 	if r.pool == nil {
 		return nil, errors.New("el pool de base de datos no está inicializado")
-	}
-	if err := r.ensureAdminColumns(ctx); err != nil {
-		return nil, err
 	}
 
 	rows, err := r.pool.Query(ctx, `
@@ -206,9 +203,6 @@ func (r *postgresUserRepository) SuspendUser(ctx context.Context, id string, rea
 	if r.pool == nil {
 		return nil, errors.New("el pool de base de datos no está inicializado")
 	}
-	if err := r.ensureAdminColumns(ctx); err != nil {
-		return nil, err
-	}
 
 	var user models.AdminUserSummary
 	query := `
@@ -237,9 +231,6 @@ func (r *postgresUserRepository) ReactivateUser(ctx context.Context, id string) 
 	if r.pool == nil {
 		return nil, errors.New("el pool de base de datos no está inicializado")
 	}
-	if err := r.ensureAdminColumns(ctx); err != nil {
-		return nil, err
-	}
 
 	var user models.AdminUserSummary
 	query := `
@@ -266,9 +257,6 @@ func (r *postgresUserRepository) ReactivateUser(ctx context.Context, id string) 
 func (r *postgresUserRepository) SetModeratorRole(ctx context.Context, id string, moderator bool) (*models.AdminUserSummary, error) {
 	if r.pool == nil {
 		return nil, errors.New("el pool de base de datos no está inicializado")
-	}
-	if err := r.ensureAdminColumns(ctx); err != nil {
-		return nil, err
 	}
 
 	var user models.AdminUserSummary

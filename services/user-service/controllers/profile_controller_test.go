@@ -122,7 +122,7 @@ func setupProfileTestRouter(srv services.ProfileService) *gin.Engine {
 	ctrl := NewProfileController(srv)
 
 	protected := r.Group("/users")
-	protected.Use(AuthRequired())
+	protected.Use(testAuthRequired())
 	{
 		protected.GET("/me/profile", ctrl.GetOwnProfile)
 		protected.GET("/me/perfil", ctrl.GetOwnProfile)
@@ -132,7 +132,7 @@ func setupProfileTestRouter(srv services.ProfileService) *gin.Engine {
 	}
 
 	v1Protected := r.Group("/v1/users")
-	v1Protected.Use(AuthRequired())
+	v1Protected.Use(testAuthRequired())
 	{
 		v1Protected.GET("/me/profile", ctrl.GetOwnProfile)
 		v1Protected.GET("/me/perfil", ctrl.GetOwnProfile)

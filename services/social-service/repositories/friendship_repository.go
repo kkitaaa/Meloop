@@ -37,7 +37,7 @@ type FriendshipRepository interface {
 	Accept(ctx context.Context, requestID string, receiverID string) (*models.FriendRequest, error)
 	Reject(ctx context.Context, requestID string, receiverID string) (*models.FriendRequest, error)
 	Cancel(ctx context.Context, requestID string, senderID string) (*models.FriendRequest, error)
-	ListFriends(ctx context.Context, userID string) ([]models.Friend, error)
+	ListFriends(ctx context.Context, userID string, limit int, query string, cursor *models.FriendCursor) (models.FriendPage, error)
 	RemoveFriend(ctx context.Context, userID, targetID string) error
 	GetFriendProfile(ctx context.Context, userID, friendID string) (*models.FriendProfile, error)
 	BlockUser(ctx context.Context, blockerID, blockedID string) error
@@ -233,7 +233,10 @@ func (r *postgresFriendshipRepository) process(ctx context.Context, requestID st
 	}
 
 	err = tx.QueryRow(ctx, `
-		UPDATE amistad SET estado = $1 WHERE id_amistad = $2
+		UPDATE amistad
+		SET estado = $1::varchar(50),
+		    fecha_amistad = CASE WHEN $1::text = 'ACEPTADA' THEN NOW() ELSE fecha_amistad END
+		WHERE id_amistad = $2
 		RETURNING id_amistad, id_usuario_1::text, id_usuario_2::text, estado`, newStatus, requestID).Scan(
 		&request.ID, &request.SenderID, &request.ReceiverID, &request.Status,
 	)
@@ -439,43 +442,72 @@ func (r *postgresFriendshipRepository) invalidateSocialCountCache(ctx context.Co
 	}
 }
 
-func (r *postgresFriendshipRepository) ListFriends(ctx context.Context, userID string) ([]models.Friend, error) {
+func (r *postgresFriendshipRepository) ListFriends(ctx context.Context, userID string, limit int, query string, cursor *models.FriendCursor) (models.FriendPage, error) {
 	if r.pool == nil {
-		return nil, errors.New("database connection pool is not initialized")
+		return models.FriendPage{}, errors.New("database connection pool is not initialized")
 	}
 
-	query := `
-		SELECT 
-			a.id_amistad,
-			CASE WHEN a.id_usuario_1::text = $1 THEN a.id_usuario_2::text ELSE a.id_usuario_1::text END AS id_usuario,
-			COALESCE(u.username, '') AS username,
-			a.estado
-		FROM amistad a
-		LEFT JOIN usuario u ON u.id_usuario::text = (CASE WHEN a.id_usuario_1::text = $1 THEN a.id_usuario_2::text ELSE a.id_usuario_1::text END)
-		WHERE (a.id_usuario_1::text = $1 OR a.id_usuario_2::text = $1)
-		  AND a.estado = 'ACEPTADA'
-		  AND NOT EXISTS (
+	conditions := []string{
+		"(a.id_usuario_1::text = $1 OR a.id_usuario_2::text = $1)",
+		"a.estado = 'ACEPTADA'",
+		`NOT EXISTS (
 			SELECT 1 FROM bloqueo b
 			WHERE (b.id_usuario_bloqueador::text = $1 AND b.id_usuario_bloqueado::text = (CASE WHEN a.id_usuario_1::text = $1 THEN a.id_usuario_2::text ELSE a.id_usuario_1::text END))
 			   OR (b.id_usuario_bloqueador::text = (CASE WHEN a.id_usuario_1::text = $1 THEN a.id_usuario_2::text ELSE a.id_usuario_1::text END) AND b.id_usuario_bloqueado::text = $1)
-		  )
-		ORDER BY a.id_amistad DESC`
+		)`,
+	}
+	args := []any{userID}
+	if cursor != nil {
+		args = append(args, cursor.FechaAmistad, string(cursor.IDAmistad))
+		conditions = append(conditions, fmt.Sprintf("(a.fecha_amistad, a.id_amistad) < ($%d, $%d::varchar(64))", len(args)-1, len(args)))
+	}
+	if query != "" {
+		args = append(args, "%"+escapeLikePattern(query)+"%")
+		conditions = append(conditions, fmt.Sprintf("COALESCE(u.username, '') ILIKE $%d ESCAPE E'\\\\'", len(args)))
+	}
+	args = append(args, limit+1)
 
-	rows, err := r.pool.Query(ctx, query, userID)
+	sqlQuery := `
+		SELECT
+			a.id_amistad,
+			CASE WHEN a.id_usuario_1::text = $1 THEN a.id_usuario_2::text ELSE a.id_usuario_1::text END AS id_usuario,
+			COALESCE(u.username, '') AS username,
+			a.estado,
+			a.fecha_amistad
+		FROM amistad a
+		LEFT JOIN usuario u ON u.id_usuario::text = (CASE WHEN a.id_usuario_1::text = $1 THEN a.id_usuario_2::text ELSE a.id_usuario_1::text END)
+		WHERE ` + strings.Join(conditions, "\n\t\t  AND ") + `
+		ORDER BY a.fecha_amistad DESC, a.id_amistad DESC
+		LIMIT $` + strconv.Itoa(len(args))
+
+	rows, err := r.pool.Query(ctx, sqlQuery, args...)
 	if err != nil {
-		return nil, err
+		return models.FriendPage{}, err
 	}
 	defer rows.Close()
 
-	friends := make([]models.Friend, 0)
+	page := models.FriendPage{Friends: make([]models.Friend, 0, limit)}
 	for rows.Next() {
 		var f models.Friend
-		if err := rows.Scan(&f.IDAmistad, &f.IDUsuario, &f.Username, &f.Estado); err != nil {
-			return nil, err
+		if err := rows.Scan(&f.IDAmistad, &f.IDUsuario, &f.Username, &f.Estado, &f.FechaAmistad); err != nil {
+			return models.FriendPage{}, err
 		}
-		friends = append(friends, f)
+		if len(page.Friends) == limit {
+			page.HasMore = true
+			break
+		}
+		page.Friends = append(page.Friends, f)
 	}
-	return friends, rows.Err()
+	if err := rows.Err(); err != nil {
+		return models.FriendPage{}, err
+	}
+	return page, nil
+}
+
+func escapeLikePattern(value string) string {
+	value = strings.ReplaceAll(value, `\`, `\\`)
+	value = strings.ReplaceAll(value, `%`, `\%`)
+	return strings.ReplaceAll(value, `_`, `\_`)
 }
 
 func (r *postgresFriendshipRepository) RemoveFriend(ctx context.Context, userID, targetID string) error {
@@ -734,16 +766,27 @@ func (r *postgresFriendshipRepository) GetFriendProfile(ctx context.Context, use
 		return nil, ErrBlocked
 	}
 
-	// 3. Obtener datos de perfil del usuario amigo
-	var profile models.FriendProfile
-	profile.IDAmistad = models.FriendshipID(friendshipID)
+	// 3. Aplicar la visibilidad configurada por el titular.
+	visibility := "PUBLICO"
 	err = r.pool.QueryRow(ctx, `
-		SELECT id_usuario::text, username, correo, id_nivel, experiencia
+		SELECT COALESCE(visibilidad_perfil, 'PUBLICO')
+		FROM configuracion_privacidad
+		WHERE id_usuario = $1
+	`, resolvedFriendID).Scan(&visibility)
+	if errors.Is(err, pgx.ErrNoRows) {
+		visibility = "PUBLICO"
+	} else if err != nil {
+		return nil, err
+	}
+
+	// 4. Obtener únicamente los campos permitidos por el perfil.
+	var profile models.FriendProfile
+	err = r.pool.QueryRow(ctx, `
+		SELECT id_usuario::text, username, id_nivel, experiencia
 		FROM usuario
 		WHERE id_usuario::text = $1`, resolvedFriendID).Scan(
 		&profile.IDUsuario,
 		&profile.Username,
-		&profile.Correo,
 		&profile.IDNivel,
 		&profile.Experiencia,
 	)
@@ -754,6 +797,9 @@ func (r *postgresFriendshipRepository) GetFriendProfile(ctx context.Context, use
 		return nil, err
 	}
 
+	if strings.ToUpper(strings.TrimSpace(visibility)) != "PRIVADO" {
+		profile.IDAmistad = models.FriendshipID(friendshipID)
+	}
 	return &profile, nil
 }
 

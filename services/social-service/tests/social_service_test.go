@@ -8,8 +8,10 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/meloop/social-service/client"
 	"github.com/meloop/social-service/controllers"
 	"github.com/meloop/social-service/models"
 	"github.com/meloop/social-service/routes"
@@ -17,6 +19,19 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type testSessionValidator struct{}
+
+func (testSessionValidator) ValidateToken(_ context.Context, token string) (string, error) {
+	if token == "invalid" {
+		return "", client.ErrInvalidSession
+	}
+	return token, nil
+}
+
+func setAuthenticatedUser(request *http.Request, userID string) {
+	request.Header.Set("Authorization", "Bearer "+userID)
+}
 
 func TestBlockedUsersCannotRequestOrAppearInSuggestions(t *testing.T) {
 	gin.SetMode(gin.TestMode)
@@ -55,9 +70,9 @@ func TestBlockingRemovesExistingFriendship(t *testing.T) {
 	f.createFriendship(t, 0, 1, models.FriendshipAccepted)
 
 	require.NoError(t, service.BlockUser(context.Background(), f.userIDs[0], f.userIDs[1]))
-	friends, err := service.ListFriends(context.Background(), f.userIDs[0])
+	friends, err := service.ListFriends(context.Background(), f.userIDs[0], 20, "", nil)
 	require.NoError(t, err)
-	for _, friend := range friends {
+	for _, friend := range friends.Friends {
 		assert.NotEqual(t, f.userIDs[1], friend.IDUsuario)
 	}
 
@@ -113,9 +128,9 @@ func TestInvalidFriendRequestsReturnContractHTTPStatus(t *testing.T) {
 			payload, err := json.Marshal(models.SendFriendRequest{ReceiverID: f.userIDs[test.receiver]})
 			require.NoError(t, err)
 			request := httptest.NewRequest(http.MethodPost, "/friends/requests", strings.NewReader(string(payload)))
-			request.Header.Set("X-User-ID", f.userIDs[test.sender])
+			setAuthenticatedUser(request, f.userIDs[test.sender])
 			router := gin.New()
-			routes.SetupRoutes(router, controllers.NewFriendshipController(service))
+			routes.SetupRoutes(router, controllers.NewFriendshipController(service), testSessionValidator{})
 			router.ServeHTTP(recorder, request)
 			assert.Equal(t, test.wantStatus, recorder.Code)
 		})
@@ -127,12 +142,12 @@ func TestFriendRequestsPersistAndProcessTextIDsThroughHTTP(t *testing.T) {
 	f := setupFixture(t)
 	service := f.databaseService()
 	router := gin.New()
-	routes.SetupRoutes(router, controllers.NewFriendshipController(service))
+	routes.SetupRoutes(router, controllers.NewFriendshipController(service), testSessionValidator{})
 
 	doRequest := func(method, path, userID, body string) *httptest.ResponseRecorder {
 		recorder := httptest.NewRecorder()
 		request := httptest.NewRequest(method, path, strings.NewReader(body))
-		request.Header.Set("X-User-ID", userID)
+		setAuthenticatedUser(request, userID)
 		if body != "" {
 			request.Header.Set("Content-Type", "application/json")
 		}
@@ -201,6 +216,14 @@ func TestFriendRequestsPersistAndProcessTextIDsThroughHTTP(t *testing.T) {
 	require.NoError(t, f.pool.QueryRow(context.Background(), `
 		SELECT estado FROM amistad WHERE id_amistad = $1`, string(accepted.ID)).Scan(&storedStatus))
 	require.Equal(t, models.FriendshipAccepted, storedStatus)
+	var acceptedAt time.Time
+	require.NoError(t, f.pool.QueryRow(context.Background(), `
+		SELECT fecha_amistad FROM amistad WHERE id_amistad = $1`, string(accepted.ID)).Scan(&acceptedAt))
+	require.False(t, acceptedAt.IsZero())
+	for _, user := range []int{0, 1} {
+		_, err := service.ListFriends(context.Background(), f.userIDs[user], 20, "", nil)
+		require.NoError(t, err)
+	}
 
 	for _, user := range []int{0, 1} {
 		response = doRequest(http.MethodGet, "/friends", f.userIDs[user], "")
@@ -297,9 +320,9 @@ func TestBlockedFriendProfileReturnsNotFound(t *testing.T) {
 
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/friends/%s/profile", f.userIDs[1]), nil)
-	request.Header.Set("X-User-ID", f.userIDs[0])
+	setAuthenticatedUser(request, f.userIDs[0])
 	router := gin.New()
-	routes.SetupRoutes(router, controllers.NewFriendshipController(service))
+	routes.SetupRoutes(router, controllers.NewFriendshipController(service), testSessionValidator{})
 	router.ServeHTTP(recorder, request)
 	assert.Equal(t, http.StatusNotFound, recorder.Code)
 }
