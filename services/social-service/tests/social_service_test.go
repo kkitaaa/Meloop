@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/meloop/social-service/controllers"
 	"github.com/meloop/social-service/models"
 	"github.com/meloop/social-service/routes"
