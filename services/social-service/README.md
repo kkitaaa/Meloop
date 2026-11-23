@@ -16,7 +16,7 @@ Microservicio encargado de la gestión de relaciones sociales en Meloop:
 - `POST /friends/requests/:id/accept`: Aceptar solicitud.
 - `POST /friends/requests/:id/reject`: Rechazar solicitud.
 - `POST /friends/requests/:id/cancel`: Cancelar solicitud.
-- `GET /friends`: Listar amigos.
+- `GET /friends`: Listar amigos con paginación por cursor.
 - `DELETE /friends/:id`: Eliminar amigo.
 - `GET /friends/:id/profile`: Consultar perfil de amigo.
 - `POST /friends/blocks`: Bloquear a un usuario.
@@ -31,6 +31,34 @@ Microservicio encargado de la gestión de relaciones sociales en Meloop:
 
 Consulta la documentación completa en [`docs/centralized_block_exclusion.md`](../../docs/centralized_block_exclusion.md).
 
+### Paginación de amigos (RF-12)
+
+`GET /friends?limit=20&cursor=...&q=...` acepta `limit` (predeterminado 20, máximo 50; cualquier valor positivo superior a 50 se ajusta automáticamente a 50), `cursor` (base64 devuelto por la página anterior) y `q` (búsqueda parcial por nombre de usuario). Mantén el mismo `q` al enviar cada `cursor`. El mismo endpoint está disponible tanto en el servicio social como a través del gateway.
+
+Ejemplo: `GET /friends?limit=20&cursor=eyJmZWNoYV9hbWlzdGFkIjoi...&q=usuario`.
+
+La migración que incorpora `fecha_amistad` asigna una fecha de referencia a las amistades aceptadas existentes que no tenían este campo. Esa fecha de referencia no representa necesariamente la fecha real en que fueron aceptadas.
+
+La respuesta conserva `data` como la lista de amigos y agrega `next_cursor` al envoltorio existente:
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id_amistad": "friendship-id",
+      "id_usuario": "user-id",
+      "username": "usuario",
+      "estado": "ACEPTADA"
+    }
+  ],
+  "error": null,
+  "next_cursor": "eyJmZWNoYV9hbWlzdGFkIjoi..."
+}
+```
+
+Cuando no hay otra página, `next_cursor` es `""` y `data` es `[]`. Un `limit` menor o igual a cero devuelve HTTP 400; los cursores inválidos devuelven HTTP 400 con código `INVALID_CURSOR`.
+
 ## Pruebas y cobertura
 
 Desde la raíz del repositorio, ejecuta `make test-social` para correr `go test ./... -cover` en este servicio.
@@ -38,6 +66,25 @@ La cobertura medida para la lógica de negocio en el paquete `services` es **90.
 
 Las pruebas de integración de `tests/` requieren `TEST_DATABASE_URL` (base de datos cuyo nombre incluya `test`).
 Sin esa variable se omiten para evitar conectarse a datos no destinados a pruebas.
+Configura `TEST_DATABASE_URL` con una base PostgreSQL de pruebas separada (por ejemplo, `social_test`) y aplica antes las migraciones de `supabase/migrations` a esa base.
+
+Para levantar PostgreSQL local con Supabase CLI y ejecutar la suite de integración en una base aislada:
+
+```powershell
+supabase start
+supabase status
+$env:TEST_DATABASE_URL = "postgresql://postgres:<DB_PASSWORD>@localhost:15422/social_test?sslmode=disable"
+psql "postgresql://postgres:<DB_PASSWORD>@localhost:15422/postgres" -c "CREATE DATABASE social_test"
+Get-ChildItem supabase\migrations\*.sql | Sort-Object Name | ForEach-Object {
+    psql $env:TEST_DATABASE_URL -v ON_ERROR_STOP=1 -f $_.FullName
+    if ($LASTEXITCODE -ne 0) { throw "Falló la migración $($_.Name)" }
+}
+Push-Location services\social-service
+go test ./... -count=1
+Pop-Location
+```
+
+Usa la contraseña mostrada por `supabase status` en `<DB_PASSWORD>`. La base `social_test` es independiente de `postgres`; no ejecutes estas pruebas sobre datos de producción.
 
 La invalidación de caché de bloqueos (S-01) no aplica a la arquitectura actual: `social-service` no utiliza
 una caché Redis para bloqueos. Por ese motivo no se implementa ni se pudo verificar invalidación de claves.
