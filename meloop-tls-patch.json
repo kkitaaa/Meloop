@@ -1,0 +1,15 @@
+{
+  "metadata": {
+    "annotations": {
+      "cert-manager.io/cluster-issuer": "letsencrypt-production-rfc2136"
+    }
+  },
+  "spec": {
+    "tls": [
+      {
+        "hosts": ["meloop-acofre.dev.censei.cl"],
+        "secretName": "meloop-acofre-tls"
+      }
+    ]
+  }
+}
