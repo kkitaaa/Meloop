@@ -400,7 +400,10 @@ func (r *postgresFriendshipRepository) IsBlocked(ctx context.Context, user1ID, u
 }
 
 const mutualFriendsCTE = `
-	WITH user_friends AS (
+	WITH inactivity_threshold AS (
+		SELECT (DATE_TRUNC('day', CURRENT_TIMESTAMP) - INTERVAL '6 months') AS threshold
+	),
+	user_friends AS (
 		SELECT CASE
 			WHEN a.id_usuario_1::text = $1 THEN a.id_usuario_2::text
 			ELSE a.id_usuario_1::text
@@ -427,6 +430,7 @@ const mutualFriendsCTE = `
 		SELECT m.friend_id
 		FROM mutual_friends m
 		JOIN usuario u ON u.id_usuario::text = m.friend_id
+		CROSS JOIN inactivity_threshold t
 		WHERE m.friend_id <> $1
 		  AND m.friend_id <> $2
 		  AND NOT EXISTS (
@@ -434,6 +438,32 @@ const mutualFriendsCTE = `
 			FROM accion_moderacion am
 			WHERE am.id_usuario_afectado::text = m.friend_id
 			  AND UPPER(am.tipo_accion) IN ('BAN', 'SUSPENSION', 'INACTIVO', 'DESACTIVADO')
+		  )
+		  AND (
+			(u.fecha_creacion IS NOT NULL AND u.fecha_creacion >= t.threshold)
+			OR (u.fecha_ultimo_login IS NOT NULL AND u.fecha_ultimo_login >= t.threshold)
+			OR EXISTS (
+				SELECT 1 FROM publicacion p
+				WHERE p.id_usuario::text = m.friend_id
+				  AND p.fecha_creacion >= t.threshold
+			)
+			OR EXISTS (
+				SELECT 1 FROM interaccion i
+				WHERE i.id_usuario::text = m.friend_id
+				  AND i.fecha_creacion >= t.threshold
+			)
+			OR (
+				u.fecha_creacion IS NULL
+				AND u.fecha_ultimo_login IS NULL
+				AND NOT EXISTS (
+					SELECT 1 FROM publicacion p
+					WHERE p.id_usuario::text = m.friend_id
+				)
+				AND NOT EXISTS (
+					SELECT 1 FROM interaccion i
+					WHERE i.id_usuario::text = m.friend_id
+				)
+			)
 		  )
 	),
 	visible_mutual_friends AS (

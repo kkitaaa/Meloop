@@ -45,11 +45,9 @@ Sin esa variable se omiten para evitar conectarse a datos no destinados a prueba
 La invalidación de caché de bloqueos (S-01) no aplica a la arquitectura actual: `social-service` no utiliza
 una caché Redis para bloqueos. Por ese motivo no se implementa ni se pudo verificar invalidación de claves.
 
-La consulta de amigos en común calcula la intersección en PostgreSQL, excluye cuentas marcadas por acciones de
-moderación (`BAN`, `SUSPENSION`, `INACTIVO` o `DESACTIVADO`) y reutiliza `ExcludeBlocked` para filtrar candidatos
-bloqueados con el usuario consultante. La visibilidad de la lista se configura mediante `visibilidad_amigos`
-en la configuración existente de privacidad. No interpreta `USUARIO.suspendido` como inactividad RN-05, porque
-el repositorio no define esa equivalencia; esa regla queda pendiente de aclaración.
+La consulta de amigos en común calcula la intersección en PostgreSQL, excluye cuentas con acciones de moderación
+`BAN` o `SUSPENSION` y filtra candidatos bloqueados con el usuario consultante. La visibilidad de la lista se
+configura mediante `visibilidad_amigos` en la configuración existente de privacidad.
 
 Las rutas protegidas de social-service requieren `Authorization: Bearer <token>` y validan la sesión mediante
 `GET /auth/validate` de auth-service. La identidad del contexto se toma únicamente de la respuesta validada;
@@ -57,10 +55,8 @@ Las rutas protegidas de social-service requieren `Authorization: Bearer <token>`
 (por defecto `http://localhost:8083`). Si auth-service no está disponible, las rutas protegidas responden
 `503 Service Unavailable` y no permiten el acceso.
 
-RN-05 considera inactiva una cuenta sin inicio de sesión, publicación ni interacción durante seis meses consecutivos.
-
-El filtrado actual excluye acciones de moderación BAN, SUSPENSION, INACTIVO y DESACTIVADO, pero no implementa la inactividad temporal de RN-05.
-
-USUARIO.suspendido no equivale a inactividad.
-
-La aplicación de RN-05 queda pendiente de disponer del estado de actividad gestionado conforme a RF-60.
+RN-05 se aplica exclusivamente a `GET /v1/social/users/:id/mutual-friends`: se considera inactivo un usuario cuyo
+último inicio de sesión, publicación o interacción sea anterior a seis meses calendario. La fecha de creación
+también protege a las cuentas recién registradas. Para cuentas existentes sin fecha de creación ni actividad
+registrada, el filtrado es conservador y no las clasifica como inactivas. Una actividad posterior vuelve a
+considerar activa la cuenta dentro de este endpoint.

@@ -103,3 +103,53 @@ func (f *fixture) createFriendship(t *testing.T, userA, userB int, status string
 		fmt.Sprintf("%d", id), f.userIDs[userA], f.userIDs[userB], status)
 	require.NoError(t, err)
 }
+
+func (f *fixture) setUserActivity(t *testing.T, user int, creation, lastLogin string) {
+	t.Helper()
+	_, err := f.pool.Exec(context.Background(), `
+		UPDATE usuario
+		SET fecha_creacion = CASE WHEN $2 = 'now' THEN CURRENT_TIMESTAMP
+		                          WHEN $2 = 'null' THEN NULL
+		                          ELSE NULL END,
+		    fecha_ultimo_login = CASE WHEN $3 = 'now' THEN CURRENT_TIMESTAMP
+		                              WHEN $3 = 'threshold' THEN DATE_TRUNC('day', CURRENT_TIMESTAMP) - INTERVAL '6 months'
+		                              WHEN $3 = 'inactive' THEN CURRENT_TIMESTAMP - INTERVAL '7 months'
+		                              ELSE NULL END
+		WHERE id_usuario = $1`,
+		f.userIDs[user], creation, lastLogin)
+	require.NoError(t, err)
+}
+
+func (f *fixture) addPostActivity(t *testing.T, user int, age string) {
+	t.Helper()
+	runID := time.Now().UnixNano()
+	postID := fmt.Sprintf("social-post-%d", runID)
+	_, err := f.pool.Exec(context.Background(), `
+		INSERT INTO publicacion (id_publicacion, id_usuario, texto, fecha_creacion)
+		VALUES ($1, $2, 'activity test',
+			CASE WHEN $3 = 'active' THEN CURRENT_TIMESTAMP
+			     WHEN $3 = 'threshold' THEN CURRENT_TIMESTAMP - INTERVAL '6 months'
+			     ELSE CURRENT_TIMESTAMP - INTERVAL '7 months' END)`,
+		postID, f.userIDs[user], age)
+	require.NoError(t, err)
+}
+
+func (f *fixture) addInteractionActivity(t *testing.T, user int, age string) {
+	t.Helper()
+	runID := time.Now().UnixNano()
+	postID := fmt.Sprintf("social-interaction-post-%d", runID)
+	interactionID := fmt.Sprintf("social-interaction-%d", runID)
+	_, err := f.pool.Exec(context.Background(), `
+		INSERT INTO publicacion (id_publicacion, id_usuario, texto, fecha_creacion)
+		VALUES ($1, $2, 'interaction activity', CURRENT_TIMESTAMP)`,
+		postID, f.userIDs[0])
+	require.NoError(t, err)
+	_, err = f.pool.Exec(context.Background(), `
+		INSERT INTO interaccion (id_interaccion, id_usuario, id_publicacion, tipo, fecha_creacion)
+		VALUES ($1, $2, $3, 'like',
+			CASE WHEN $4 = 'active' THEN CURRENT_TIMESTAMP
+			     WHEN $4 = 'threshold' THEN CURRENT_TIMESTAMP - INTERVAL '6 months'
+			     ELSE CURRENT_TIMESTAMP - INTERVAL '7 months' END)`,
+		interactionID, f.userIDs[user], postID, age)
+	require.NoError(t, err)
+}

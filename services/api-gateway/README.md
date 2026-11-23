@@ -19,9 +19,10 @@ validación del token debe realizarse mediante la política de autenticación de
 servicio correspondiente.
 
 La ruta versionada de social-service reenvía `/v1/social/...` sin reescrituras;
-la identidad del usuario se obtiene actualmente mediante el middleware social
-existente, que acepta `X-User-ID` y no valida JWT (*no equivale a autenticación
-mediante token*).
+Social Service exige un Bearer token: su middleware consulta la sesión a Auth
+Service y obtiene la identidad del usuario de la respuesta validada. El
+encabezado `X-User-ID` enviado por el cliente no se utiliza como identidad
+confiable. El sistema utiliza tokens de sesión opacos, no JWT.
 
 Las variables de destino aceptan una URL completa. Si no están definidas, el
 gateway usa los valores locales `http://localhost:8081`,

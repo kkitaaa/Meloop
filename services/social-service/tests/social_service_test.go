@@ -354,6 +354,10 @@ func setFriendListVisibility(t *testing.T, f *fixture, user int, visibility stri
 }
 
 func markUserInactive(t *testing.T, f *fixture, affected int) {
+	markUserModerated(t, f, affected, "INACTIVO")
+}
+
+func markUserModerated(t *testing.T, f *fixture, affected int, state string) {
 	t.Helper()
 	reportID := fmt.Sprintf("social-report-%d", time.Now().UnixNano())
 	_, err := f.pool.Exec(context.Background(), `
@@ -363,8 +367,8 @@ func markUserInactive(t *testing.T, f *fixture, affected int) {
 	require.NoError(t, err)
 	_, err = f.pool.Exec(context.Background(), `
 		INSERT INTO accion_moderacion (id_accion, id_reporte, id_moderador, id_usuario_afectado, tipo_accion)
-		VALUES ($1, $2, $3, $4, 'INACTIVO')`,
-		fmt.Sprintf("social-action-%d", time.Now().UnixNano()), reportID, f.userIDs[0], f.userIDs[affected])
+		VALUES ($1, $2, $3, $4, $5)`,
+		fmt.Sprintf("social-action-%d", time.Now().UnixNano()), reportID, f.userIDs[0], f.userIDs[affected], state)
 	require.NoError(t, err)
 }
 
@@ -478,19 +482,79 @@ func TestMutualFriendsPrivateListAndInactiveCandidatesPostgres(t *testing.T) {
 		assert.Empty(t, response.Data.Friends)
 	})
 
-	t.Run("moderation-marked inactive users are excluded", func(t *testing.T) {
+	t.Run("moderation-marked users are excluded", func(t *testing.T) {
+		for _, state := range []string{"BAN", "SUSPENSION", "INACTIVO", "DESACTIVADO"} {
+			t.Run(state, func(t *testing.T) {
+				f := setupFixture(t)
+				f.createFriendship(t, 0, 2, models.FriendshipAccepted)
+				f.createFriendship(t, 1, 2, models.FriendshipAccepted)
+				f.createFriendship(t, 0, 3, models.FriendshipAccepted)
+				f.createFriendship(t, 1, 3, models.FriendshipAccepted)
+				markUserModerated(t, f, 3, state)
+
+				status, response := mutualFriendsRequest(t, f, f.userIDs[0], f.userIDs[1], "")
+				require.Equal(t, http.StatusOK, status)
+				assert.Equal(t, 1, response.Data.Count)
+				require.Len(t, response.Data.Friends, 1)
+				assert.Equal(t, f.userIDs[2], response.Data.Friends[0].ID)
+			})
+		}
+	})
+
+	t.Run("inactive and exact threshold users are handled independently", func(t *testing.T) {
 		f := setupFixture(t)
-		f.createFriendship(t, 0, 2, models.FriendshipAccepted)
-		f.createFriendship(t, 1, 2, models.FriendshipAccepted)
-		f.createFriendship(t, 0, 3, models.FriendshipAccepted)
-		f.createFriendship(t, 1, 3, models.FriendshipAccepted)
-		markUserInactive(t, f, 3)
+		for _, candidate := range []int{2, 3} {
+			f.createFriendship(t, 0, candidate, models.FriendshipAccepted)
+			f.createFriendship(t, 1, candidate, models.FriendshipAccepted)
+		}
+		f.setUserActivity(t, 2, "null", "inactive")
+		f.setUserActivity(t, 3, "null", "threshold")
 
 		status, response := mutualFriendsRequest(t, f, f.userIDs[0], f.userIDs[1], "")
 		require.Equal(t, http.StatusOK, status)
 		assert.Equal(t, 1, response.Data.Count)
 		require.Len(t, response.Data.Friends, 1)
-		assert.Equal(t, f.userIDs[2], response.Data.Friends[0].ID)
+		assert.Equal(t, f.userIDs[3], response.Data.Friends[0].ID)
+	})
+
+	t.Run("newly registered and reactivated users remain visible", func(t *testing.T) {
+		f := setupFixture(t)
+		for _, candidate := range []int{2, 3} {
+			f.createFriendship(t, 0, candidate, models.FriendshipAccepted)
+			f.createFriendship(t, 1, candidate, models.FriendshipAccepted)
+		}
+		f.setUserActivity(t, 2, "null", "inactive")
+		f.setUserActivity(t, 2, "null", "now")
+		f.setUserActivity(t, 3, "now", "null")
+
+		status, response := mutualFriendsRequest(t, f, f.userIDs[0], f.userIDs[1], "")
+		require.Equal(t, http.StatusOK, status)
+		assert.Equal(t, 2, response.Data.Count)
+		require.Len(t, response.Data.Friends, 2)
+	})
+
+	t.Run("publication and interaction reactivation are counted and paginated", func(t *testing.T) {
+		f := setupFixture(t)
+		for _, candidate := range []int{2, 3} {
+			f.createFriendship(t, 0, candidate, models.FriendshipAccepted)
+			f.createFriendship(t, 1, candidate, models.FriendshipAccepted)
+		}
+		f.setUserActivity(t, 2, "null", "inactive")
+		f.setUserActivity(t, 3, "null", "inactive")
+		f.addPostActivity(t, 2, "active")
+		f.addInteractionActivity(t, 3, "active")
+
+		status, firstPage := mutualFriendsRequest(t, f, f.userIDs[0], f.userIDs[1], "limit=1")
+		require.Equal(t, http.StatusOK, status)
+		assert.Equal(t, 2, firstPage.Data.Count)
+		require.Len(t, firstPage.Data.Friends, 1)
+		require.NotEmpty(t, firstPage.Data.NextCursor)
+
+		status, secondPage := mutualFriendsRequest(t, f, f.userIDs[0], f.userIDs[1], "limit=1&cursor="+firstPage.Data.NextCursor)
+		require.Equal(t, http.StatusOK, status)
+		assert.Equal(t, 2, secondPage.Data.Count)
+		require.Len(t, secondPage.Data.Friends, 1)
+		assert.NotEqual(t, firstPage.Data.Friends[0].ID, secondPage.Data.Friends[0].ID)
 	})
 }
 
