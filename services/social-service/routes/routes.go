@@ -42,7 +42,7 @@ func SetupRoutes(router *gin.Engine, controller *controllers.FriendshipControlle
 	// Endpoint interno para comunicación entre microservicios (no requiere token de sesión de usuario final)
 	internal := router.Group("/internal")
 	{
-		internal.POST("/blocks/exclude", controller.ExcludeBlocked)
+		internal.POST("/blocks/exclude", controller.ExcludeBlockedInternal)
 	}
 
 	// Acceso directo a sugerencias de amistad

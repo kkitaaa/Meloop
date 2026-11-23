@@ -19,21 +19,34 @@ import (
 type fixture struct {
 	pool       *pgxpool.Pool
 	userIDs    [4]string
+	extraUsers []string
 	friendship int64
+	runID      string
 }
 
 type testSessionValidator struct{}
 
 func (testSessionValidator) ValidateToken(_ context.Context, token string) (string, error) {
-	const prefix = "test-session:"
-	if !strings.HasPrefix(token, prefix) || strings.TrimPrefix(token, prefix) == "" {
+	if token == "invalid" {
 		return "", client.ErrInvalidSession
 	}
-	return strings.TrimPrefix(token, prefix), nil
+	const prefix = "test-session:"
+	if strings.HasPrefix(token, prefix) {
+		val := strings.TrimPrefix(token, prefix)
+		if val == "" {
+			return "", client.ErrInvalidSession
+		}
+		return val, nil
+	}
+	return token, nil
 }
 
 func setTestSession(request *http.Request, userID string) {
 	request.Header.Set("Authorization", "Bearer test-session:"+userID)
+}
+
+func setAuthenticatedUser(request *http.Request, userID string) {
+	request.Header.Set("Authorization", "Bearer "+userID)
 }
 
 func setupFixture(t *testing.T) *fixture {
@@ -65,10 +78,10 @@ func setupFixture(t *testing.T) *fixture {
 	require.Equal(t, "NO", visibilityNullable)
 
 	runID := fmt.Sprintf("%d", time.Now().UnixNano())
-	testFixture := &fixture{pool: pool}
+	testFixture := &fixture{pool: pool, runID: runID}
 	t.Cleanup(func() {
 		_, cleanupErr := pool.Exec(context.Background(),
-			`DELETE FROM usuario WHERE id_usuario = ANY($1)`, testFixture.userIDs[:])
+			`DELETE FROM usuario WHERE id_usuario = ANY($1)`, append(testFixture.userIDs[:], testFixture.extraUsers...))
 		pool.Close()
 		require.NoError(t, cleanupErr)
 	})
@@ -93,15 +106,43 @@ func (f *fixture) databaseService() services.FriendshipService {
 	return services.NewFriendshipService(repository, nil)
 }
 
-func (f *fixture) createFriendship(t *testing.T, userA, userB int, status string) {
+func (f *fixture) createUser(t *testing.T, username string) string {
+	t.Helper()
+	userID := fmt.Sprintf("social-test-%s-extra-%d", f.runID, len(f.extraUsers))
+	f.extraUsers = append(f.extraUsers, userID)
+	_, err := f.pool.Exec(context.Background(), `
+		INSERT INTO usuario (id_usuario, username, correo, contrasena_hash)
+		VALUES ($1, $2, $3, $4)`,
+		userID,
+		username,
+		fmt.Sprintf("%s@example.test", userID),
+		"test-password-hash",
+	)
+	require.NoError(t, err)
+	return userID
+}
+
+func (f *fixture) createFriendship(t *testing.T, userA, userB int, status string) string {
+	t.Helper()
+	return f.createFriendshipIDs(t, f.userIDs[userA], f.userIDs[userB], status)
+}
+
+func (f *fixture) createFriendshipIDs(t *testing.T, userA, userB, status string) string {
 	t.Helper()
 	f.friendship++
 	id := time.Now().UnixNano()%2_000_000_000 + f.friendship
+	friendshipID := fmt.Sprintf("%d", id)
+	var acceptedAt *time.Time
+	if status == "ACEPTADA" {
+		now := time.Now().UTC()
+		acceptedAt = &now
+	}
 	_, err := f.pool.Exec(context.Background(), `
-		INSERT INTO amistad (id_amistad, id_usuario_1, id_usuario_2, estado)
-		VALUES ($1, $2, $3, $4)`,
-		fmt.Sprintf("%d", id), f.userIDs[userA], f.userIDs[userB], status)
+		INSERT INTO amistad (id_amistad, id_usuario_1, id_usuario_2, estado, fecha_amistad)
+		VALUES ($1, $2, $3, $4, $5)`,
+		friendshipID, userA, userB, status, acceptedAt)
 	require.NoError(t, err)
+	return friendshipID
 }
 
 func (f *fixture) setUserActivity(t *testing.T, user int, creation, lastLogin string) {

@@ -71,12 +71,68 @@ func (ctrl *FriendshipController) Cancel(c *gin.Context) {
 }
 
 func (ctrl *FriendshipController) ListFriends(c *gin.Context) {
-	result, err := ctrl.service.ListFriends(c, c.GetString(ContextUserIDKey))
+	limit := 20
+	if rawLimit, exists := c.GetQuery("limit"); exists {
+		parsedLimit, err := strconv.Atoi(rawLimit)
+		if err != nil || parsedLimit <= 0 {
+			httpresponse.BadRequestGin(c, "El parámetro limit debe ser un entero positivo")
+			return
+		}
+		limit = parsedLimit
+		if limit > 50 {
+			limit = 50
+		}
+	}
+
+	var cursor *models.FriendCursor
+	if rawCursor, exists := c.GetQuery("cursor"); exists {
+		var err error
+		cursor, err = decodeFriendCursor(rawCursor)
+		if err != nil {
+			httpresponse.ErrorGin(c, http.StatusBadRequest, "INVALID_CURSOR", "El cursor de paginación es inválido")
+			return
+		}
+	}
+
+	result, err := ctrl.service.ListFriends(
+		c,
+		c.GetString(ContextUserIDKey),
+		limit,
+		strings.TrimSpace(c.Query("q")),
+		cursor,
+	)
 	if err != nil {
 		ctrl.handleError(c, err)
 		return
 	}
-	httpresponse.SuccessGin(c, http.StatusOK, result)
+
+	nextCursor := ""
+	if result.HasMore && len(result.Friends) > 0 {
+		lastFriend := result.Friends[len(result.Friends)-1]
+		nextCursor, err = encodeFriendCursor(models.FriendCursor{
+			FechaAmistad: lastFriend.FechaAmistad,
+			IDAmistad:    lastFriend.IDAmistad,
+		})
+		if err != nil {
+			httpresponse.InternalErrorGin(c)
+			return
+		}
+	}
+
+	if result.Friends == nil {
+		result.Friends = []models.Friend{}
+	}
+
+	c.JSON(http.StatusOK, struct {
+		Success    bool                    `json:"success"`
+		Data       []models.Friend         `json:"data"`
+		Error      *httpresponse.ErrorBody `json:"error"`
+		NextCursor string                  `json:"next_cursor"`
+	}{
+		Success:    true,
+		Data:       result.Friends,
+		NextCursor: nextCursor,
+	})
 }
 
 func (ctrl *FriendshipController) RemoveFriend(c *gin.Context) {
@@ -204,6 +260,14 @@ func (ctrl *FriendshipController) GetFriendSuggestions(c *gin.Context) {
 }
 
 func (ctrl *FriendshipController) ExcludeBlocked(c *gin.Context) {
+	ctrl.excludeBlocked(c, true)
+}
+
+func (ctrl *FriendshipController) ExcludeBlockedInternal(c *gin.Context) {
+	ctrl.excludeBlocked(c, false)
+}
+
+func (ctrl *FriendshipController) excludeBlocked(c *gin.Context, authenticated bool) {
 	var req models.ExcludeBlockedRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		httpresponse.BadRequestGin(c, "Payload JSON inválido: "+err.Error())
@@ -211,11 +275,21 @@ func (ctrl *FriendshipController) ExcludeBlocked(c *gin.Context) {
 	}
 
 	userID := strings.TrimSpace(req.UserID)
-	if userID == "" {
-		userID = strings.TrimSpace(req.IDUsuario)
-	}
-	if userID == "" {
-		userID = strings.TrimSpace(c.GetString(ContextUserIDKey))
+	legacyUserID := strings.TrimSpace(req.IDUsuario)
+	if authenticated {
+		authenticatedUserID := strings.TrimSpace(c.GetString(ContextUserIDKey))
+		if authenticatedUserID == "" {
+			httpresponse.UnauthorizedGin(c, "No se encontró sesión de usuario autenticada")
+			return
+		}
+		if (userID != "" && userID != authenticatedUserID) ||
+			(legacyUserID != "" && legacyUserID != authenticatedUserID) {
+			httpresponse.ForbiddenGin(c, "El usuario solicitado no coincide con la sesión autenticada")
+			return
+		}
+		userID = authenticatedUserID
+	} else if userID == "" {
+		userID = legacyUserID
 	}
 	if userID == "" {
 		httpresponse.BadRequestGin(c, "El identificador del usuario de referencia (user_id) es requerido")

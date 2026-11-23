@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"log"
+	"os"
 
 	"github.com/gin-gonic/gin"
 	"github.com/meloop/services/common/httpresponse"
@@ -17,15 +17,21 @@ import (
 )
 
 func main() {
+	if err := run(); err != nil {
+		os.Exit(1)
+	}
+}
+
+func run() error {
 	logger := logging.New("social-service")
 	cfg := config.Load()
 	dbPool, err := repositories.InitDB(context.Background(), cfg.DatabaseURL)
 	if err != nil {
-		logger.Warn("database_connection_failed", "error", err, "url", cfg.DatabaseURL)
-	} else {
-		defer dbPool.Close()
-		logger.Info("database_connected", "url", cfg.DatabaseURL)
+		logger.Error("database_connection_failed", "component", "postgres")
+		return err
 	}
+	defer dbPool.Close()
+	logger.Info("database_connected", "component", "postgres")
 
 	repository := repositories.NewFriendshipRepository(dbPool)
 	compatRepository := repositories.NewCompatibilityRepository(dbPool)
@@ -39,7 +45,8 @@ func main() {
 
 	logger.Info("service_listening", "port", cfg.Port)
 	if err := router.Run(":" + cfg.Port); err != nil {
-		logger.Error("service_stopped", "error", err)
-		log.Fatal(err)
+		logger.Error("service_stopped", "component", "http")
+		return err
 	}
+	return nil
 }

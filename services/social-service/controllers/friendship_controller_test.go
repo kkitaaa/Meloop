@@ -3,10 +3,12 @@ package controllers_test
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -18,6 +20,31 @@ import (
 	"github.com/meloop/social-service/services"
 )
 
+type testSessionValidator struct{}
+
+func (testSessionValidator) ValidateToken(_ context.Context, token string) (string, error) {
+	if token == "invalid" {
+		return "", client.ErrInvalidSession
+	}
+	const prefix = "test-session:"
+	if strings.HasPrefix(token, prefix) {
+		val := strings.TrimPrefix(token, prefix)
+		if val == "" {
+			return "", client.ErrInvalidSession
+		}
+		return val, nil
+	}
+	return token, nil
+}
+
+func setAuthenticatedUser(request *http.Request, userID string) {
+	request.Header.Set("Authorization", "Bearer "+userID)
+}
+
+func setTestSession(request *http.Request, userID string) {
+	request.Header.Set("Authorization", "Bearer test-session:"+userID)
+}
+
 type mockFriendshipService struct {
 	sendRequestFunc            func(ctx context.Context, senderID, receiverID string) (*models.FriendRequest, error)
 	receivedRequestsFunc       func(ctx context.Context, userID string) ([]models.FriendRequest, error)
@@ -25,7 +52,7 @@ type mockFriendshipService struct {
 	acceptRequestFunc          func(ctx context.Context, requestID string, receiverID string) (*models.FriendRequest, error)
 	rejectRequestFunc          func(ctx context.Context, requestID string, receiverID string) (*models.FriendRequest, error)
 	cancelRequestFunc          func(ctx context.Context, requestID string, senderID string) (*models.FriendRequest, error)
-	listFriendsFunc            func(ctx context.Context, userID string) ([]models.Friend, error)
+	listFriendsFunc            func(ctx context.Context, userID string, limit int, query string, cursor *models.FriendCursor) (models.FriendPage, error)
 	removeFriendFunc           func(ctx context.Context, userID, targetID string) error
 	getFriendProfileFunc       func(ctx context.Context, userID, friendID string) (*models.FriendProfile, error)
 	getMutualFriendsFunc       func(ctx context.Context, userID, targetID string, limit int, cursor string) (*models.MutualFriendsResponse, error)
@@ -114,13 +141,13 @@ func (m *mockFriendshipService) CancelRequest(ctx context.Context, requestID str
 	return &models.FriendRequest{ID: models.FriendshipID(requestID), SenderID: senderID, ReceiverID: "receiver", Status: models.FriendshipCanceled}, nil
 }
 
-func (m *mockFriendshipService) ListFriends(ctx context.Context, userID string) ([]models.Friend, error) {
+func (m *mockFriendshipService) ListFriends(ctx context.Context, userID string, limit int, query string, cursor *models.FriendCursor) (models.FriendPage, error) {
 	if m.listFriendsFunc != nil {
-		return m.listFriendsFunc(ctx, userID)
+		return m.listFriendsFunc(ctx, userID, limit, query, cursor)
 	}
-	return []models.Friend{
+	return models.FriendPage{Friends: []models.Friend{
 		{IDAmistad: "1", IDUsuario: "friend-1", Username: "user1", Estado: models.FriendshipAccepted},
-	}, nil
+	}}, nil
 }
 
 func (m *mockFriendshipService) RemoveFriend(ctx context.Context, userID, targetID string) error {
@@ -157,20 +184,6 @@ func (m *mockFriendshipService) ValidateInteraction(ctx context.Context, user1ID
 		return m.validateInteractionFunc(ctx, user1ID, user2ID)
 	}
 	return nil
-}
-
-type testSessionValidator struct{}
-
-func (testSessionValidator) ValidateToken(_ context.Context, token string) (string, error) {
-	const prefix = "test-session:"
-	if !strings.HasPrefix(token, prefix) || strings.TrimPrefix(token, prefix) == "" {
-		return "", client.ErrInvalidSession
-	}
-	return strings.TrimPrefix(token, prefix), nil
-}
-
-func setTestSession(request *http.Request, userID string) {
-	request.Header.Set("Authorization", "Bearer test-session:"+userID)
 }
 
 func setupTestRouter(svc services.FriendshipService) *gin.Engine {
@@ -305,7 +318,7 @@ func TestFriendshipRequestActions_HTTP_AcceptTextAndLegacyIDs(t *testing.T) {
 				router := setupTestRouter(mockSvc)
 				recorder := httptest.NewRecorder()
 				request := httptest.NewRequest(http.MethodPost, "/friends/requests/"+id.path+"/"+action.path, nil)
-				setTestSession(request, "receiver")
+				setAuthenticatedUser(request, "receiver")
 				router.ServeHTTP(recorder, request)
 
 				if recorder.Code != http.StatusOK {
@@ -328,7 +341,7 @@ func TestListFriends_HTTP_Exitoso(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest(http.MethodGet, "/friends", nil)
-	setTestSession(req, "usr-123")
+	setAuthenticatedUser(req, "usr-123")
 
 	router.ServeHTTP(w, req)
 
@@ -346,6 +359,90 @@ func TestListFriends_HTTP_Exitoso(t *testing.T) {
 	data, ok := resp["data"].([]interface{})
 	if !ok || len(data) != 1 {
 		t.Fatalf("se esperaba 1 amigo en la lista")
+	}
+	if resp["next_cursor"] != "" {
+		t.Fatalf("se esperaba next_cursor vacío, se obtuvo %v", resp["next_cursor"])
+	}
+}
+
+func TestListFriends_HTTP_PaginationParameters(t *testing.T) {
+	tests := []struct {
+		name              string
+		query             string
+		wantStatus        int
+		wantLimit         int
+		wantSearch        string
+		wantCursor        bool
+		wantInvalidCursor bool
+	}{
+		{name: "default limit", wantStatus: http.StatusOK, wantLimit: 20},
+		{name: "limit capped", query: "?limit=80&q=alice", wantStatus: http.StatusOK, wantLimit: 50, wantSearch: "alice"},
+		{name: "zero limit", query: "?limit=0", wantStatus: http.StatusBadRequest},
+		{name: "negative limit", query: "?limit=-1", wantStatus: http.StatusBadRequest},
+		{name: "non numeric limit", query: "?limit=many", wantStatus: http.StatusBadRequest},
+		{name: "invalid cursor encoding", query: "?cursor=not-base64", wantStatus: http.StatusBadRequest, wantInvalidCursor: true},
+		{
+			name: "invalid cursor values",
+			query: "?cursor=" + url.QueryEscape(base64.StdEncoding.EncodeToString(
+				[]byte(`{"fecha_amistad":"not-a-date","id_amistad":"friend-id"}`))),
+			wantStatus: http.StatusBadRequest, wantInvalidCursor: true,
+		},
+	}
+
+	validCursor := base64.StdEncoding.EncodeToString(
+		[]byte(`{"fecha_amistad":"2026-01-02T03:04:05Z","id_amistad":"friend-id"}`),
+	)
+	tests = append(tests, struct {
+		name              string
+		query             string
+		wantStatus        int
+		wantLimit         int
+		wantSearch        string
+		wantCursor        bool
+		wantInvalidCursor bool
+	}{
+		name: "cursor and search forwarded", query: "?limit=5&q=ana&cursor=" + url.QueryEscape(validCursor),
+		wantStatus: http.StatusOK, wantLimit: 5, wantSearch: "ana", wantCursor: true,
+	})
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var called bool
+			mock := &mockFriendshipService{
+				listFriendsFunc: func(_ context.Context, userID string, limit int, query string, cursor *models.FriendCursor) (models.FriendPage, error) {
+					called = true
+					if userID != "usr-123" || limit != test.wantLimit || query != test.wantSearch {
+						t.Errorf("unexpected list arguments: user=%q limit=%d query=%q", userID, limit, query)
+					}
+					if (cursor != nil) != test.wantCursor {
+						t.Errorf("cursor presence = %t, want %t", cursor != nil, test.wantCursor)
+					}
+					return models.FriendPage{Friends: []models.Friend{}}, nil
+				},
+			}
+			router := setupTestRouter(mock)
+			recorder := httptest.NewRecorder()
+			request := httptest.NewRequest(http.MethodGet, "/friends"+test.query, nil)
+			setAuthenticatedUser(request, "usr-123")
+			router.ServeHTTP(recorder, request)
+
+			if recorder.Code != test.wantStatus {
+				t.Fatalf("status = %d, want %d: %s", recorder.Code, test.wantStatus, recorder.Body.String())
+			}
+			if test.wantStatus == http.StatusOK && !called {
+				t.Fatal("se esperaba invocar el servicio")
+			}
+			if test.wantInvalidCursor {
+				var response map[string]any
+				if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+					t.Fatalf("error deserializando json: %v", err)
+				}
+				apiError, ok := response["error"].(map[string]any)
+				if !ok || apiError["code"] != "INVALID_CURSOR" {
+					t.Fatalf("se esperaba error INVALID_CURSOR, se obtuvo %v", response["error"])
+				}
+			}
+		})
 	}
 }
 
@@ -367,7 +464,7 @@ func TestRemoveFriend_HTTP_Exitoso(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest(http.MethodDelete, "/friends/1", nil)
-	setTestSession(req, "usr-123")
+	setAuthenticatedUser(req, "usr-123")
 
 	router.ServeHTTP(w, req)
 
@@ -386,7 +483,7 @@ func TestRemoveFriend_HTTP_NoEncontrado(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest(http.MethodDelete, "/friends/999", nil)
-	setTestSession(req, "usr-123")
+	setAuthenticatedUser(req, "usr-123")
 
 	router.ServeHTTP(w, req)
 
@@ -405,7 +502,7 @@ func TestRemoveFriend_HTTP_NoAutorizado(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest(http.MethodDelete, "/friends/12", nil)
-	setTestSession(req, "usr-intruder")
+	setAuthenticatedUser(req, "usr-intruder")
 
 	router.ServeHTTP(w, req)
 
@@ -419,7 +516,7 @@ func TestGetFriendProfile_HTTP_Exitoso(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest(http.MethodGet, "/friends/friend-1/profile", nil)
-	setTestSession(req, "usr-123")
+	setAuthenticatedUser(req, "usr-123")
 
 	router.ServeHTTP(w, req)
 
@@ -445,7 +542,7 @@ func TestGetFriendProfile_HTTP_Bloqueado(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest(http.MethodGet, "/friends/friend-blocked/profile", nil)
-	setTestSession(req, "usr-123")
+	setAuthenticatedUser(req, "usr-123")
 
 	router.ServeHTTP(w, req)
 
@@ -464,7 +561,7 @@ func TestGetFriendProfile_HTTP_NoAmigos(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest(http.MethodGet, "/friends/stranger/profile", nil)
-	setTestSession(req, "usr-123")
+	setAuthenticatedUser(req, "usr-123")
 
 	router.ServeHTTP(w, req)
 
@@ -483,7 +580,7 @@ func TestBlockUser_HTTP_Exitoso(t *testing.T) {
 	body := `{"id_usuario": "usr-bad"}`
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest(http.MethodPost, "/friends/blocks", bytes.NewBufferString(body))
-	setTestSession(req, "usr-123")
+	setAuthenticatedUser(req, "usr-123")
 	req.Header.Set("Content-Type", "application/json")
 
 	router.ServeHTTP(w, req)
@@ -504,7 +601,7 @@ func TestBlockUser_HTTP_Autobloqueo(t *testing.T) {
 	body := `{"id_usuario": "usr-123"}`
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest(http.MethodPost, "/friends/blocks", bytes.NewBufferString(body))
-	setTestSession(req, "usr-123")
+	setAuthenticatedUser(req, "usr-123")
 	req.Header.Set("Content-Type", "application/json")
 
 	router.ServeHTTP(w, req)
@@ -525,7 +622,7 @@ func TestBlockUser_HTTP_YaBloqueado(t *testing.T) {
 	body := `{"id_usuario": "usr-bad"}`
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest(http.MethodPost, "/friends/blocks", bytes.NewBufferString(body))
-	setTestSession(req, "usr-123")
+	setAuthenticatedUser(req, "usr-123")
 	req.Header.Set("Content-Type", "application/json")
 
 	router.ServeHTTP(w, req)
@@ -540,7 +637,7 @@ func TestValidateInteraction_HTTP_Permitido(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest(http.MethodGet, "/friends/validate-interaction?id_usuario=usr-ok", nil)
-	setTestSession(req, "usr-123")
+	setAuthenticatedUser(req, "usr-123")
 
 	router.ServeHTTP(w, req)
 
@@ -566,7 +663,7 @@ func TestValidateInteraction_HTTP_Bloqueado(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest(http.MethodGet, "/friends/validate-interaction?id_usuario=usr-blocked", nil)
-	setTestSession(req, "usr-123")
+	setAuthenticatedUser(req, "usr-123")
 
 	router.ServeHTTP(w, req)
 
@@ -584,7 +681,7 @@ func TestGetFriendSuggestions_HTTP_Exitoso(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest(http.MethodGet, "/friends/suggestions", nil)
-	setTestSession(req, "usr-123")
+	setAuthenticatedUser(req, "usr-123")
 
 	router.ServeHTTP(w, req)
 
@@ -624,7 +721,7 @@ func TestGetFriendSuggestions_HTTP_RutasAlternativas_Exitoso(t *testing.T) {
 	// Probar /friends/recommendations
 	w1 := httptest.NewRecorder()
 	req1, _ := http.NewRequest(http.MethodGet, "/friends/recommendations", nil)
-	setTestSession(req1, "usr-123")
+	setAuthenticatedUser(req1, "usr-123")
 	router.ServeHTTP(w1, req1)
 	if w1.Code != http.StatusOK {
 		t.Fatalf("se esperaba 200 OK en /friends/recommendations, se obtuvo %d", w1.Code)
@@ -633,7 +730,7 @@ func TestGetFriendSuggestions_HTTP_RutasAlternativas_Exitoso(t *testing.T) {
 	// Probar /suggestions
 	w2 := httptest.NewRecorder()
 	req2, _ := http.NewRequest(http.MethodGet, "/suggestions", nil)
-	setTestSession(req2, "usr-123")
+	setAuthenticatedUser(req2, "usr-123")
 	router.ServeHTTP(w2, req2)
 	if w2.Code != http.StatusOK {
 		t.Fatalf("se esperaba 200 OK en /suggestions, se obtuvo %d", w2.Code)
@@ -663,6 +760,43 @@ func TestGetFriendSuggestions_HTTP_NoAutenticado(t *testing.T) {
 	}
 }
 
+func TestGetFriendSuggestions_HTTP_TokenInvalido(t *testing.T) {
+	router := setupTestRouter(&mockFriendshipService{})
+	req := httptest.NewRequest(http.MethodGet, "/friends/suggestions", nil)
+	setAuthenticatedUser(req, "invalid")
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("se esperaba 401 Unauthorized para token inválido, se obtuvo %d", w.Code)
+	}
+}
+
+func TestGetFriendSuggestions_HTTP_IgnoraIdentidadProporcionadaPorCliente(t *testing.T) {
+	var receivedUserID string
+	svc := &mockFriendshipService{
+		getFriendSuggestionsFunc: func(_ context.Context, userID string) ([]models.FriendSuggestion, error) {
+			receivedUserID = userID
+			return []models.FriendSuggestion{}, nil
+		},
+	}
+	router := setupTestRouter(svc)
+	req := httptest.NewRequest(http.MethodGet, "/friends/suggestions", nil)
+	setAuthenticatedUser(req, "authenticated-user")
+	req.Header.Set("X-User-ID", "spoofed-user")
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("se esperaba 200 OK, se obtuvo %d", w.Code)
+	}
+	if receivedUserID != "authenticated-user" {
+		t.Fatalf("se esperaba identidad validada, se obtuvo %q", receivedUserID)
+	}
+}
+
 func TestGetFriendSuggestions_HTTP_UsuarioInvalido(t *testing.T) {
 	mockSvc := &mockFriendshipService{
 		getFriendSuggestionsFunc: func(ctx context.Context, userID string) ([]models.FriendSuggestion, error) {
@@ -673,7 +807,7 @@ func TestGetFriendSuggestions_HTTP_UsuarioInvalido(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest(http.MethodGet, "/friends/suggestions", nil)
-	setTestSession(req, "usr-123")
+	setAuthenticatedUser(req, "usr-123")
 
 	router.ServeHTTP(w, req)
 
@@ -692,7 +826,7 @@ func TestGetFriendSuggestions_HTTP_SinPreferenciasMusicales(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest(http.MethodGet, "/friends/suggestions", nil)
-	setTestSession(req, "usr-123")
+	setAuthenticatedUser(req, "usr-123")
 
 	router.ServeHTTP(w, req)
 
@@ -721,7 +855,7 @@ func TestGetFriendSuggestions_HTTP_SinCandidatosDisponibles(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest(http.MethodGet, "/friends/suggestions", nil)
-	setTestSession(req, "usr-123")
+	setAuthenticatedUser(req, "usr-123")
 
 	router.ServeHTTP(w, req)
 
@@ -740,7 +874,7 @@ func TestGetFriendSuggestions_HTTP_ListaVaciaRetorna200(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest(http.MethodGet, "/friends/suggestions", nil)
-	setTestSession(req, "usr-123")
+	setAuthenticatedUser(req, "usr-123")
 
 	router.ServeHTTP(w, req)
 
@@ -769,7 +903,7 @@ func TestGetFriendSuggestions_HTTP_ErrorInterno_NoFugaDetalles(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest(http.MethodGet, "/friends/suggestions", nil)
-	setTestSession(req, "usr-123")
+	setAuthenticatedUser(req, "usr-123")
 
 	router.ServeHTTP(w, req)
 
@@ -800,7 +934,7 @@ func TestSuggestionController_Directo(t *testing.T) {
 	// Prueba exitosa
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest(http.MethodGet, "/friends/suggestions", nil)
-	setTestSession(req, "usr-123")
+	setAuthenticatedUser(req, "usr-123")
 	router.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
@@ -881,12 +1015,25 @@ func TestFriendshipController_ExcludeBlocked(t *testing.T) {
 		body := `{"candidate_ids": ["cand-1", "cand-blocked"]}`
 		req, _ := http.NewRequest(http.MethodPost, "/friends/blocks/exclude", bytes.NewBufferString(body))
 		req.Header.Set("Content-Type", "application/json")
-		setTestSession(req, "usr-ref")
+		setAuthenticatedUser(req, "usr-ref")
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 
 		if w.Code != http.StatusOK {
 			t.Fatalf("se esperaba 200 OK, se obtuvo %d", w.Code)
+		}
+	})
+
+	t.Run("Protected endpoint rejects a different body user", func(t *testing.T) {
+		body := `{"user_id": "spoofed-user", "candidate_ids": ["cand-1"]}`
+		req := httptest.NewRequest(http.MethodPost, "/friends/blocks/exclude", bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/json")
+		setAuthenticatedUser(req, "usr-ref")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusForbidden {
+			t.Fatalf("se esperaba 403 Forbidden, se obtuvo %d", w.Code)
 		}
 	})
 

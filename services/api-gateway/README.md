@@ -1,22 +1,30 @@
 # API Gateway
 
-El API Gateway es el punto de entrada HTTP para la aplicación Flutter. Escucha
-en el puerto definido por `PORT` (por defecto, `8080`) y reenvía las
-solicitudes al microservicio correspondiente.
+El Gateway escucha en el puerto `8080`. La especificación OpenAPI está en
+[`openapi.yaml`](./openapi.yaml) y su copia accesible para documentación en
+[`docs/api/openapi.yaml`](../../docs/api/openapi.yaml).
 
-## Rutas
+## Inventario de rutas registradas
 
-| Acceso | Gateway | Destino | Variable de entorno |
+Los prefijos con `ANY` reenvían el método HTTP y la ruta al servicio; las
+operaciones que realmente existen en cada destino están descritas en OpenAPI.
+
+| Gateway | Destino | Prefijo conservado/recortado | Variable de entorno |
 | --- | --- | --- | --- |
-| Pública | `GET /health` | Respuesta local del gateway | Ninguna |
-| Pública | `ANY /test` y `ANY /test/*any` | `test-service`, quitando `/test` | `TEST_SERVICE_URL` |
-| Privada | `ANY /users` y `ANY /users/*any` | `user-service`, conservando `/users` | `USER_SERVICE_URL` |
-| Pública | `ANY /auth` y `ANY /auth/*any` | `auth-service`, conservando `/auth` | `AUTH_SERVICE_URL` |
-| Social middleware* | `ANY /v1/social/*any` | `social-service`, conservando la ruta | `SOCIAL_SERVICE_URL` |
+| `GET /health` | Respuesta local del Gateway | — | — |
+| `ANY /test`, `/test/*` | `test-service` | Recorta `/test` | `TEST_SERVICE_URL` |
+| `ANY /users`, `/users/*` | `user-service` | Conserva `/users` | `USER_SERVICE_URL` |
+| `ANY /auth`, `/auth/*` | `auth-service` | Conserva `/auth` | `AUTH_SERVICE_URL` |
+| `ANY /friends`, `/friends/*` | `social-service` | Conserva `/friends` | `SOCIAL_SERVICE_URL` |
+| `ANY /recommendations`, `/recommendations/*` | `recommendation-service` | Conserva `/recommendations` | `RECOMMENDATION_SERVICE_URL` |
+| `ANY /media`, `/media/*` | `media-service` | Conserva `/media` | `MEDIA_SERVICE_URL` |
+| `ANY /v1/users`, `/v1/users/*` | `user-service` | Conserva `/v1/users` | `USER_SERVICE_URL` |
+| `ANY /v1/media`, `/v1/media/*` | `media-service` | Conserva `/v1/media` | `MEDIA_SERVICE_URL` |
 
-Las rutas privadas reciben y reenvían el encabezado `Authorization`; la
-validación del token debe realizarse mediante la política de autenticación del
-servicio correspondiente.
+El enrutador todavía no publica rutas `/v1` para Auth, Social ni Recomendaciones,
+ni rutas para Publicaciones, Música, Chat, Notificaciones generales o
+Gamificación. Las preferencias de notificación y el inventario existentes son
+operaciones del prefijo de Usuarios.
 
 La ruta versionada de social-service reenvía `/v1/social/...` sin reescrituras;
 Social Service exige un Bearer token: su middleware consulta la sesión a Auth
@@ -27,16 +35,12 @@ confiable. El sistema utiliza tokens de sesión opacos, no JWT.
 Las variables de destino aceptan una URL completa. Si no están definidas, el
 gateway usa los valores locales `http://localhost:8081`,
 `http://localhost:8082` y `http://localhost:8083`, respectivamente.
+## Seguridad y propagación de identidad
 
-## Verificación local
+El Gateway valida las peticiones protegidas de `/users`, `/friends`,
+`/recommendations` y `/media` llamando a `GET /auth/validate` con el Bearer
+`session_token`. Antes del proxy elimina `X-User-ID`, `X-User-Id` y
+`X-User-Role`, y solo propaga la identidad devuelta por Auth.
 
-Con los servicios levantados, la comunicación con `user-service` puede
-verificarse con:
-
-```powershell
-Invoke-WebRequest -Uri http://localhost:8080/users -Method Get
-```
-
-En Docker Compose, el gateway usa los nombres de servicio de la red interna.
-La prueba automatizada del proxy cubre reenvío de método, ruta, query y body,
-además del error `502 Bad Gateway` cuando el destino no está disponible.
+El Gateway permite CORS únicamente desde `http://localhost:8090` para habilitar
+el botón “Try it out” de Swagger UI en desarrollo.

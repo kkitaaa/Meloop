@@ -81,3 +81,5 @@ python*.dll
 # Node 
 # ==========================================
 node_modules/
+
+cuenta-pruebas-meloop.txt

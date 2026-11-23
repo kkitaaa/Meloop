@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"log/slog"
 
 	"github.com/gin-gonic/gin"
 	"github.com/meloop/auth-service/config"
@@ -22,18 +23,18 @@ func main() {
 
 	dbPool, err := repositories.InitDB(ctx, cfg.DatabaseURL)
 	if err != nil {
-		logger.Warn("database_connection_failed", "error", err, "url", cfg.DatabaseURL)
+		logConnectionResult(logger, "database", err)
 	} else {
 		defer dbPool.Close()
-		logger.Info("database_connected", "url", cfg.DatabaseURL)
+		logConnectionResult(logger, "database", nil)
 	}
 
 	rdbClient, err := repositories.InitRedis(ctx, cfg.RedisURL)
 	if err != nil {
-		logger.Warn("redis_connection_failed", "error", err, "url", cfg.RedisURL)
+		logConnectionResult(logger, "redis", err)
 	} else {
 		defer rdbClient.Close()
-		logger.Info("redis_connected", "url", cfg.RedisURL)
+		logConnectionResult(logger, "redis", nil)
 	}
 
 	sessionRepo := repositories.NewSessionRepository(rdbClient)
@@ -69,4 +70,13 @@ func main() {
 		logger.Error("service_stopped", "error", err)
 		log.Fatal(err)
 	}
+}
+
+func logConnectionResult(logger *slog.Logger, component string, err error) {
+	if err != nil {
+		logger.Warn(component+"_connection_failed", "component", component, "result", "failed")
+		return
+	}
+
+	logger.Info(component+"_connected", "component", component, "result", "connected")
 }

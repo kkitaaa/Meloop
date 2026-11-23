@@ -16,6 +16,10 @@ var (
 	ErrAuthServiceUnavailable = errors.New("auth-service validation unavailable")
 )
 
+type SessionValidator interface {
+	ValidateToken(ctx context.Context, token string) (string, error)
+}
+
 const authServiceTimeout = 5 * time.Second
 
 type AuthClient struct {
