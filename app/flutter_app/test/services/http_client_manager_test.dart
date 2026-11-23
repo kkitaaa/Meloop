@@ -52,10 +52,7 @@ void main() {
         httpClientManager.dio.options.receiveTimeout,
         ApiConfig.receiveTimeout,
       );
-      expect(
-        httpClientManager.dio.options.sendTimeout,
-        ApiConfig.sendTimeout,
-      );
+      expect(httpClientManager.dio.options.sendTimeout, ApiConfig.sendTimeout);
     });
 
     test('HttpClientManager updates base URL dynamically', () {
@@ -75,4 +72,3 @@ void main() {
     });
   });
 }
-
