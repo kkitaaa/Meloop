@@ -229,7 +229,8 @@ func TestSocialCountCacheAsideInvalidationFallbackAndConcurrency(t *testing.T) {
 		require.NoError(t, cache.setCount(context.Background(), socialFriendsCountKey(userID), 0, socialCountTTL))
 		require.NoError(t, cache.setCount(context.Background(), socialBlockedCountKey(userID), 0, socialCountTTL))
 	}
-	require.NoError(t, repo.BlockUser(context.Background(), user1, user2))
+	_, err = repo.BlockUser(context.Background(), user1, user2)
+	require.NoError(t, err)
 	for _, userID := range []string{user1, user2} {
 		require.False(t, socialCacheHasKey(t, cache, socialFriendsCountKey(userID)))
 		require.False(t, socialCacheHasKey(t, cache, socialBlockedCountKey(userID)))

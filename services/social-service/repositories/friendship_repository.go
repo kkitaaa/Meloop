@@ -39,7 +39,7 @@ type FriendshipRepository interface {
 	ListFriends(ctx context.Context, userID string, limit int, query string, cursor *models.FriendCursor) (models.FriendPage, error)
 	RemoveFriend(ctx context.Context, userID, targetID string) error
 	GetFriendProfile(ctx context.Context, userID, friendID string) (*models.FriendProfile, error)
-	BlockUser(ctx context.Context, blockerID, blockedID string) error
+	BlockUser(ctx context.Context, blockerID, blockedID string) ([]models.FriendRequest, error)
 	UnblockUser(ctx context.Context, blockerID, blockedID string) error
 	GetAcceptedFriendsCount(ctx context.Context, userID string) (int, error)
 	GetFriendsCount(ctx context.Context, userID string) (int, error)
