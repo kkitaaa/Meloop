@@ -1,363 +1,78 @@
-# Verificación de Integración Flutter-Kubernetes
+# Verificación Flutter ↔ API Gateway
 
-Este documento detalla cómo verificar que la integración de Flutter con el backend desplegado en Kubernetes funciona correctamente.
+Las pruebas unitarias no necesitan un clúster. Las pruebas de integración y el
+inicio de sesión real sí requieren un Gateway desplegado y accesible.
 
-## 1. Verificación de Configuración
+## 1. Preparar el entorno local
 
-### 1.1 Verificar que ApiConfig está correctamente configurada
+Sigue primero [k8s/README.md](../../k8s/README.md). Con el clúster listo, deja
+activo el port-forward en una terminal:
 
-```dart
-import 'package:flutter_app/config/api_config.dart';
-
-void main() {
-  print('Environment: ${ApiConfig.environment}');
-  print('Base URL: ${ApiConfig.baseUrl}');
-  print('WebSocket URL: ${ApiConfig.webSocketUrl}');
-}
+```powershell
+kubectl port-forward svc/backend 8080:8080 -n meloop
 ```
 
-**Outputs esperados por entorno:**
-- **Development**: `baseUrl: http://localhost:8080` (Windows) o `http://10.0.2.2:8080` (Android)
-- **Staging**: `baseUrl: http://staging.meloop.com` (o URL del Ingress)
-- **Production**: `baseUrl: https://api.meloop.com`
+En otra terminal verifica:
 
-## 2. Compilación por Entorno
-
-### 2.1 Desarrollo (Local)
-
-```bash
-# Windows
-cd app\flutter_app
-flutter run -d windows --dart-define=FLUTTER_ENV=development
-
-# Android (Emulador)
-flutter run -d emulator-5554 --dart-define=FLUTTER_ENV=development
+```powershell
+curl.exe http://localhost:8080/health
+curl.exe http://localhost:8080/api/demo
 ```
 
-### 2.2 Staging (K8s)
+La autenticación requiere además que `auth-service` esté listo y tenga acceso
+al Secret `meloop-secrets` con `DATABASE_URL`, a PostgreSQL/Supabase y a Redis.
 
-```bash
-# Con Ingress hostname
-flutter build apk --dart-define=FLUTTER_ENV=staging \
-                   --dart-define=K8S_INGRESS_HOST=api.staging.meloop.com
+## 2. Ejecutar validaciones automatizadas
 
-# O con PowerShell
-.\build.ps1 -Environment staging -Platform android
+Desde `app\flutter_app`:
+
+```powershell
+flutter test
+flutter analyze
+flutter build apk --debug --dart-define=FLUTTER_ENV=development
+flutter build windows --debug --dart-define=FLUTTER_ENV=development
 ```
 
-### 2.3 Producción
+Las pruebas que hacen llamadas al clúster se ejecutan por separado:
 
-```bash
-# Con URL de producción
-flutter build apk --dart-define=FLUTTER_ENV=production \
-                   --dart-define=K8S_API_GATEWAY_URL=https://api.meloop.com
-
-# O con PowerShell
-.\build.ps1 -Environment prod -Platform android
+```powershell
+flutter devices
+flutter test integration_test -d windows --dart-define=FLUTTER_ENV=development
+flutter test integration_test -d <id-del-emulador-android> --dart-define=FLUTTER_ENV=development
 ```
 
-## 3. Testing de Conectividad
-
-### 3.1 Pantalla de Kubernetes Connectivity Test
-
-La app incluye una pantalla de debugging integrada. Accésible mediante:
-
-```dart
-// En tu main.dart o AppBar
-Navigator.push(
-  context,
-  MaterialPageRoute(
-    builder: (context) => const KubernetesConnectivityScreen(),
-  ),
-);
-```
-
-Esta pantalla proporciona:
-- ✓ Estado actual de configuración
-- ✓ Test de health check del backend
-- ✓ Verificación de endpoints individuales
-- ✓ Test de conexión WebSocket
-- ✓ Reporte completo de diagnostico
-
-### 3.2 Testing manual desde terminal
-
-#### Verificar health del backend
-
-```bash
-# Local
-curl -v http://localhost:8080/health
-
-# K8s con port-forward
-kubectl -n meloop port-forward svc/backend 8080:8080
-curl -v http://localhost:8080/health
-
-# A través de Ingress
-curl -v -H "Host: meloop.local" http://<ingress-ip>/health
-```
-
-#### Verificar endpoints del API
-
-```bash
-# Demo endpoint
-curl -v http://localhost:8080/api/demo
-
-# Feed endpoint
-curl -v -H "Authorization: Bearer <token>" \
-     http://localhost:8080/api/feed?category=music&page=0
-
-# WebSocket
-websocat ws://localhost:8080/api/notifications
-```
-
-## 4. Verificación desde Plataformas
-
-### 4.1 Android
-
-```bash
-# Compilar APK para staging
-flutter build apk --dart-define=FLUTTER_ENV=staging
-
-# Instalar en dispositivo
-adb install -r build/app/outputs/flutter-apk/app-release.apk
-
-# Ver logs en tiempo real
-adb logcat | grep flutter
-
-# Verificar conectividad
-adb shell dumpsys connectivitymanager
-```
-
-### 4.2 Windows
-
-```bash
-# Compilar para Windows
-flutter build windows --dart-define=FLUTTER_ENV=development
-
-# Ejecutar
-start build/windows/runner/Release/flutter_app.exe
-
-# Debug mode con hot reload
-flutter run -d windows --dart-define=FLUTTER_ENV=development
-```
-
-### 4.3 iOS (si aplica)
-
-```bash
-# Compilar para staging
-flutter build ios --dart-define=FLUTTER_ENV=staging --release
-
-# Instalar en dispositivo
-open -a Simulator
-flutter run -d <device-id> --dart-define=FLUTTER_ENV=staging
-```
-
-## 5. Validación de Autenticación
-
-### 5.1 Test de login
-
-```dart
-import 'package:flutter_app/services/api_client.dart';
-
-final apiClient = ApiClient();
-
-try {
-  // Login
-  final response = await apiClient.post(
-    '/api/auth/login',
-    {
-      'username': 'testuser',
-      'password': 'testpass',
-    },
-    (json) => json,
-  );
-  
-  print('Login successful: ${response.data}');
-  
-  // Extractar token
-  final token = response.data['token'];
-  
-  // Usar token en requests posteriores
-  httpClientManager.setAuthToken(token);
-  
-} catch (e) {
-  print('Login failed: $e');
-}
-```
-
-### 5.2 Test de refresh de token
-
-```dart
-// Si el token expira, el interceptor debería refrescarlo automáticamente
-// Verificar en logs que se ejecuta _TokenRefreshInterceptor
-```
-
-## 6. Verificación de WebSocket
-
-### 6.1 Test manual con websocat
-
-```bash
-# Instalar websocat (si no lo tienes)
-# En Windows con choco: choco install websocat
-# En macOS: brew install websocat
-
-# Conectarse al WebSocket
-websocat ws://localhost:8080/api/notifications
-
-# Deberías recibir mensajes de bienvenida
-```
-
-### 6.2 Test desde Flutter
-
-```dart
-import 'package:flutter_app/services/websocket_manager.dart';
-
-final wsManager = WebSocketManager('/api/notifications');
-
-wsManager.onMessage((message) {
-  print('Received: $message');
-});
-
-wsManager.onError((error) {
-  print('Error: $error');
-});
-
-wsManager.onClose(() {
-  print('Connection closed');
-});
-
-await wsManager.connect();
-
-// Enviar mensaje
-wsManager.send('{"action": "subscribe", "channel": "notifications"}');
-
-// Desconectar después de usar
-await wsManager.disconnect();
-```
-
-## 7. Verificación de Kubernetes
-
-### 7.1 Confirmar que el backend está disponible
-
-```bash
-# Ver pods
-kubectl -n meloop get pods
-
-# Ver servicios
-kubectl -n meloop get svc
-
-# Ver ingress
-kubectl -n meloop get ingress
-
-# Ver logs del API Gateway
-kubectl -n meloop logs deployment/backend -c api-gateway -f
-
-# Exec dentro del pod
-kubectl -n meloop exec -it deployment/backend -- sh
-
-# Desde dentro: curl localhost:8080/health
-```
-
-### 7.2 Test de DNS desde pod
-
-```bash
-# Si la app está en K8s, debería poder usar DNS interno
-http://backend.meloop.svc.cluster.local:8080/health
-```
-
-## 8. Checklist de Validación
-
-- [ ] ApiConfig retorna URL correcta para el entorno
-- [ ] Health endpoint responde con 200
-- [ ] Feed endpoint retorna datos con autenticación
-- [ ] WebSocket se conecta y mantiene conexión
-- [ ] Token refresh funciona automáticamente en 401
-- [ ] Android puede conectarse (10.0.2.2:8080)
-- [ ] Windows puede conectarse (localhost:8080)
-- [ ] Reintentos automáticos funcionan en timeout
-- [ ] Logs muestran información de debugging en desarrollo
-- [ ] Endpoints individuales son accesibles según reporte
-
-## 9. Troubleshooting
-
-### "Cannot connect to backend"
-
-```bash
-# Verificar que el backend está corriendo
-kubectl -n meloop get pods -l app.kubernetes.io/name=backend
-
-# Verificar health endpoint
-kubectl -n meloop port-forward svc/backend 8080:8080
-curl http://localhost:8080/health
-
-# Verificar networking
-kubectl -n meloop logs deployment/backend
-```
-
-### "WebSocket connection failed"
-
-```bash
-# Verificar que WebSocket está habilitado
-# Verificar que el puerto es accesible
-netstat -an | grep 8080
-
-# Si usa Ingress, verificar que soporta WebSocket
-kubectl -n meloop get ingress backend -o yaml
-```
-
-### "Token refresh failing"
-
-```dart
-// Verificar que el token está siendo guardado
-print(dio.options.headers['Authorization']);
-
-// Verificar que el endpoint de refresh existe
-curl -X POST http://localhost:8080/api/auth/refresh
-```
-
-### "Android no puede conectar (10.0.2.2)"
-
-```bash
-# Usar 10.0.2.2 para acceder a host desde Android emulador
-# Verificar que la URL se configura correctamente
-adb logcat | grep "10.0.2.2"
-```
-
-## 10. Performance Benchmarking
-
-### Medir tiempo de respuesta
-
-```dart
-final stopwatch = Stopwatch()..start();
-final response = await apiClient.getDemo();
-stopwatch.stop();
-print('Response time: ${stopwatch.elapsedMilliseconds}ms');
-```
-
-### Monitorear consumo de memoria
-
-```bash
-# Android
-adb shell dumpsys meminfo | grep flutter_app
-
-# Windows
-tasklist | findstr flutter_app
-# Luego usar Performance Monitor
-```
-
-## Próximos Pasos
-
-1. ✅ Configuración por entorno
-2. ✅ HTTP con retry y exponential backoff
-3. ✅ WebSocket con reconexión automática
-4. ✅ Health checks y diagnostico
-5. ⏳ Integración en CI/CD pipeline
-6. ⏳ Documentar endpoints específicos del negocio
-7. ⏳ Implementar caching y synchronización offline
-8. ⏳ Performance optimization
-
-## Referencias
-
-- [Kubernetes Documentation](https://kubernetes.io/docs/)
-- [Flutter Networking](https://flutter.dev/docs/cookbook/networking)
-- [Dio HTTP Client](https://pub.dev/packages/dio)
-- [WebSocket API](https://dart.dev/guides/libraries/library-tour#dartio---io-library-for-server-side-code)
+`integration_test/api_gateway_test.dart` verifica las operaciones GET/POST de
+`/api/demo` y la carga del feed. Ejecútala desde Windows y Android Emulator para
+probar ambas rutas de red; un test compilado o una prueba unitaria no sustituye
+esta comprobación en vivo.
+
+## 3. Probar autenticación en la app
+
+1. Inicia Flutter en Windows o Android Emulator con el port-forward activo.
+2. Usa la pantalla de login para autenticar una cuenta de prueba real.
+3. Confirma que las credenciales inválidas muestran el error del servidor y no
+   abren la app autenticada.
+4. Cierra y vuelve a abrir la app para comprobar restauración de sesión.
+5. Cierra sesión y comprueba que la sesión ya no se restaura.
+
+La renovación de sesión ocurre antes de que expire una sesión válida. No
+pruebes contra cuentas productivas ni compartas sus contraseñas en los comandos.
+
+## 4. Diagnósticos desde la interfaz
+
+En una compilación debug, abre **Diagnóstico de conexión** desde el login. La
+pantalla realiza comprobaciones HTTP de health, demo, feed, recomendaciones y
+enrutamiento de auth. Un WebSocket sin `WEBSOCKET_PATH` debe aparecer como no
+configurado; no significa que la conexión se haya probado.
+
+## 5. Criterios que requieren un despliegue real
+
+- Login, registro, validación, renovación y logout a través del Ingress/Gateway.
+- Rutas de las funcionalidades principales hacia los microservicios desplegados.
+- Integración HTTP desde Windows y Android Emulator (y dispositivo físico, si
+  forma parte del soporte esperado).
+- WebSocket solo si se despliega/configura un servidor y una ruta real.
+
+Si no hay kubeconfig, Ingress o credenciales de despliegue disponibles, registra
+esas comprobaciones como pendientes; no marques el criterio como cumplido por
+el hecho de que Flutter compile.

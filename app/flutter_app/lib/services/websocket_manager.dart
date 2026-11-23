@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:io';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter_app/config/api_config.dart';
 
 typedef WebSocketMessageHandler = void Function(dynamic message);
@@ -23,10 +25,7 @@ class WebSocketManager {
   final List<WebSocketErrorHandler> _errorHandlers = [];
   final List<WebSocketCloseHandler> _closeHandlers = [];
 
-  WebSocketManager(
-    this._path, {
-    Map<String, String>? headers,
-  }) : _headers = headers;
+  WebSocketManager(this._path, {this._headers});
 
   bool get isConnected => _isConnected;
   bool get isConnecting => _isConnecting;
@@ -52,15 +51,16 @@ class WebSocketManager {
 
   Future<void> _attemptConnect() async {
     try {
-      final wsUrl = ApiConfig.webSocketUrl;
-      final fullUrl = '$wsUrl$_path';
+      final baseUri = Uri.parse(ApiConfig.webSocketUrl);
+      final basePath = baseUri.path.replaceFirst(RegExp(r'/+$'), '');
+      final endpointPath = _path.replaceFirst(RegExp(r'^/+'), '');
+      final fullUrl = baseUri
+          .replace(path: '$basePath/$endpointPath')
+          .toString();
 
-      print('[WebSocket] Connecting to: $fullUrl');
+      debugPrint('[WebSocket] Connecting to: $fullUrl');
 
-      _webSocket = await WebSocket.connect(
-        fullUrl,
-        headers: _headers,
-      ).timeout(
+      _webSocket = await WebSocket.connect(fullUrl, headers: _headers).timeout(
         const Duration(seconds: 10),
         onTimeout: () => throw TimeoutException('WebSocket connection timeout'),
       );
@@ -69,7 +69,7 @@ class WebSocketManager {
       _isConnecting = false;
       _reconnectAttempts = 0;
 
-      print('[WebSocket] Connected successfully');
+      debugPrint('[WebSocket] Connected successfully');
 
       // Listen to messages
       _subscription = _webSocket!.listen(
@@ -78,7 +78,7 @@ class WebSocketManager {
         onDone: _onDone,
       );
     } catch (e) {
-      print('[WebSocket] Connection error: ${e.toString()}');
+      debugPrint('[WebSocket] Connection error: ${e.toString()}');
       _isConnecting = false;
       _isConnected = false;
       rethrow;
@@ -86,19 +86,19 @@ class WebSocketManager {
   }
 
   void _onMessage(dynamic message) {
-    print('[WebSocket] Message received: $message');
+    debugPrint('[WebSocket] Message received: $message');
     _notifyMessage(message);
   }
 
   void _onError(dynamic error) {
-    print('[WebSocket] Error: $error');
+    debugPrint('[WebSocket] Error: $error');
     _isConnected = false;
     _notifyError(error);
     _scheduleReconnect();
   }
 
   void _onDone() {
-    print('[WebSocket] Connection closed');
+    debugPrint('[WebSocket] Connection closed');
     _isConnected = false;
     _notifyClose();
 
@@ -108,8 +108,9 @@ class WebSocketManager {
   }
 
   Future<void> _scheduleReconnect() async {
-    if (!_shouldReconnect || _reconnectAttempts >= ApiConfig.webSocketMaxReconnectAttempts) {
-      print('[WebSocket] Max reconnection attempts reached');
+    if (!_shouldReconnect ||
+        _reconnectAttempts >= ApiConfig.webSocketMaxReconnectAttempts) {
+      debugPrint('[WebSocket] Max reconnection attempts reached');
       _shouldReconnect = false;
       return;
     }
@@ -117,7 +118,9 @@ class WebSocketManager {
     _reconnectAttempts++;
     final delay = ApiConfig.webSocketReconnectDelay * _reconnectAttempts;
 
-    print('[WebSocket] Reconnecting in ${delay.inSeconds}s (attempt $_reconnectAttempts/${ApiConfig.webSocketMaxReconnectAttempts})');
+    debugPrint(
+      '[WebSocket] Reconnecting in ${delay.inSeconds}s (attempt $_reconnectAttempts/${ApiConfig.webSocketMaxReconnectAttempts})',
+    );
 
     await Future.delayed(delay);
 
@@ -133,7 +136,7 @@ class WebSocketManager {
     }
 
     _webSocket!.add(message);
-    print('[WebSocket] Message sent: $message');
+    debugPrint('[WebSocket] Message sent: $message');
   }
 
   /// Register message handler
@@ -169,7 +172,7 @@ class WebSocketManager {
       try {
         handler(message);
       } catch (e) {
-        print('[WebSocket] Error in message handler: $e');
+        debugPrint('[WebSocket] Error in message handler: $e');
       }
     }
   }
@@ -179,7 +182,7 @@ class WebSocketManager {
       try {
         handler(error);
       } catch (e) {
-        print('[WebSocket] Error in error handler: $e');
+        debugPrint('[WebSocket] Error in error handler: $e');
       }
     }
   }
@@ -189,7 +192,7 @@ class WebSocketManager {
       try {
         handler();
       } catch (e) {
-        print('[WebSocket] Error in close handler: $e');
+        debugPrint('[WebSocket] Error in close handler: $e');
       }
     }
   }
@@ -205,7 +208,7 @@ class WebSocketManager {
     _webSocket = null;
     _subscription = null;
 
-    print('[WebSocket] Disconnected');
+    debugPrint('[WebSocket] Disconnected');
   }
 
   /// Dispose resources

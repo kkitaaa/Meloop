@@ -6,10 +6,13 @@ import 'features/notifications/state/notification_controller.dart';
 import 'features/notifications/state/notification_repository.dart';
 import 'features/gamification/presentation/level_up_feedback_overlay.dart';
 import 'features/profile/presentation/profile_screen.dart';
+import 'services/auth_session.dart';
 import 'screens/auth_screen.dart';
 import 'widgets/app_background.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await AuthSession.shared.restore();
   runApp(const MeloopApp());
 }
 

@@ -11,22 +11,53 @@ import 'package:flutter_app/features/admin/presentation/admin_users_screen.dart'
 import 'package:flutter_app/features/moderation/data/moderation_models.dart';
 import 'package:flutter_app/screens/auth_screen.dart';
 import 'package:flutter_app/services/api_client.dart';
+import 'package:flutter_app/services/auth_session.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  testWidgets('admin demo login opens the admin dashboard', (tester) async {
-    await tester.pumpWidget(const MaterialApp(home: AuthScreen()));
+  testWidgets('login is rejected by the backend and grants no admin role', (
+    tester,
+  ) async {
+    final apiClient = ApiClient(
+      session: AuthSession(persistent: false),
+      httpClient: MockClient((request) async {
+        expect(request.method, 'POST');
+        expect(request.url.path, '/auth/login');
+        expect(jsonDecode(request.body), {
+          'email': 'admin@admin.com',
+          'password': 'ADMIN',
+        });
+        return http.Response(
+          jsonEncode({
+            'success': false,
+            'data': null,
+            'error': {
+              'code': 'invalid_credentials',
+              'message': 'Credenciales inválidas',
+            },
+          }),
+          401,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+    addTearDown(apiClient.close);
+
+    await tester.pumpWidget(
+      MaterialApp(home: AuthScreen(apiClient: apiClient)),
+    );
     await tester.pumpAndSettle();
 
     final inputs = find.byType(TextField);
     await tester.enterText(inputs.at(0), 'admin@admin.com');
     await tester.enterText(inputs.at(1), 'ADMIN');
-    await tester.tap(find.widgetWithText(ElevatedButton, 'Iniciar Sesion'));
+    await tester.tap(find.widgetWithText(ElevatedButton, 'Iniciar sesión'));
     await tester.pumpAndSettle();
 
-    expect(find.byType(AdminDashboardScreen), findsOneWidget);
+    expect(find.text('Credenciales inválidas'), findsOneWidget);
+    expect(find.byType(AdminDashboardScreen), findsNothing);
   });
 
   testWidgets('admin tools reject non-admin roles', (tester) async {

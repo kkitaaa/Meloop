@@ -34,13 +34,13 @@ void main() {
 
     test('ApiConfig endpoints are properly defined', () {
       expect(ApiConfig.healthCheckEndpoint, '/health');
-      expect(ApiConfig.authEndpoint, '/api/auth');
+      expect(ApiConfig.authEndpoint, '/auth');
+      expect(ApiConfig.authLoginEndpoint, '/auth/login');
+      expect(ApiConfig.authRefreshEndpoint, '/auth/refresh');
+      expect(ApiConfig.demoEndpoint, '/api/demo');
       expect(ApiConfig.feedEndpoint, '/api/feed');
-      expect(ApiConfig.postsEndpoint, '/api/posts');
-      expect(ApiConfig.usersEndpoint, '/api/users');
-      expect(ApiConfig.profileEndpoint, '/api/profile');
-      expect(ApiConfig.notificationsEndpoint, '/api/notifications');
-      expect(ApiConfig.musicEndpoint, '/api/music');
+      expect(ApiConfig.usersEndpoint, '/users');
+      expect(ApiConfig.recommendationsEndpoint, '/recommendations');
     });
 
     test('ApiConfig timeouts are configured', () {
@@ -60,10 +60,23 @@ void main() {
     });
 
     test('ApiConfig health endpoint forms correct full URL', () {
-      final healthUrl =
-          '${ApiConfig.baseUrl}${ApiConfig.healthCheckEndpoint}';
-      expect(healthUrl.contains('//'), false,
-          reason: 'Should not have double slashes');
+      final healthUrl = '${ApiConfig.baseUrl}${ApiConfig.healthCheckEndpoint}';
+      expect(Uri.parse(healthUrl).path, '/health');
+      expect(Uri.parse(healthUrl).host, isNotEmpty);
+    });
+
+    test('ApiConfig preserves TLS when deriving a WebSocket URL', () {
+      expect(
+        ApiConfig.webSocketUrlFor('https://api.example.test/v1/'),
+        'wss://api.example.test/v1',
+      );
+    });
+
+    test('ApiConfig derives an unencrypted WebSocket URL for local HTTP', () {
+      expect(
+        ApiConfig.webSocketUrlFor('http://localhost:8080'),
+        'ws://localhost:8080',
+      );
     });
   });
 }

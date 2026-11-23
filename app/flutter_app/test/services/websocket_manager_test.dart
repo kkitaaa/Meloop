@@ -21,28 +21,19 @@ void main() {
     });
 
     test('WebSocketManager can register message handler', () {
-      var messageReceived = false;
-      webSocketManager.onMessage((msg) {
-        messageReceived = true;
-      });
+      webSocketManager.onMessage((_) {});
       // Handler registered successfully
       expect(webSocketManager, isNotNull);
     });
 
     test('WebSocketManager can register error handler', () {
-      var errorReceived = false;
-      webSocketManager.onError((error) {
-        errorReceived = true;
-      });
+      webSocketManager.onError((_) {});
       // Handler registered successfully
       expect(webSocketManager, isNotNull);
     });
 
     test('WebSocketManager can register close handler', () {
-      var closedReceived = false;
-      webSocketManager.onClose(() {
-        closedReceived = true;
-      });
+      webSocketManager.onClose(() {});
       // Handler registered successfully
       expect(webSocketManager, isNotNull);
     });

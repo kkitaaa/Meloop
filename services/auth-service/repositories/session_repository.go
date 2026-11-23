@@ -14,6 +14,7 @@ import (
 type SessionRepository interface {
 	Create(ctx context.Context, token string, user *models.SessionUser, ttl time.Duration) error
 	Get(ctx context.Context, token string) (*models.SessionUser, error)
+	Renew(ctx context.Context, token, userID string, ttl time.Duration) (bool, error)
 	Delete(ctx context.Context, token string) error
 	DeleteByUserID(ctx context.Context, userID string) error
 }
@@ -65,6 +66,41 @@ func (r *redisSessionRepository) Get(ctx context.Context, token string) (*models
 		return nil, err
 	}
 	return &user, nil
+}
+
+func (r *redisSessionRepository) Renew(
+	ctx context.Context,
+	token string,
+	userID string,
+	ttl time.Duration,
+) (bool, error) {
+	if r.client == nil {
+		return false, errors.New("redis client is not initialized")
+	}
+	if token == "" || userID == "" || ttl <= 0 {
+		return false, nil
+	}
+
+	const renewScript = `
+if redis.call("EXISTS", KEYS[1]) == 0 then
+  return 0
+end
+redis.call("PEXPIRE", KEYS[1], ARGV[1])
+redis.call("SADD", KEYS[2], ARGV[2])
+redis.call("PEXPIRE", KEYS[2], ARGV[1])
+return 1
+`
+	renewed, err := r.client.Eval(
+		ctx,
+		renewScript,
+		[]string{"session:" + token, "user_sessions:" + userID},
+		ttl.Milliseconds(),
+		token,
+	).Int()
+	if err != nil {
+		return false, err
+	}
+	return renewed == 1, nil
 }
 
 func (r *redisSessionRepository) Delete(ctx context.Context, token string) error {

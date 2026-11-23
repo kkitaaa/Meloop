@@ -13,6 +13,7 @@ import 'package:flutter_app/models/music_preferences.dart';
 import 'package:flutter_app/models/music_detail.dart';
 import 'package:flutter_app/models/mutual_friends.dart';
 import 'package:flutter_app/models/saved_posts.dart';
+import 'package:flutter_app/services/auth_session.dart';
 import 'package:flutter_app/services/post_publisher.dart';
 import 'package:http/http.dart' as http;
 
@@ -33,15 +34,18 @@ class ApiClient implements PostPublisher {
   final Duration _timeout;
   final bool _ownsClient;
   final bool _ownsDio;
+  final AuthSession _session;
 
   ApiClient({
     http.Client? httpClient,
     Dio? dio,
+    AuthSession? session,
     this._timeout = const Duration(seconds: 10),
   }) : _httpClient = httpClient ?? http.Client(),
        _ownsClient = httpClient == null,
        _dio = dio ?? Dio(),
-       _ownsDio = dio == null {
+       _ownsDio = dio == null,
+       _session = session ?? AuthSession.shared {
     _dio.options
       ..baseUrl = ApiConfig.baseUrl
       ..connectTimeout = _timeout
@@ -76,6 +80,76 @@ class ApiClient implements PostPublisher {
       ),
       parseData,
     );
+  }
+
+  Future<AuthUser> login({
+    required String email,
+    required String password,
+  }) async {
+    final response = await _send<_SessionResponse>(
+      () => _httpClient.post(
+        _uriFor(ApiConfig.authLoginEndpoint),
+        headers: _headers,
+        body: jsonEncode({'email': email.trim(), 'password': password}),
+      ),
+      _SessionResponse.fromJson,
+      refreshSession: false,
+      retryUnauthorized: false,
+    );
+    final data = response.data!;
+    await _session.establish(
+      sessionToken: data.sessionToken,
+      expiresInSeconds: data.expiresIn,
+      sessionUser: data.user,
+    );
+    return data.user;
+  }
+
+  Future<void> register({
+    required String username,
+    required String email,
+    required String password,
+  }) async {
+    await _send<Object?>(
+      () => _httpClient.post(
+        _uriFor(ApiConfig.authRegisterEndpoint),
+        headers: _headers,
+        body: jsonEncode({
+          'username': username.trim(),
+          'email': email.trim(),
+          'password': password,
+        }),
+      ),
+      (_) => null,
+      refreshSession: false,
+      retryUnauthorized: false,
+    );
+  }
+
+  Future<AuthUser> validateSession() async {
+    final response = await get(
+      ApiConfig.authValidateEndpoint,
+      AuthUser.fromJson,
+    );
+    return response.data!;
+  }
+
+  Future<void> logout() async {
+    try {
+      if (_session.isAuthenticated) {
+        await _send<Object?>(
+          () => _httpClient.post(
+            _uriFor(ApiConfig.authLogoutEndpoint),
+            headers: _headers,
+          ),
+          (_) => null,
+          refreshSession: false,
+          retryUnauthorized: false,
+        );
+      }
+    } finally {
+      await _session.clear();
+    }
   }
 
   Future<ApiResponse<DemoData>> getDemo() =>
@@ -620,12 +694,90 @@ class ApiClient implements PostPublisher {
     };
   }
 
+  Future<void> _refreshSessionIfNeeded() async {
+    if (_session.shouldRefresh) await _refreshSession();
+  }
+
+  Future<void> _refreshSession({bool force = false}) async {
+    final token = _session.token;
+    if (token == null || (!force && !_session.shouldRefresh)) return;
+
+    await _session.refreshOnce(() async {
+      final currentToken = _session.token;
+      if (currentToken == null || (!force && !_session.shouldRefresh)) {
+        return;
+      }
+
+      try {
+        final response = await _httpClient
+            .post(
+              _uriFor(ApiConfig.authRefreshEndpoint),
+              headers: {..._headers, 'Authorization': 'Bearer $currentToken'},
+            )
+            .timeout(_timeout);
+        final result = _decodeResponse(response, _SessionResponse.fromJson);
+        final data = result.data!;
+        await _session.establish(
+          sessionToken: data.sessionToken,
+          expiresInSeconds: data.expiresIn,
+          sessionUser: data.user,
+        );
+      } on ApiException catch (error) {
+        if (error.statusCode == 401) await _session.clear();
+        rethrow;
+      } on TimeoutException {
+        throw const ApiException(
+          message: 'El servidor tardó demasiado al renovar la sesión.',
+        );
+      } on http.ClientException {
+        throw const ApiException(
+          message: 'No se pudo conectar para renovar la sesión.',
+        );
+      }
+    });
+  }
+
+  ApiResponse<T> _decodeResponse<T>(
+    http.Response response,
+    T Function(Object? json) parseData,
+  ) {
+    final decoded = jsonDecode(response.body);
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException(
+        'La respuesta del servidor no es un JSON válido.',
+      );
+    }
+
+    final result = ApiResponse<T>.fromJson(decoded, parseData);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ApiException(
+        statusCode: response.statusCode,
+        errorCode: result.error?.code,
+        message:
+            result.error?.message ??
+            'El servidor respondió con el estado ${response.statusCode}.',
+      );
+    }
+    if (!result.success) {
+      throw ApiException(
+        statusCode: response.statusCode,
+        errorCode: result.error?.code,
+        message: result.error?.message ?? 'El servidor rechazó la solicitud.',
+      );
+    }
+    return result;
+  }
+
   Map<String, String> get _headers {
     final headers = <String, String>{
       'Accept': 'application/json',
       'Content-Type': 'application/json',
     };
-    final userId = ApiConfig.currentUserId.trim();
+    final token = _session.token;
+    if (token != null && token.isNotEmpty) {
+      headers['Authorization'] = 'Bearer $token';
+    }
+    final userId = _session.user?.id ?? ApiConfig.currentUserId.trim();
     if (userId.isNotEmpty) {
       headers['X-User-ID'] = userId;
     }
@@ -639,34 +791,21 @@ class ApiClient implements PostPublisher {
 
   Future<ApiResponse<T>> _send<T>(
     Future<http.Response> Function() send,
-    T Function(Object? json) parseData,
-  ) async {
+    T Function(Object? json) parseData, {
+    bool refreshSession = true,
+    bool retryUnauthorized = true,
+  }) async {
     try {
-      final response = await send().timeout(_timeout);
-      final decoded = jsonDecode(response.body);
-      if (decoded is! Map<String, dynamic>) {
-        throw const FormatException(
-          'La respuesta del servidor no es un JSON válido.',
-        );
-      }
+      if (refreshSession) await _refreshSessionIfNeeded();
 
-      final result = ApiResponse<T>.fromJson(decoded, parseData);
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw ApiException(
-          statusCode: response.statusCode,
-          message:
-              result.error?.message ??
-              'El servidor respondió con el estado ${response.statusCode}.',
-        );
+      var response = await send().timeout(_timeout);
+      if (retryUnauthorized &&
+          response.statusCode == 401 &&
+          _session.hasToken) {
+        await _refreshSession(force: true);
+        response = await send().timeout(_timeout);
       }
-      if (!result.success) {
-        throw ApiException(
-          statusCode: response.statusCode,
-          message: result.error?.message ?? 'El servidor rechazó la solicitud.',
-        );
-      }
-
-      return result;
+      return _decodeResponse(response, parseData);
     } on ApiException {
       rethrow;
     } on TimeoutException {
@@ -689,5 +828,35 @@ class ApiClient implements PostPublisher {
       _httpClient.close();
     }
     if (_ownsDio) _dio.close();
+  }
+}
+
+class _SessionResponse {
+  const _SessionResponse({
+    required this.sessionToken,
+    required this.expiresIn,
+    required this.user,
+  });
+
+  final String sessionToken;
+  final int expiresIn;
+  final AuthUser user;
+
+  factory _SessionResponse.fromJson(Object? value) {
+    if (value is! Map<String, dynamic>) {
+      throw const FormatException('El servidor devolvió una sesión inválida.');
+    }
+    final token = value['session_token'];
+    final expiresIn = value['expires_in'];
+    if (token is! String || expiresIn is! int) {
+      throw const FormatException(
+        'El servidor devolvió una sesión incompleta.',
+      );
+    }
+    return _SessionResponse(
+      sessionToken: token,
+      expiresIn: expiresIn,
+      user: AuthUser.fromJson(value['user']),
+    );
   }
 }

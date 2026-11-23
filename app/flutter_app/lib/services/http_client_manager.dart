@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_app/config/api_config.dart';
 
 /// Manages HTTP client configuration and retry logic
@@ -33,7 +34,7 @@ class HttpClientManager {
           requestHeader: true,
           responseHeader: true,
           error: true,
-          logPrint: (object) => print(object),
+          logPrint: (object) => debugPrint(object.toString()),
         ),
       );
     }
@@ -42,9 +43,6 @@ class HttpClientManager {
     final retryInterceptor = _RetryInterceptor();
     dioInstance.interceptors.add(retryInterceptor);
     retryInterceptor.setDio(dioInstance);
-
-    // Add token refresh interceptor
-    dioInstance.interceptors.add(_TokenRefreshInterceptor());
 
     return dioInstance;
   }
@@ -86,7 +84,10 @@ class _RetryInterceptor extends Interceptor {
   }
 
   @override
-  Future<void> onError(DioException err, ErrorInterceptorHandler handler) async {
+  Future<void> onError(
+    DioException err,
+    ErrorInterceptorHandler handler,
+  ) async {
     // Only retry on specific error types
     if (_shouldRetry(err) && err.requestOptions.extra['retryCount'] == null) {
       err.requestOptions.extra['retryCount'] = 0;
@@ -119,27 +120,5 @@ class _RetryInterceptor extends Interceptor {
         error.type == DioExceptionType.receiveTimeout ||
         error.type == DioExceptionType.sendTimeout ||
         (error.response?.statusCode ?? 0) >= 500;
-  }
-}
-
-/// Token refresh interceptor for handling 401 Unauthorized
-class _TokenRefreshInterceptor extends Interceptor {
-  bool _isRefreshing = false;
-
-  @override
-  Future<void> onError(DioException err, ErrorInterceptorHandler handler) async {
-    if (err.response?.statusCode == 401 && !_isRefreshing) {
-      _isRefreshing = true;
-      try {
-        // Attempt to refresh the token
-        // This would call your auth service to refresh the token
-        // For now, we'll just pass through
-        _isRefreshing = false;
-      } catch (e) {
-        _isRefreshing = false;
-        return handler.next(err);
-      }
-    }
-    return handler.next(err);
   }
 }

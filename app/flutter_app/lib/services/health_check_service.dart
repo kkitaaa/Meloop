@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:io';
+
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_app/config/api_config.dart';
 
 /// Models for health check response
@@ -28,7 +30,8 @@ class HealthCheckResponse {
     );
   }
 
-  bool get isHealthy => status.toLowerCase() == 'ok' || status.toLowerCase() == 'healthy';
+  bool get isHealthy =>
+      status.toLowerCase() == 'ok' || status.toLowerCase() == 'healthy';
 }
 
 class ServiceHealth {
@@ -51,7 +54,8 @@ class ServiceHealth {
     if (data is Map<String, dynamic>) {
       return ServiceHealth(
         name: name,
-        isHealthy: (data['status'] ?? 'unknown').toString().toLowerCase() == 'ok',
+        isHealthy:
+            (data['status'] ?? 'unknown').toString().toLowerCase() == 'ok',
         message: data['message']?.toString(),
         responseTime: data['responseTime'] != null
             ? Duration(milliseconds: data['responseTime'] as int)
@@ -66,25 +70,38 @@ class ServiceHealth {
 class HealthCheckService {
   final Dio _dio;
 
-  HealthCheckService({Dio? dio}) : _dio = dio ?? Dio();
+  HealthCheckService({Dio? dio})
+    : _dio =
+          dio ??
+          Dio(
+            BaseOptions(
+              baseUrl: ApiConfig.baseUrl,
+              connectTimeout: ApiConfig.connectTimeout,
+              receiveTimeout: ApiConfig.receiveTimeout,
+            ),
+          );
 
   /// Check overall backend health
   Future<HealthCheckResponse> checkHealth() async {
     try {
       final stopwatch = Stopwatch()..start();
 
-      final response = await _dio.get<Map<String, dynamic>>(
-        '${ApiConfig.baseUrl}${ApiConfig.healthCheckEndpoint}',
-      ).timeout(
-        const Duration(seconds: 5),
-        onTimeout: () => throw TimeoutException('Health check timeout'),
-      );
+      final response = await _dio
+          .get<Map<String, dynamic>>(
+            '${ApiConfig.baseUrl}${ApiConfig.healthCheckEndpoint}',
+          )
+          .timeout(
+            const Duration(seconds: 5),
+            onTimeout: () => throw TimeoutException('Health check timeout'),
+          );
 
       stopwatch.stop();
 
       if (response.statusCode == 200 && response.data != null) {
         final health = HealthCheckResponse.fromJson(response.data!);
-        print('[HealthCheck] Backend is healthy (${stopwatch.elapsedMilliseconds}ms)');
+        debugPrint(
+          '[HealthCheck] Backend is healthy (${stopwatch.elapsedMilliseconds}ms)',
+        );
         return health;
       } else {
         throw HealthCheckException(
@@ -93,16 +110,16 @@ class HealthCheckService {
         );
       }
     } on DioException catch (e) {
-      print('[HealthCheck] DioException: ${e.message}');
+      debugPrint('[HealthCheck] DioException: ${e.message}');
       throw HealthCheckException(
         'Failed to connect to backend: ${e.message}',
         e.response?.statusCode,
       );
     } on TimeoutException catch (e) {
-      print('[HealthCheck] Timeout: ${e.message}');
+      debugPrint('[HealthCheck] Timeout: ${e.message}');
       throw HealthCheckException(e.message ?? 'Timeout');
     } catch (e) {
-      print('[HealthCheck] Error: $e');
+      debugPrint('[HealthCheck] Error: $e');
       throw HealthCheckException('Health check failed: $e');
     }
   }
@@ -110,44 +127,87 @@ class HealthCheckService {
   /// Check health of a specific API endpoint
   Future<bool> checkEndpoint(String endpoint) async {
     try {
-      final response = await _dio.head<dynamic>(
-        '${ApiConfig.baseUrl}$endpoint',
-      ).timeout(const Duration(seconds: 5));
-
-      return response.statusCode == 200 || response.statusCode == 204;
+      final response = await _dio
+          .get<dynamic>(endpoint, options: Options(validateStatus: (_) => true))
+          .timeout(const Duration(seconds: 5));
+      return response.statusCode != null &&
+          response.statusCode! >= 200 &&
+          response.statusCode! < 300;
     } catch (e) {
-      print('[HealthCheck] Endpoint check failed for $endpoint: $e');
+      debugPrint('[HealthCheck] Endpoint check failed for $endpoint: $e');
       return false;
     }
   }
 
   /// Verify all major endpoints are accessible
   Future<Map<String, bool>> verifyEndpoints() async {
-    final endpoints = {
-      'health': ApiConfig.healthCheckEndpoint,
-      'auth': ApiConfig.authEndpoint,
-      'feed': ApiConfig.feedEndpoint,
-      'posts': ApiConfig.postsEndpoint,
-      'users': ApiConfig.usersEndpoint,
-      'notifications': ApiConfig.notificationsEndpoint,
-      'music': ApiConfig.musicEndpoint,
-    };
+    final endpoints = <(String, Future<bool> Function())>[
+      ('health', () => checkEndpoint(ApiConfig.healthCheckEndpoint)),
+      ('demo', () => checkEndpoint(ApiConfig.demoEndpoint)),
+      ('feed', () => checkEndpoint(ApiConfig.feedEndpoint)),
+      ('recommendations', _checkRecommendationEndpoint),
+      ('auth', _checkAuthEndpoint),
+    ];
 
     final results = <String, bool>{};
 
-    for (final entry in endpoints.entries) {
-      results[entry.key] = await checkEndpoint(entry.value);
+    for (final entry in endpoints) {
+      results[entry.$1] = await entry.$2();
       await Future.delayed(const Duration(milliseconds: 100)); // Rate limiting
     }
 
     return results;
   }
 
+  Future<bool> _checkAuthEndpoint() async {
+    try {
+      final response = await _dio
+          .post<dynamic>(
+            ApiConfig.authLoginEndpoint,
+            data: const <String, Object?>{},
+            options: Options(validateStatus: (_) => true),
+          )
+          .timeout(const Duration(seconds: 5));
+      return response.statusCode == 400;
+    } catch (e) {
+      debugPrint('[HealthCheck] Auth gateway check failed: $e');
+      return false;
+    }
+  }
+
+  Future<bool> _checkRecommendationEndpoint() async {
+    try {
+      final response = await _dio
+          .get<dynamic>(
+            '${ApiConfig.recommendationsEndpoint}/1/music',
+            options: Options(validateStatus: (_) => true),
+          )
+          .timeout(const Duration(seconds: 5));
+      return response.statusCode != null &&
+          response.statusCode! >= 200 &&
+          response.statusCode! < 300;
+    } catch (e) {
+      debugPrint('[HealthCheck] Recommendation endpoint check failed: $e');
+      return false;
+    }
+  }
+
   /// Test WebSocket connectivity
   Future<bool> testWebSocket() async {
+    if (ApiConfig.webSocketPath.trim().isEmpty) return false;
     try {
-      final wsUrl = ApiConfig.webSocketUrl;
-      print('[HealthCheck] Testing WebSocket at: $wsUrl');
+      final baseUri = Uri.parse(ApiConfig.webSocketUrl);
+      final endpointPath = ApiConfig.webSocketPath.replaceFirst(
+        RegExp(r'^/+'),
+        '',
+      );
+      final wsUrl = baseUri
+          .replace(
+            path:
+                '${baseUri.path.replaceFirst(RegExp(r'/+$'), '')}/$endpointPath',
+          )
+          .toString();
+      debugPrint('[HealthCheck] Testing WebSocket at: $wsUrl');
 
       final ws = await WebSocket.connect(wsUrl).timeout(
         const Duration(seconds: 5),
@@ -155,10 +215,10 @@ class HealthCheckService {
       );
 
       await ws.close();
-      print('[HealthCheck] WebSocket is accessible');
+      debugPrint('[HealthCheck] WebSocket is accessible');
       return true;
     } catch (e) {
-      print('[HealthCheck] WebSocket test failed: $e');
+      debugPrint('[HealthCheck] WebSocket test failed: $e');
       return false;
     }
   }
@@ -186,7 +246,9 @@ class HealthCheckService {
     report.endpoints = await verifyEndpoints();
 
     // Check WebSocket
-    report.webSocketHealthy = await testWebSocket();
+    report.webSocketHealthy = ApiConfig.webSocketPath.trim().isEmpty
+        ? null
+        : await testWebSocket();
 
     return report;
   }
@@ -211,23 +273,28 @@ class ConnectivityReport {
   String backendVersion = '';
   Map<String, dynamic> services = {};
   Map<String, bool> endpoints = {};
-  bool webSocketHealthy = false;
+  bool? webSocketHealthy;
   String? error;
 
-  bool get isFullyHealthy => 
-      backendHealthy && 
-      endpoints.values.every((v) => v) && 
-      webSocketHealthy;
+  bool get isFullyHealthy =>
+      backendHealthy &&
+      endpoints.values.every((v) => v) &&
+      (webSocketHealthy == null || webSocketHealthy == true);
 
   @override
-  String toString() => '''
+  String toString() =>
+      '''
 ConnectivityReport:
   Base URL: $baseUrl
   Environment: $environment
   Backend Healthy: $backendHealthy
   Backend Version: $backendVersion
   Endpoints: $endpoints
-  WebSocket Healthy: $webSocketHealthy
+  WebSocket: ${webSocketHealthy == null
+          ? 'NOT CONFIGURED'
+          : webSocketHealthy!
+          ? 'HEALTHY'
+          : 'UNHEALTHY'}
   Overall Status: ${isFullyHealthy ? 'HEALTHY' : 'UNHEALTHY'}
   Error: ${error ?? 'None'}
   Services: $services

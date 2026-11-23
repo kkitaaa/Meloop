@@ -122,6 +122,16 @@ func (m *MockSessionRepository) Get(ctx context.Context, token string) (*models.
 	return m.Sessions[token], nil
 }
 
+func (m *MockSessionRepository) Renew(
+	ctx context.Context,
+	token string,
+	userID string,
+	ttl time.Duration,
+) (bool, error) {
+	user, exists := m.Sessions[token]
+	return exists && user != nil && user.ID == userID, nil
+}
+
 func (m *MockSessionRepository) Delete(ctx context.Context, token string) error {
 	if m.DeleteFunc != nil {
 		return m.DeleteFunc(ctx, token)
@@ -248,6 +258,7 @@ func setupTestApp(t *testing.T) *TestApp {
 	{
 		protected.POST("/auth/logout", authCtrl.Logout)
 		protected.GET("/auth/validate", authCtrl.Validate)
+		protected.POST("/auth/refresh", authCtrl.Refresh)
 		protected.POST("/auth/change-password", authCtrl.ChangePassword)
 	}
 

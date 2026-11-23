@@ -68,7 +68,9 @@ class _KubernetesConnectivityScreenState
       if (!mounted) return;
       _showDialog(
         'WebSocket Test',
-        result ? 'WebSocket connection successful' : 'WebSocket connection failed',
+        result
+            ? 'WebSocket connection successful'
+            : 'WebSocket connection failed',
       );
     } catch (e) {
       if (!mounted) return;
@@ -100,9 +102,7 @@ class _KubernetesConnectivityScreenState
       context: context,
       builder: (context) => AlertDialog(
         title: Text(title),
-        content: SingleChildScrollView(
-          child: SelectableText(message),
-        ),
+        content: SingleChildScrollView(child: SelectableText(message)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -153,10 +153,7 @@ class _KubernetesConnectivityScreenState
             // Test Buttons
             const Text(
               'Diagnostic Tests',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),
             Wrap(
@@ -188,10 +185,7 @@ class _KubernetesConnectivityScreenState
             const SizedBox(height: 20),
 
             // Loading Indicator
-            if (_isLoading)
-              const Center(
-                child: CircularProgressIndicator(),
-              ),
+            if (_isLoading) const Center(child: CircularProgressIndicator()),
 
             // Error Display
             if (_error != null)
@@ -262,9 +256,7 @@ class _KubernetesConnectivityScreenState
                             borderRadius: BorderRadius.circular(20),
                           ),
                           child: Text(
-                            _report!.isFullyHealthy
-                                ? 'HEALTHY'
-                                : 'UNHEALTHY',
+                            _report!.isFullyHealthy ? 'HEALTHY' : 'UNHEALTHY',
                             style: const TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.bold,
@@ -286,8 +278,14 @@ class _KubernetesConnectivityScreenState
                     ),
                     _InfoRow(
                       'WebSocket Healthy',
-                      _report!.webSocketHealthy ? '✓ Yes' : '✗ No',
-                      color: _report!.webSocketHealthy
+                      _report!.webSocketHealthy == null
+                          ? 'Not configured'
+                          : _report!.webSocketHealthy == true
+                          ? '✓ Yes'
+                          : '✗ No',
+                      color: _report!.webSocketHealthy == null
+                          ? null
+                          : _report!.webSocketHealthy == true
                           ? Colors.green
                           : Colors.red,
                     ),
@@ -338,10 +336,7 @@ class _InfoRow extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(
-            label,
-            style: const TextStyle(fontWeight: FontWeight.w500),
-          ),
+          Text(label, style: const TextStyle(fontWeight: FontWeight.w500)),
           Flexible(
             child: SelectableText(
               value,

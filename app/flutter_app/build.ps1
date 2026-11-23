@@ -22,35 +22,53 @@ function GetEnvironmentConfig {
         'dev' {
             return @{
                 flutterEnv = 'development'
-                apiBaseUrl = 'http://localhost:8080'
+                apiBaseUrl = $env:API_BASE_URL_DEV
                 k8sApiGatewayUrl = ''
-                k8sNamespace = 'meloop'
-                k8sIngressHost = 'meloop.local'
+                k8sIngressHost = ''
                 buildName = '1.0.0'
                 buildNumber = '1'
             }
         }
         'staging' {
-            $k8sUrl = if ([string]::IsNullOrEmpty($env:K8S_API_GATEWAY_URL_STAGING)) { 'http://staging.meloop.com' } else { $env:K8S_API_GATEWAY_URL_STAGING }
-            $ingressHost = if ([string]::IsNullOrEmpty($env:K8S_INGRESS_HOST_STAGING)) { 'staging.meloop.com' } else { $env:K8S_INGRESS_HOST_STAGING }
+            $k8sUrl = $env:K8S_API_GATEWAY_URL_STAGING
+            $ingressHost = $env:K8S_INGRESS_HOST_STAGING
+            if ([string]::IsNullOrWhiteSpace($env:API_BASE_URL) -and
+                [string]::IsNullOrWhiteSpace($k8sUrl) -and
+                [string]::IsNullOrWhiteSpace($ingressHost)) {
+                throw 'Set API_BASE_URL, K8S_API_GATEWAY_URL_STAGING, or K8S_INGRESS_HOST_STAGING.'
+            }
             return @{
                 flutterEnv = 'staging'
-                apiBaseUrl = ''
+                apiBaseUrl = $env:API_BASE_URL
                 k8sApiGatewayUrl = $k8sUrl
-                k8sNamespace = 'meloop'
                 k8sIngressHost = $ingressHost
                 buildName = '1.0.0'
                 buildNumber = '2'
             }
         }
-        'prod' {
-            $k8sUrl = if ([string]::IsNullOrEmpty($env:K8S_API_GATEWAY_URL_PROD)) { 'https://api.meloop.com' } else { $env:K8S_API_GATEWAY_URL_PROD }
-            $ingressHost = if ([string]::IsNullOrEmpty($env:K8S_INGRESS_HOST_PROD)) { 'api.meloop.com' } else { $env:K8S_INGRESS_HOST_PROD }
+        { $_ -in 'prod', 'production' } {
+            $k8sUrl = $env:K8S_API_GATEWAY_URL_PROD
+            $ingressHost = $env:K8S_INGRESS_HOST_PROD
+            $apiUrl = $env:API_BASE_URL
+            if ([string]::IsNullOrWhiteSpace($env:API_BASE_URL) -and
+                [string]::IsNullOrWhiteSpace($k8sUrl) -and
+                [string]::IsNullOrWhiteSpace($ingressHost)) {
+                throw 'Set API_BASE_URL, K8S_API_GATEWAY_URL_PROD, or K8S_INGRESS_HOST_PROD.'
+            }
+            $effectiveUrl = if (-not [string]::IsNullOrWhiteSpace($apiUrl)) {
+                $apiUrl
+            } elseif (-not [string]::IsNullOrWhiteSpace($k8sUrl)) {
+                $k8sUrl
+            } else {
+                $ingressHost
+            }
+            if ($effectiveUrl -match '^http://') {
+                throw 'Production requires an HTTPS API Gateway URL.'
+            }
             return @{
                 flutterEnv = 'production'
-                apiBaseUrl = ''
+                apiBaseUrl = $apiUrl
                 k8sApiGatewayUrl = $k8sUrl
-                k8sNamespace = 'meloop'
                 k8sIngressHost = $ingressHost
                 buildName = '1.0.0'
                 buildNumber = '3'
@@ -64,7 +82,7 @@ function GetEnvironmentConfig {
 }
 
 function BuildAndroid {
-    param($config, [string]$dartDefines)
+    param($config, [string[]]$dartDefines)
     
     Write-Host "Building for Android..." -ForegroundColor Green
     & flutter build apk `
@@ -83,7 +101,7 @@ function BuildAndroid {
 }
 
 function BuildWindows {
-    param($config, [string]$dartDefines)
+    param($config, [string[]]$dartDefines)
     
     Write-Host "Building for Windows..." -ForegroundColor Green
     & flutter build windows @dartDefines
@@ -98,7 +116,7 @@ function BuildWindows {
 }
 
 function BuildiOS {
-    param($config, [string]$dartDefines)
+    param($config, [string[]]$dartDefines)
     
     Write-Host "Building for iOS..." -ForegroundColor Green
     & flutter build ios `
@@ -117,7 +135,13 @@ function BuildiOS {
 }
 
 # Main script
-$normalizedEnv = if ($Environment -in 'prod', 'production') { 'prod' } else { $Environment }
+$normalizedEnv = if ($Environment -in 'prod', 'production') {
+    'production'
+} elseif ($Environment -in 'dev', 'development') {
+    'dev'
+} else {
+    'staging'
+}
 $config = GetEnvironmentConfig $normalizedEnv
 
 # Display configuration
@@ -128,7 +152,6 @@ Write-Host "Environment:       $($config.flutterEnv)"
 Write-Host "Platform:          $Platform"
 Write-Host "API Base URL:      $($config.apiBaseUrl)"
 Write-Host "K8s API Gateway:   $($config.k8sApiGatewayUrl)"
-Write-Host "K8s Namespace:     $($config.k8sNamespace)"
 Write-Host "K8s Ingress Host:  $($config.k8sIngressHost)"
 Write-Host "Build Name:        $($config.buildName)"
 Write-Host "Build Number:      $($config.buildNumber)"
@@ -136,17 +159,19 @@ Write-Host "===============================================" -ForegroundColor Cy
 
 # Build dart defines
 $dartDefines = @(
-    "--dart-define=FLUTTER_ENV=$($config.flutterEnv)",
-    "--dart-define=K8S_NAMESPACE=$($config.k8sNamespace)",
-    "--dart-define=K8S_INGRESS_HOST=$($config.k8sIngressHost)"
+    "--dart-define=FLUTTER_ENV=$($config.flutterEnv)"
 )
 
-if ($config.apiBaseUrl) {
+if (-not [string]::IsNullOrWhiteSpace($config.apiBaseUrl)) {
     $dartDefines += "--dart-define=API_BASE_URL=$($config.apiBaseUrl)"
 }
 
-if ($config.k8sApiGatewayUrl) {
+if (-not [string]::IsNullOrWhiteSpace($config.k8sApiGatewayUrl)) {
     $dartDefines += "--dart-define=K8S_API_GATEWAY_URL=$($config.k8sApiGatewayUrl)"
+}
+
+if (-not [string]::IsNullOrWhiteSpace($config.k8sIngressHost)) {
+    $dartDefines += "--dart-define=K8S_INGRESS_HOST=$($config.k8sIngressHost)"
 }
 
 # Execute build

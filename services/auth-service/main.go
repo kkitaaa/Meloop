@@ -22,19 +22,19 @@ func main() {
 
 	dbPool, err := repositories.InitDB(ctx, cfg.DatabaseURL)
 	if err != nil {
-		logger.Warn("database_connection_failed", "error", err, "url", cfg.DatabaseURL)
-	} else {
-		defer dbPool.Close()
-		logger.Info("database_connected", "url", cfg.DatabaseURL)
+		logger.Error("database_connection_failed", "error", err)
+		log.Fatal("auth-service requires a reachable DATABASE_URL")
 	}
+	defer dbPool.Close()
+	logger.Info("database_connected")
 
 	rdbClient, err := repositories.InitRedis(ctx, cfg.RedisURL)
 	if err != nil {
-		logger.Warn("redis_connection_failed", "error", err, "url", cfg.RedisURL)
-	} else {
-		defer rdbClient.Close()
-		logger.Info("redis_connected", "url", cfg.RedisURL)
+		logger.Error("redis_connection_failed", "error", err)
+		log.Fatal("auth-service requires a reachable REDIS_URL")
 	}
+	defer rdbClient.Close()
+	logger.Info("redis_connected")
 
 	sessionRepo := repositories.NewSessionRepository(rdbClient)
 	userRepo := repositories.NewUserRepository(dbPool)
@@ -60,6 +60,7 @@ func main() {
 	{
 		protected.POST("/auth/logout", authCtrl.Logout)
 		protected.GET("/auth/validate", authCtrl.Validate)
+		protected.POST("/auth/refresh", authCtrl.Refresh)
 		protected.POST("/auth/change-password", authCtrl.ChangePassword)
 		protected.PATCH("/auth/password", authCtrl.ChangePassword)
 	}

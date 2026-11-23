@@ -1,12 +1,97 @@
 import 'dart:convert';
 
 import 'package:flutter_app/services/api_client.dart';
+import 'package:flutter_app/services/auth_session.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
 void main() {
   group('ApiClient', () {
+    test(
+      'logs in through the gateway and attaches the session token',
+      () async {
+        final session = AuthSession(persistent: false);
+        final client = ApiClient(
+          session: session,
+          httpClient: MockClient((request) async {
+            expect(request.method, 'POST');
+            expect(request.url.path, '/auth/login');
+            expect(jsonDecode(request.body), {
+              'email': 'ana@example.test',
+              'password': 'password123',
+            });
+            return _sessionResponse(
+              statusCode: 200,
+              token: 'session-token',
+              expiresIn: 3600,
+            );
+          }),
+        );
+
+        final user = await client.login(
+          email: ' ana@example.test ',
+          password: 'password123',
+        );
+
+        expect(user.id, 'user-1');
+        expect(session.token, 'session-token');
+        expect(session.user?.email, 'ana@example.test');
+        client.close();
+        await session.clear();
+      },
+    );
+
+    test(
+      'renews an expiring session before an authenticated request',
+      () async {
+        final session = AuthSession(persistent: false);
+        await session.establish(
+          sessionToken: 'old-token',
+          expiresInSeconds: 1,
+          sessionUser: const AuthUser(
+            id: 'user-1',
+            username: 'Ana',
+            email: 'ana@example.test',
+          ),
+        );
+        final client = ApiClient(
+          session: session,
+          httpClient: MockClient((request) async {
+            if (request.url.path == '/auth/refresh') {
+              expect(request.method, 'POST');
+              expect(request.headers['authorization'], 'Bearer old-token');
+              return _sessionResponse(
+                statusCode: 200,
+                token: 'renewed-token',
+                expiresIn: 3600,
+              );
+            }
+
+            expect(request.url.path, '/api/demo');
+            expect(request.headers['authorization'], 'Bearer renewed-token');
+            return _jsonResponse(
+              statusCode: 200,
+              body: {
+                'success': true,
+                'data': {
+                  'message': 'Gateway disponible',
+                  'timestamp': '2026-11-01T12:00:00Z',
+                },
+                'error': null,
+              },
+            );
+          }),
+        );
+
+        final result = await client.getDemo();
+        expect(result.success, isTrue);
+        expect(session.token, 'renewed-token');
+        client.close();
+        await session.clear();
+      },
+    );
+
     test('decodes a successful GET response', () async {
       final client = ApiClient(
         httpClient: MockClient((request) async {
@@ -191,5 +276,28 @@ http.Response _jsonResponse({
     jsonEncode(body),
     statusCode,
     headers: {'content-type': 'application/json; charset=utf-8'},
+  );
+}
+
+http.Response _sessionResponse({
+  required int statusCode,
+  required String token,
+  required int expiresIn,
+}) {
+  return _jsonResponse(
+    statusCode: statusCode,
+    body: {
+      'success': true,
+      'data': {
+        'session_token': token,
+        'expires_in': expiresIn,
+        'user': {
+          'id': 'user-1',
+          'username': 'Ana',
+          'email': 'ana@example.test',
+        },
+      },
+      'error': null,
+    },
   );
 }
