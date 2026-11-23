@@ -11,7 +11,6 @@ import '../features/posts/presentation/post_editor_dialog.dart';
 import '../features/search/presentation/global_search_screen.dart';
 import '../widgets/app_settings_menu.dart';
 import '../widgets/desktop_app_header.dart';
-import '../widgets/desktop_chat.dart';
 import '../widgets/mobile_app_header.dart';
 import '../features/moderation/data/moderation_models.dart';
 import '../features/moderation/presentation/moderation_queue_screen.dart';
@@ -234,18 +233,12 @@ class FeedScreenState extends State<FeedScreen> {
 
     return Scaffold(
       backgroundColor: Colors.transparent,
-      body: Stack(
+      body: Column(
         children: [
-          Column(
-            children: [
-              _buildTopBar(isDesktop),
-              Expanded(
-                child: isDesktop ? _buildDesktopLayout() : _buildMobileLayout(),
-              ),
-            ],
+          _buildTopBar(isDesktop),
+          Expanded(
+            child: isDesktop ? _buildDesktopLayout() : _buildMobileLayout(),
           ),
-          if (isDesktop)
-            const Positioned(right: 24, bottom: 0, child: DesktopChat()),
         ],
       ),
     );

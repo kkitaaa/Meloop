@@ -44,6 +44,8 @@ void main() {
       await tester.pump(const Duration(seconds: 2));
       await tester.pump();
 
+      expect(find.bySemanticsLabel('Chat'), findsNothing);
+
       for (final section in [
         'Inicio',
         'Amigos',
