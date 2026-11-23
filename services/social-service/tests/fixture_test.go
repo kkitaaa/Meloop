@@ -18,7 +18,9 @@ import (
 type fixture struct {
 	pool       *pgxpool.Pool
 	userIDs    [4]string
+	extraUsers []string
 	friendship int64
+	runID      string
 }
 
 func setupFixture(t *testing.T) *fixture {
@@ -38,10 +40,10 @@ func setupFixture(t *testing.T) *fixture {
 	require.NoError(t, pool.Ping(context.Background()))
 
 	runID := fmt.Sprintf("%d", time.Now().UnixNano())
-	testFixture := &fixture{pool: pool}
+	testFixture := &fixture{pool: pool, runID: runID}
 	t.Cleanup(func() {
 		_, cleanupErr := pool.Exec(context.Background(),
-			`DELETE FROM usuario WHERE id_usuario = ANY($1)`, testFixture.userIDs[:])
+			`DELETE FROM usuario WHERE id_usuario = ANY($1)`, append(testFixture.userIDs[:], testFixture.extraUsers...))
 		pool.Close()
 		require.NoError(t, cleanupErr)
 	})
@@ -70,15 +72,42 @@ func (f *fixture) databaseService(publishers ...services.EventPublisher) service
 	return services.NewFriendshipService(repository, publisher)
 }
 
+func (f *fixture) createUser(t *testing.T, username string) string {
+	t.Helper()
+	userID := fmt.Sprintf("social-test-%s-extra-%d", f.runID, len(f.extraUsers))
+	f.extraUsers = append(f.extraUsers, userID)
+	_, err := f.pool.Exec(context.Background(), `
+		INSERT INTO usuario (id_usuario, username, correo, contrasena_hash)
+		VALUES ($1, $2, $3, $4)`,
+		userID,
+		username,
+		fmt.Sprintf("%s@example.test", userID),
+		"test-password-hash",
+	)
+	require.NoError(t, err)
+	return userID
+}
+
 func (f *fixture) createFriendship(t *testing.T, userA, userB int, status string) models.FriendshipID {
+	t.Helper()
+	id := f.createFriendshipIDs(t, f.userIDs[userA], f.userIDs[userB], status)
+	return models.FriendshipID(id)
+}
+
+func (f *fixture) createFriendshipIDs(t *testing.T, userA, userB, status string) string {
 	t.Helper()
 	f.friendship++
 	id := time.Now().UnixNano()%2_000_000_000 + f.friendship
-	friendshipID := models.FriendshipID(fmt.Sprintf("%d", id))
+	friendshipID := fmt.Sprintf("%d", id)
+	var acceptedAt *time.Time
+	if status == "ACEPTADA" {
+		now := time.Now().UTC()
+		acceptedAt = &now
+	}
 	_, err := f.pool.Exec(context.Background(), `
-		INSERT INTO amistad (id_amistad, id_usuario_1, id_usuario_2, estado)
-		VALUES ($1, $2, $3, $4)`,
-		string(friendshipID), f.userIDs[userA], f.userIDs[userB], status)
+		INSERT INTO amistad (id_amistad, id_usuario_1, id_usuario_2, estado, fecha_amistad)
+		VALUES ($1, $2, $3, $4, $5)`,
+		friendshipID, userA, userB, status, acceptedAt)
 	require.NoError(t, err)
 	return friendshipID
 }

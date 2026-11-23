@@ -69,14 +69,14 @@ func (f *friendshipRepositoryFake) Cancel(context.Context, string, string) (*mod
 	return f.request, nil
 }
 
-func (f *friendshipRepositoryFake) ListFriends(ctx context.Context, userID string) ([]models.Friend, error) {
+func (f *friendshipRepositoryFake) ListFriends(ctx context.Context, userID string, limit int, query string, cursor *models.FriendCursor) (models.FriendPage, error) {
 	if f.listFriendsErr != nil {
-		return nil, f.listFriendsErr
+		return models.FriendPage{}, f.listFriendsErr
 	}
 	if f.friends == nil {
-		return []models.Friend{}, nil
+		return models.FriendPage{Friends: []models.Friend{}}, nil
 	}
-	return f.friends, nil
+	return models.FriendPage{Friends: f.friends}, nil
 }
 
 func (f *friendshipRepositoryFake) RemoveFriend(ctx context.Context, userID, targetID string) error {
@@ -321,15 +321,15 @@ func TestFriendshipServiceListFriends(t *testing.T) {
 		}
 		service := NewFriendshipService(repo, nil)
 
-		friends, err := service.ListFriends(context.Background(), "user-1")
+		page, err := service.ListFriends(context.Background(), "user-1", 20, "", nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if len(friends) != 2 {
-			t.Fatalf("expected 2 friends, got %d", len(friends))
+		if len(page.Friends) != 2 {
+			t.Fatalf("expected 2 friends, got %d", len(page.Friends))
 		}
-		if friends[0].Username != "carlos" || friends[1].Username != "maria" {
-			t.Fatalf("unexpected friend data: %+v", friends)
+		if page.Friends[0].Username != "carlos" || page.Friends[1].Username != "maria" {
+			t.Fatalf("unexpected friend data: %+v", page.Friends)
 		}
 	})
 
@@ -339,12 +339,12 @@ func TestFriendshipServiceListFriends(t *testing.T) {
 		}
 		service := NewFriendshipService(repo, nil)
 
-		friends, err := service.ListFriends(context.Background(), "user-1")
+		page, err := service.ListFriends(context.Background(), "user-1", 20, "", nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if len(friends) != 0 {
-			t.Fatalf("expected 0 friends, got %d", len(friends))
+		if len(page.Friends) != 0 {
+			t.Fatalf("expected 0 friends, got %d", len(page.Friends))
 		}
 	})
 
@@ -352,7 +352,7 @@ func TestFriendshipServiceListFriends(t *testing.T) {
 		repo := &friendshipRepositoryFake{}
 		service := NewFriendshipService(repo, nil)
 
-		_, err := service.ListFriends(context.Background(), "")
+		_, err := service.ListFriends(context.Background(), "", 20, "", nil)
 		if !errors.Is(err, ErrInvalidUser) {
 			t.Fatalf("expected ErrInvalidUser, got %v", err)
 		}

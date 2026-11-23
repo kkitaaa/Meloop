@@ -43,7 +43,7 @@ type FriendshipService interface {
 	AcceptRequest(ctx context.Context, requestID string, receiverID string) (*models.FriendRequest, error)
 	RejectRequest(ctx context.Context, requestID string, receiverID string) (*models.FriendRequest, error)
 	CancelRequest(ctx context.Context, requestID string, senderID string) (*models.FriendRequest, error)
-	ListFriends(ctx context.Context, userID string) ([]models.Friend, error)
+	ListFriends(ctx context.Context, userID string, limit int, query string, cursor *models.FriendCursor) (models.FriendPage, error)
 	RemoveFriend(ctx context.Context, userID, targetID string) error
 	GetFriendProfile(ctx context.Context, userID, friendID string) (*models.FriendProfile, error)
 	BlockUser(ctx context.Context, blockerID, blockedID string) error
@@ -129,16 +129,16 @@ func (s *friendshipService) CancelRequest(ctx context.Context, requestID string,
 	return request, mapRepositoryError(err)
 }
 
-func (s *friendshipService) ListFriends(ctx context.Context, userID string) ([]models.Friend, error) {
+func (s *friendshipService) ListFriends(ctx context.Context, userID string, limit int, query string, cursor *models.FriendCursor) (models.FriendPage, error) {
 	userID = strings.TrimSpace(userID)
 	if userID == "" {
-		return nil, ErrInvalidUser
+		return models.FriendPage{}, ErrInvalidUser
 	}
-	friends, err := s.repo.ListFriends(ctx, userID)
+	page, err := s.repo.ListFriends(ctx, userID, limit, query, cursor)
 	if err != nil {
-		return nil, mapRepositoryError(err)
+		return models.FriendPage{}, mapRepositoryError(err)
 	}
-	return friends, nil
+	return page, nil
 }
 
 func (s *friendshipService) RemoveFriend(ctx context.Context, userID, targetID string) error {
