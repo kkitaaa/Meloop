@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/meloop/social-service/models"
 	"github.com/meloop/social-service/repositories"
 	"github.com/meloop/social-service/services"
 	"github.com/stretchr/testify/require"
@@ -60,18 +61,24 @@ func setupFixture(t *testing.T) *fixture {
 	return testFixture
 }
 
-func (f *fixture) databaseService() services.FriendshipService {
+func (f *fixture) databaseService(publishers ...services.EventPublisher) services.FriendshipService {
 	repository := repositories.NewFriendshipRepository(f.pool)
-	return services.NewFriendshipService(repository, nil)
+	var publisher services.EventPublisher
+	if len(publishers) > 0 {
+		publisher = publishers[0]
+	}
+	return services.NewFriendshipService(repository, publisher)
 }
 
-func (f *fixture) createFriendship(t *testing.T, userA, userB int, status string) {
+func (f *fixture) createFriendship(t *testing.T, userA, userB int, status string) models.FriendshipID {
 	t.Helper()
 	f.friendship++
 	id := time.Now().UnixNano()%2_000_000_000 + f.friendship
+	friendshipID := models.FriendshipID(fmt.Sprintf("%d", id))
 	_, err := f.pool.Exec(context.Background(), `
 		INSERT INTO amistad (id_amistad, id_usuario_1, id_usuario_2, estado)
 		VALUES ($1, $2, $3, $4)`,
-		fmt.Sprintf("%d", id), f.userIDs[userA], f.userIDs[userB], status)
+		string(friendshipID), f.userIDs[userA], f.userIDs[userB], status)
 	require.NoError(t, err)
+	return friendshipID
 }

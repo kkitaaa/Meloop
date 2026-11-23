@@ -36,7 +36,7 @@ func TestFriendshipRepository_NilPool(t *testing.T) {
 	if _, err := repo.GetFriendProfile(ctx, "u1", "u2"); err == nil {
 		t.Error("expected error with nil pool on GetFriendProfile")
 	}
-	if err := repo.BlockUser(ctx, "u1", "u2"); err == nil {
+	if _, err := repo.BlockUser(ctx, "u1", "u2"); err == nil {
 		t.Error("expected error with nil pool on BlockUser")
 	}
 	if _, err := repo.IsBlocked(ctx, "u1", "u2"); err == nil {

@@ -22,7 +22,6 @@ var (
 	ErrRequestProcessed       = errors.New("friendship request was already processed")
 	ErrInvalidUser            = errors.New("authenticated user is required")
 	ErrSelfBlock              = errors.New("cannot block yourself")
-	ErrAlreadyBlocked         = errors.New("user is already blocked")
 	ErrFriendshipNotFound     = errors.New("friendship not found")
 	ErrNotFriends             = errors.New("users are not friends")
 	ErrNotAuthorized          = errors.New("user is not authorized for this operation")
@@ -34,6 +33,7 @@ var (
 
 type EventPublisher interface {
 	PublishFriendAccepted(ctx context.Context, request *models.FriendRequest) error
+	PublishFriendRequestCancelled(ctx context.Context, request *models.FriendRequest) error
 }
 
 type FriendshipService interface {
@@ -173,8 +173,23 @@ func (s *friendshipService) BlockUser(ctx context.Context, blockerID, blockedID 
 	if blockerID == blockedID {
 		return ErrSelfBlock
 	}
-	err := s.repo.BlockUser(ctx, blockerID, blockedID)
-	return mapRepositoryError(err)
+	cancelledRequests, err := s.repo.BlockUser(ctx, blockerID, blockedID)
+	if err != nil {
+		return mapRepositoryError(err)
+	}
+	if s.publisher != nil {
+		for i := range cancelledRequests {
+			request := &cancelledRequests[i]
+			if err := s.publisher.PublishFriendRequestCancelled(ctx, request); err != nil {
+				if s.logger != nil {
+					s.logger.Warn("event_publish_failed", "event", "friend.request.cancelled", "request_id", request.ID, "error_type", fmt.Sprintf("%T", err), "delivery", "best_effort")
+				} else {
+					slog.Warn("event_publish_failed", "event", "friend.request.cancelled", "request_id", request.ID, "error_type", fmt.Sprintf("%T", err), "delivery", "best_effort")
+				}
+			}
+		}
+	}
+	return nil
 }
 
 func (s *friendshipService) ValidateInteraction(ctx context.Context, user1ID, user2ID string) error {
@@ -279,8 +294,6 @@ func mapRepositoryError(err error) error {
 		return ErrFriendshipNotFound
 	case errors.Is(err, repositories.ErrSelfBlock):
 		return ErrSelfBlock
-	case errors.Is(err, repositories.ErrAlreadyBlocked):
-		return ErrAlreadyBlocked
 	case errors.Is(err, repositories.ErrNotFriends):
 		return ErrNotFriends
 	case errors.Is(err, repositories.ErrNotAuthorized):

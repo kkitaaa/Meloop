@@ -31,6 +31,25 @@ Microservicio encargado de la gestión de relaciones sociales en Meloop:
 
 Consulta la documentación completa en [`docs/centralized_block_exclusion.md`](../../docs/centralized_block_exclusion.md).
 
+## Eventos de cancelación por bloqueo
+
+Al bloquear, `social-service` crea el bloqueo, marca las amistades aceptadas como `ELIMINADA` y cambia a `CANCELADA` todas las solicitudes pendientes entre ambos usuarios, en cualquiera de las direcciones, dentro de una transacción PostgreSQL. Repetir el mismo bloqueo no vuelve a modificar datos ni publica eventos.
+
+Después del `COMMIT`, publica un evento por cada solicitud que cambió efectivamente a `CANCELADA` en el exchange `meloop.events`, con routing key `friend.request.cancelled` y este JSON:
+
+```json
+{
+  "event_id": "uuid-v4",
+  "event_type": "friend.request.cancelled",
+  "request_id": "id-amistad",
+  "sender_id": "id-emisor",
+  "receiver_id": "id-receptor",
+  "reason": "user_blocked"
+}
+```
+
+La publicación es best-effort: si RabbitMQ falla después del `COMMIT`, el bloqueo permanece confirmado y el evento puede perderse. `notification-service` debe asociar la notificación a `request_id` para retirar solo la notificación de la solicitud cancelada.
+
 ## Pruebas y cobertura
 
 Desde la raíz del repositorio, ejecuta `make test-social` para correr `go test ./... -cover` en este servicio.

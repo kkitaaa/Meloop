@@ -26,6 +26,8 @@ type friendshipRepositoryFake struct {
 	removedFriend     bool
 	blockedUser       bool
 	removedFriendship bool
+	cancelledRequests []models.FriendRequest
+	existingBlock     bool
 	excludeBlockedErr error
 	blockedPairs      map[string]map[string]bool
 }
@@ -92,13 +94,16 @@ func (f *friendshipRepositoryFake) GetFriendProfile(ctx context.Context, userID,
 	return f.profile, nil
 }
 
-func (f *friendshipRepositoryFake) BlockUser(ctx context.Context, blockerID, blockedID string) error {
+func (f *friendshipRepositoryFake) BlockUser(ctx context.Context, blockerID, blockedID string) ([]models.FriendRequest, error) {
 	if f.blockUserErr != nil {
-		return f.blockUserErr
+		return nil, f.blockUserErr
+	}
+	if f.existingBlock {
+		return []models.FriendRequest{}, nil
 	}
 	f.blockedUser = true
 	f.removedFriendship = true
-	return nil
+	return f.cancelledRequests, nil
 }
 
 func (f *friendshipRepositoryFake) IsBlocked(ctx context.Context, user1ID, user2ID string) (bool, error) {
@@ -154,12 +159,18 @@ func (f *friendshipRepositoryFake) GetBlockedCandidateIDs(ctx context.Context, u
 }
 
 type eventPublisherFake struct {
-	called bool
-	err    error
+	called            bool
+	err               error
+	cancelledRequests []models.FriendRequest
 }
 
 func (f *eventPublisherFake) PublishFriendAccepted(context.Context, *models.FriendRequest) error {
 	f.called = true
+	return f.err
+}
+
+func (f *eventPublisherFake) PublishFriendRequestCancelled(_ context.Context, request *models.FriendRequest) error {
+	f.cancelledRequests = append(f.cancelledRequests, *request)
 	return f.err
 }
 
@@ -491,15 +502,52 @@ func TestFriendshipServiceBlockUser(t *testing.T) {
 		}
 	})
 
-	t.Run("block when already blocked", func(t *testing.T) {
-		repo := &friendshipRepositoryFake{
-			blockUserErr: repositories.ErrAlreadyBlocked,
+	t.Run("publishes each cancelled request after repository success", func(t *testing.T) {
+		requests := []models.FriendRequest{
+			{ID: "req-a-b", SenderID: "user-1", ReceiverID: "user-2", Status: models.FriendshipCanceled},
+			{ID: "req-b-a", SenderID: "user-2", ReceiverID: "user-1", Status: models.FriendshipCanceled},
 		}
-		service := NewFriendshipService(repo, nil)
+		repo := &friendshipRepositoryFake{cancelledRequests: requests}
+		publisher := &eventPublisherFake{}
 
-		err := service.BlockUser(context.Background(), "user-1", "user-2")
-		if !errors.Is(err, ErrAlreadyBlocked) {
-			t.Fatalf("expected ErrAlreadyBlocked, got %v", err)
+		if err := NewFriendshipService(repo, publisher).BlockUser(context.Background(), "user-1", "user-2"); err != nil {
+			t.Fatalf("BlockUser() error = %v", err)
+		}
+		if len(publisher.cancelledRequests) != 2 {
+			t.Fatalf("published requests = %d, want 2", len(publisher.cancelledRequests))
+		}
+		for i, want := range requests {
+			if got := publisher.cancelledRequests[i]; got != want {
+				t.Fatalf("published request[%d] = %+v, want %+v", i, got, want)
+			}
+		}
+	})
+
+	t.Run("publisher failure does not fail committed block", func(t *testing.T) {
+		repo := &friendshipRepositoryFake{
+			cancelledRequests: []models.FriendRequest{{ID: "req", SenderID: "user-1", ReceiverID: "user-2"}},
+		}
+		publisher := &eventPublisherFake{err: errors.New("broker unavailable")}
+
+		if err := NewFriendshipService(repo, publisher).BlockUser(context.Background(), "user-1", "user-2"); err != nil {
+			t.Fatalf("BlockUser() error = %v, want best-effort success", err)
+		}
+		if !repo.blockedUser || len(publisher.cancelledRequests) != 1 {
+			t.Fatal("expected block to complete and cancellation publication to be attempted")
+		}
+	})
+
+	t.Run("idempotent block publishes no cancellation event", func(t *testing.T) {
+		publisher := &eventPublisherFake{}
+		repo := &friendshipRepositoryFake{existingBlock: true}
+		if err := NewFriendshipService(repo, publisher).BlockUser(context.Background(), "user-1", "user-2"); err != nil {
+			t.Fatalf("BlockUser() error = %v", err)
+		}
+		if repo.blockedUser {
+			t.Fatal("expected an existing block not to be inserted again")
+		}
+		if len(publisher.cancelledRequests) != 0 {
+			t.Fatalf("published requests = %d, want 0", len(publisher.cancelledRequests))
 		}
 	})
 

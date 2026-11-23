@@ -269,8 +269,6 @@ func (ctrl *FriendshipController) handleError(c *gin.Context, err error) {
 		httpresponse.NotFoundGin(c, "No se encontraron candidatos disponibles para sugerencias de amistad")
 	case errors.Is(err, services.ErrRequestConflict):
 		httpresponse.ConflictGin(c, "Ya existe una solicitud o amistad entre estos usuarios")
-	case errors.Is(err, services.ErrAlreadyBlocked):
-		httpresponse.ConflictGin(c, "El usuario ya se encuentra bloqueado")
 	case errors.Is(err, services.ErrBlocked):
 		httpresponse.ForbiddenGin(c, "No se permiten interacciones entre estos usuarios debido a un bloqueo")
 	case errors.Is(err, services.ErrRequestNotFound):
