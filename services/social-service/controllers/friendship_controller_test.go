@@ -322,7 +322,7 @@ func TestListFriends_HTTP_PaginationParameters(t *testing.T) {
 			router := setupTestRouter(mock)
 			recorder := httptest.NewRecorder()
 			request := httptest.NewRequest(http.MethodGet, "/friends"+test.query, nil)
-			request.Header.Set("X-User-ID", "usr-123")
+			setAuthenticatedUser(request, "usr-123")
 			router.ServeHTTP(recorder, request)
 
 			if recorder.Code != test.wantStatus {
