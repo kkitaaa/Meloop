@@ -24,7 +24,6 @@ var (
 	ErrRequestProcessed   = errors.New("friendship request was already processed")
 	ErrFriendshipNotFound = errors.New("friendship not found")
 	ErrSelfBlock          = errors.New("cannot block yourself")
-	ErrAlreadyBlocked     = errors.New("user is already blocked")
 	ErrNotFriends         = errors.New("users are not friends")
 	ErrNotAuthorized      = errors.New("user is not authorized for this operation")
 	ErrUserNotFound       = errors.New("user not found")
@@ -40,7 +39,7 @@ type FriendshipRepository interface {
 	ListFriends(ctx context.Context, userID string, limit int, query string, cursor *models.FriendCursor) (models.FriendPage, error)
 	RemoveFriend(ctx context.Context, userID, targetID string) error
 	GetFriendProfile(ctx context.Context, userID, friendID string) (*models.FriendProfile, error)
-	BlockUser(ctx context.Context, blockerID, blockedID string) error
+	BlockUser(ctx context.Context, blockerID, blockedID string) ([]models.FriendRequest, error)
 	UnblockUser(ctx context.Context, blockerID, blockedID string) error
 	GetAcceptedFriendsCount(ctx context.Context, userID string) (int, error)
 	GetFriendsCount(ctx context.Context, userID string) (int, error)
@@ -576,17 +575,17 @@ func (r *postgresFriendshipRepository) RemoveFriend(ctx context.Context, userID,
 	return nil
 }
 
-func (r *postgresFriendshipRepository) BlockUser(ctx context.Context, blockerID, blockedID string) error {
+func (r *postgresFriendshipRepository) BlockUser(ctx context.Context, blockerID, blockedID string) ([]models.FriendRequest, error) {
 	if r.pool == nil {
-		return errors.New("database connection pool is not initialized")
+		return nil, errors.New("database connection pool is not initialized")
 	}
 	if blockerID == blockedID {
-		return ErrSelfBlock
+		return nil, ErrSelfBlock
 	}
 
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer tx.Rollback(ctx)
 
@@ -595,7 +594,7 @@ func (r *postgresFriendshipRepository) BlockUser(ctx context.Context, blockerID,
 			hashtextextended(LEAST($1::text, $2::text) || ':' || GREATEST($1::text, $2::text), 0)
 		)`, blockerID, blockedID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	var alreadyBlocked bool
@@ -605,36 +604,64 @@ func (r *postgresFriendshipRepository) BlockUser(ctx context.Context, blockerID,
 			WHERE id_usuario_bloqueador::text = $1 AND id_usuario_bloqueado::text = $2
 		)`, blockerID, blockedID).Scan(&alreadyBlocked)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if alreadyBlocked {
-		return ErrAlreadyBlocked
+		if err := tx.Commit(ctx); err != nil {
+			return nil, err
+		}
+		return []models.FriendRequest{}, nil
 	}
 
 	_, err = tx.Exec(ctx, `
 		INSERT INTO bloqueo (id_bloqueo, id_usuario_bloqueador, id_usuario_bloqueado)
 		VALUES (gen_random_uuid()::text, $1, $2)`, blockerID, blockedID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	// Eliminar cualquier relación de amistad activa o pendiente entre ambos usuarios
 	_, err = tx.Exec(ctx, `
 		UPDATE amistad
 		SET estado = $1
 		WHERE ((id_usuario_1::text = $2 AND id_usuario_2::text = $3)
 		    OR (id_usuario_1::text = $3 AND id_usuario_2::text = $2))
-		  AND estado IN ('PENDIENTE', 'ACEPTADA')`,
+		  AND estado = 'ACEPTADA'`,
 		models.FriendshipDeleted, blockerID, blockedID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	if err := tx.Commit(ctx); err != nil {
-		return err
+	rows, err := tx.Query(ctx, `
+		UPDATE amistad
+		SET estado = $1
+		WHERE ((id_usuario_1::text = $2 AND id_usuario_2::text = $3)
+		    OR (id_usuario_1::text = $3 AND id_usuario_2::text = $2))
+		  AND estado = 'PENDIENTE'
+		RETURNING id_amistad, id_usuario_1::text, id_usuario_2::text, estado`,
+		models.FriendshipCanceled, blockerID, blockedID)
+	if err != nil {
+		return nil, err
 	}
-	r.invalidateSocialCountCache(ctx, blockerID, blockedID)
-	return nil
+
+	cancelledRequests := make([]models.FriendRequest, 0)
+	for rows.Next() {
+		var request models.FriendRequest
+		if err := rows.Scan(&request.ID, &request.SenderID, &request.ReceiverID, &request.Status); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		cancelledRequests = append(cancelledRequests, request)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	rows.Close()
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return cancelledRequests, nil
 }
 
 func (r *postgresFriendshipRepository) UnblockUser(ctx context.Context, blockerID, blockedID string) error {

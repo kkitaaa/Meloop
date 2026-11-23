@@ -585,10 +585,10 @@ func TestBlockUser_HTTP_Autobloqueo(t *testing.T) {
 	}
 }
 
-func TestBlockUser_HTTP_YaBloqueado(t *testing.T) {
+func TestBlockUser_HTTP_Idempotente(t *testing.T) {
 	mockSvc := &mockFriendshipService{
 		blockUserFunc: func(ctx context.Context, blockerID, blockedID string) error {
-			return services.ErrAlreadyBlocked
+			return nil
 		},
 	}
 	router := setupTestRouter(mockSvc)
@@ -601,8 +601,8 @@ func TestBlockUser_HTTP_YaBloqueado(t *testing.T) {
 
 	router.ServeHTTP(w, req)
 
-	if w.Code != http.StatusConflict {
-		t.Fatalf("se esperaba 409 Conflict, se obtuvo %d", w.Code)
+	if w.Code != http.StatusOK {
+		t.Fatalf("se esperaba 200 OK, se obtuvo %d", w.Code)
 	}
 }
 
