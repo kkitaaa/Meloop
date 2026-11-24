@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/meloop/social-service/models"
 	"github.com/meloop/social-service/client"
+	"github.com/meloop/social-service/models"
 	"github.com/meloop/social-service/repositories"
 	"github.com/meloop/social-service/services"
 	"github.com/stretchr/testify/require"
