@@ -22,7 +22,6 @@ var (
 	ErrRequestProcessed       = errors.New("friendship request was already processed")
 	ErrInvalidUser            = errors.New("authenticated user is required")
 	ErrSelfBlock              = errors.New("cannot block yourself")
-	ErrAlreadyBlocked         = errors.New("user is already blocked")
 	ErrFriendshipNotFound     = errors.New("friendship not found")
 	ErrNotFriends             = errors.New("users are not friends")
 	ErrNotAuthorized          = errors.New("user is not authorized for this operation")
@@ -34,6 +33,7 @@ var (
 
 type EventPublisher interface {
 	PublishFriendAccepted(ctx context.Context, request *models.FriendRequest) error
+	PublishFriendRequestCancelled(ctx context.Context, request *models.FriendRequest) error
 }
 
 type FriendshipService interface {
@@ -43,10 +43,12 @@ type FriendshipService interface {
 	AcceptRequest(ctx context.Context, requestID string, receiverID string) (*models.FriendRequest, error)
 	RejectRequest(ctx context.Context, requestID string, receiverID string) (*models.FriendRequest, error)
 	CancelRequest(ctx context.Context, requestID string, senderID string) (*models.FriendRequest, error)
-	ListFriends(ctx context.Context, userID string) ([]models.Friend, error)
+	ListFriends(ctx context.Context, userID string, limit int, query string, cursor *models.FriendCursor) (models.FriendPage, error)
 	RemoveFriend(ctx context.Context, userID, targetID string) error
 	GetFriendProfile(ctx context.Context, userID, friendID string) (*models.FriendProfile, error)
 	BlockUser(ctx context.Context, blockerID, blockedID string) error
+	UnblockUser(ctx context.Context, blockerID, blockedID string) error
+	GetFriendsCount(ctx context.Context, userID string) (int, error)
 	ValidateInteraction(ctx context.Context, user1ID, user2ID string) error
 	GetFriendSuggestions(ctx context.Context, userID string) ([]models.FriendSuggestion, error)
 	ExcludeBlocked(ctx context.Context, userID string, candidateIDs []string) ([]string, error)
@@ -129,16 +131,16 @@ func (s *friendshipService) CancelRequest(ctx context.Context, requestID string,
 	return request, mapRepositoryError(err)
 }
 
-func (s *friendshipService) ListFriends(ctx context.Context, userID string) ([]models.Friend, error) {
+func (s *friendshipService) ListFriends(ctx context.Context, userID string, limit int, query string, cursor *models.FriendCursor) (models.FriendPage, error) {
 	userID = strings.TrimSpace(userID)
 	if userID == "" {
-		return nil, ErrInvalidUser
+		return models.FriendPage{}, ErrInvalidUser
 	}
-	friends, err := s.repo.ListFriends(ctx, userID)
+	page, err := s.repo.ListFriends(ctx, userID, limit, query, cursor)
 	if err != nil {
-		return nil, mapRepositoryError(err)
+		return models.FriendPage{}, mapRepositoryError(err)
 	}
-	return friends, nil
+	return page, nil
 }
 
 func (s *friendshipService) RemoveFriend(ctx context.Context, userID, targetID string) error {
@@ -173,8 +175,43 @@ func (s *friendshipService) BlockUser(ctx context.Context, blockerID, blockedID 
 	if blockerID == blockedID {
 		return ErrSelfBlock
 	}
-	err := s.repo.BlockUser(ctx, blockerID, blockedID)
-	return mapRepositoryError(err)
+	cancelledRequests, err := s.repo.BlockUser(ctx, blockerID, blockedID)
+	if err != nil {
+		return mapRepositoryError(err)
+	}
+	if s.publisher != nil {
+		for i := range cancelledRequests {
+			request := &cancelledRequests[i]
+			if err := s.publisher.PublishFriendRequestCancelled(ctx, request); err != nil {
+				if s.logger != nil {
+					s.logger.Warn("event_publish_failed", "event", "friend.request.cancelled", "request_id", request.ID, "error_type", fmt.Sprintf("%T", err), "delivery", "best_effort")
+				} else {
+					slog.Warn("event_publish_failed", "event", "friend.request.cancelled", "request_id", request.ID, "error_type", fmt.Sprintf("%T", err), "delivery", "best_effort")
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func (s *friendshipService) UnblockUser(ctx context.Context, blockerID, blockedID string) error {
+	blockerID = strings.TrimSpace(blockerID)
+	blockedID = strings.TrimSpace(blockedID)
+	if blockerID == "" || blockedID == "" {
+		return ErrInvalidUser
+	}
+	if blockerID == blockedID {
+		return ErrSelfBlock
+	}
+	return mapRepositoryError(s.repo.UnblockUser(ctx, blockerID, blockedID))
+}
+
+func (s *friendshipService) GetFriendsCount(ctx context.Context, userID string) (int, error) {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return 0, ErrInvalidUser
+	}
+	return s.repo.GetAcceptedFriendsCount(ctx, userID)
 }
 
 func (s *friendshipService) ValidateInteraction(ctx context.Context, user1ID, user2ID string) error {
@@ -279,8 +316,6 @@ func mapRepositoryError(err error) error {
 		return ErrFriendshipNotFound
 	case errors.Is(err, repositories.ErrSelfBlock):
 		return ErrSelfBlock
-	case errors.Is(err, repositories.ErrAlreadyBlocked):
-		return ErrAlreadyBlocked
 	case errors.Is(err, repositories.ErrNotFriends):
 		return ErrNotFriends
 	case errors.Is(err, repositories.ErrNotAuthorized):

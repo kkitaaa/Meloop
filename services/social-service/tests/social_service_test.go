@@ -7,7 +7,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/meloop/social-service/client"
@@ -30,6 +32,24 @@ func (testSessionValidator) ValidateToken(_ context.Context, token string) (stri
 
 func setAuthenticatedUser(request *http.Request, userID string) {
 	request.Header.Set("Authorization", "Bearer "+userID)
+}
+
+type recordingBlockPublisher struct {
+	requests     []models.FriendRequest
+	err          error
+	afterPublish func(models.FriendRequest)
+}
+
+func (p *recordingBlockPublisher) PublishFriendAccepted(context.Context, *models.FriendRequest) error {
+	return nil
+}
+
+func (p *recordingBlockPublisher) PublishFriendRequestCancelled(_ context.Context, request *models.FriendRequest) error {
+	p.requests = append(p.requests, *request)
+	if p.afterPublish != nil {
+		p.afterPublish(*request)
+	}
+	return p.err
 }
 
 func TestBlockedUsersCannotRequestOrAppearInSuggestions(t *testing.T) {
@@ -69,9 +89,9 @@ func TestBlockingRemovesExistingFriendship(t *testing.T) {
 	f.createFriendship(t, 0, 1, models.FriendshipAccepted)
 
 	require.NoError(t, service.BlockUser(context.Background(), f.userIDs[0], f.userIDs[1]))
-	friends, err := service.ListFriends(context.Background(), f.userIDs[0])
+	friends, err := service.ListFriends(context.Background(), f.userIDs[0], 20, "", nil)
 	require.NoError(t, err)
-	for _, friend := range friends {
+	for _, friend := range friends.Friends {
 		assert.NotEqual(t, f.userIDs[1], friend.IDUsuario)
 	}
 
@@ -83,6 +103,179 @@ func TestBlockingRemovesExistingFriendship(t *testing.T) {
 		f.userIDs[0], f.userIDs[1]).Scan(&status)
 	require.NoError(t, err)
 	assert.Equal(t, models.FriendshipDeleted, status)
+}
+
+func TestBlockingCancelsPendingRequestsInBothDirectionsAndIsIdempotent(t *testing.T) {
+	f := setupFixture(t)
+	requestAB := f.createFriendship(t, 0, 1, models.FriendshipPending)
+	requestBA := f.createFriendship(t, 1, 0, models.FriendshipPending)
+	accepted := f.createFriendship(t, 0, 1, models.FriendshipAccepted)
+	publisher := &recordingBlockPublisher{
+		afterPublish: func(request models.FriendRequest) {
+			var status string
+			require.NoError(t, f.pool.QueryRow(context.Background(), `
+				SELECT estado FROM amistad WHERE id_amistad = $1`, string(request.ID)).Scan(&status))
+			require.Equal(t, models.FriendshipCanceled, status, "event must be published after commit")
+		},
+	}
+	service := f.databaseService(publisher)
+
+	require.NoError(t, service.BlockUser(context.Background(), f.userIDs[0], f.userIDs[1]))
+	require.Len(t, publisher.requests, 2)
+	publishedIDs := map[models.FriendshipID]bool{}
+	for _, request := range publisher.requests {
+		publishedIDs[request.ID] = true
+		require.Equal(t, models.FriendshipCanceled, request.Status)
+	}
+	require.True(t, publishedIDs[requestAB])
+	require.True(t, publishedIDs[requestBA])
+
+	for _, userIndex := range []int{0, 1} {
+		sent, err := service.SentRequests(context.Background(), f.userIDs[userIndex])
+		require.NoError(t, err)
+		received, err := service.ReceivedRequests(context.Background(), f.userIDs[userIndex])
+		require.NoError(t, err)
+		require.Empty(t, sent)
+		require.Empty(t, received)
+	}
+
+	var acceptedStatus string
+	require.NoError(t, f.pool.QueryRow(context.Background(), `
+		SELECT estado FROM amistad WHERE id_amistad = $1`, string(accepted)).Scan(&acceptedStatus))
+	require.Equal(t, models.FriendshipDeleted, acceptedStatus)
+
+	require.NoError(t, service.BlockUser(context.Background(), f.userIDs[0], f.userIDs[1]))
+	require.Len(t, publisher.requests, 2, "repeat block must not publish duplicate cancellation events")
+	var blockCount int
+	require.NoError(t, f.pool.QueryRow(context.Background(), `
+		SELECT COUNT(*) FROM bloqueo
+		WHERE id_usuario_bloqueador = $1 AND id_usuario_bloqueado = $2`,
+		f.userIDs[0], f.userIDs[1]).Scan(&blockCount))
+	require.Equal(t, 1, blockCount)
+}
+
+func TestBlockingRemainsDirectionalForIdempotency(t *testing.T) {
+	f := setupFixture(t)
+	service := f.databaseService()
+
+	require.NoError(t, service.BlockUser(context.Background(), f.userIDs[1], f.userIDs[0]))
+	require.NoError(t, service.BlockUser(context.Background(), f.userIDs[0], f.userIDs[1]))
+
+	var blockCount int
+	require.NoError(t, f.pool.QueryRow(context.Background(), `
+		SELECT COUNT(*) FROM bloqueo
+		WHERE (id_usuario_bloqueador = $1 AND id_usuario_bloqueado = $2)
+		   OR (id_usuario_bloqueador = $2 AND id_usuario_bloqueado = $1)`,
+		f.userIDs[0], f.userIDs[1]).Scan(&blockCount))
+	require.Equal(t, 2, blockCount)
+}
+
+func TestBlockUserPublisherFailureDoesNotRollbackCommittedBlock(t *testing.T) {
+	f := setupFixture(t)
+	requestID := f.createFriendship(t, 0, 1, models.FriendshipPending)
+	publisher := &recordingBlockPublisher{err: fmt.Errorf("broker unavailable")}
+	service := f.databaseService(publisher)
+
+	require.NoError(t, service.BlockUser(context.Background(), f.userIDs[0], f.userIDs[1]))
+	require.Len(t, publisher.requests, 1)
+
+	var blockCount int
+	var status string
+	require.NoError(t, f.pool.QueryRow(context.Background(), `
+		SELECT COUNT(*) FROM bloqueo
+		WHERE id_usuario_bloqueador = $1 AND id_usuario_bloqueado = $2`,
+		f.userIDs[0], f.userIDs[1]).Scan(&blockCount))
+	require.Equal(t, 1, blockCount)
+	require.NoError(t, f.pool.QueryRow(context.Background(), `
+		SELECT estado FROM amistad WHERE id_amistad = $1`, string(requestID)).Scan(&status))
+	require.Equal(t, models.FriendshipCanceled, status)
+}
+
+func TestBlockUserRollsBackWhenCancellationUpdateFails(t *testing.T) {
+	f := setupFixture(t)
+	pendingID := f.createFriendship(t, 0, 1, models.FriendshipPending)
+	acceptedID := f.createFriendship(t, 0, 1, models.FriendshipAccepted)
+	suffix := strings.ReplaceAll(f.userIDs[0], "-", "_")
+	functionName := "social_test_fail_cancel_" + suffix
+	triggerName := "social_test_fail_cancel_trigger_" + suffix
+
+	_, err := f.pool.Exec(context.Background(), fmt.Sprintf(`
+		CREATE FUNCTION %s() RETURNS trigger LANGUAGE plpgsql AS $$
+		BEGIN
+			IF NEW.estado = 'CANCELADA' AND TG_ARGV[0] IN (NEW.id_usuario_1, NEW.id_usuario_2) THEN
+				RAISE EXCEPTION 'injected cancellation failure';
+			END IF;
+			RETURN NEW;
+		END;
+		$$`, functionName))
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, dropTriggerErr := f.pool.Exec(context.Background(), fmt.Sprintf(`DROP TRIGGER IF EXISTS %s ON amistad`, triggerName))
+		_, dropFunctionErr := f.pool.Exec(context.Background(), fmt.Sprintf(`DROP FUNCTION IF EXISTS %s()`, functionName))
+		require.NoError(t, dropTriggerErr)
+		require.NoError(t, dropFunctionErr)
+	})
+	_, err = f.pool.Exec(context.Background(), fmt.Sprintf(`
+		CREATE TRIGGER %s BEFORE UPDATE OF estado ON amistad
+		FOR EACH ROW EXECUTE FUNCTION %s('%s')`, triggerName, functionName, f.userIDs[0]))
+	require.NoError(t, err)
+
+	err = f.databaseService().BlockUser(context.Background(), f.userIDs[0], f.userIDs[1])
+	require.Error(t, err)
+
+	var blockCount int
+	require.NoError(t, f.pool.QueryRow(context.Background(), `
+		SELECT COUNT(*) FROM bloqueo
+		WHERE id_usuario_bloqueador = $1 AND id_usuario_bloqueado = $2`,
+		f.userIDs[0], f.userIDs[1]).Scan(&blockCount))
+	require.Zero(t, blockCount)
+	for id, expected := range map[models.FriendshipID]string{
+		pendingID:  models.FriendshipPending,
+		acceptedID: models.FriendshipAccepted,
+	} {
+		var status string
+		require.NoError(t, f.pool.QueryRow(context.Background(), `
+			SELECT estado FROM amistad WHERE id_amistad = $1`, string(id)).Scan(&status))
+		require.Equal(t, expected, status)
+	}
+}
+
+func TestConcurrentRequestAndBlockLeaveNoPendingRelationship(t *testing.T) {
+	f := setupFixture(t)
+	service := f.databaseService()
+	start := make(chan struct{})
+	sendResult := make(chan error, 1)
+	blockResult := make(chan error, 1)
+	var wait sync.WaitGroup
+	wait.Add(2)
+
+	go func() {
+		defer wait.Done()
+		<-start
+		_, err := service.SendRequest(context.Background(), f.userIDs[0], f.userIDs[1])
+		sendResult <- err
+	}()
+	go func() {
+		defer wait.Done()
+		<-start
+		blockResult <- service.BlockUser(context.Background(), f.userIDs[0], f.userIDs[1])
+	}()
+
+	close(start)
+	wait.Wait()
+	sendErr := <-sendResult
+	require.NoError(t, <-blockResult)
+	if sendErr != nil {
+		require.ErrorIs(t, sendErr, services.ErrBlocked)
+	}
+
+	var pendingCount int
+	require.NoError(t, f.pool.QueryRow(context.Background(), `
+		SELECT COUNT(*) FROM amistad
+		WHERE ((id_usuario_1 = $1 AND id_usuario_2 = $2)
+		    OR (id_usuario_1 = $2 AND id_usuario_2 = $1))
+		  AND estado = 'PENDIENTE'`, f.userIDs[0], f.userIDs[1]).Scan(&pendingCount))
+	require.Zero(t, pendingCount)
 }
 
 func TestInvalidFriendRequestsReturnContractHTTPStatus(t *testing.T) {
@@ -215,6 +408,14 @@ func TestFriendRequestsPersistAndProcessTextIDsThroughHTTP(t *testing.T) {
 	require.NoError(t, f.pool.QueryRow(context.Background(), `
 		SELECT estado FROM amistad WHERE id_amistad = $1`, string(accepted.ID)).Scan(&storedStatus))
 	require.Equal(t, models.FriendshipAccepted, storedStatus)
+	var acceptedAt time.Time
+	require.NoError(t, f.pool.QueryRow(context.Background(), `
+		SELECT fecha_amistad FROM amistad WHERE id_amistad = $1`, string(accepted.ID)).Scan(&acceptedAt))
+	require.False(t, acceptedAt.IsZero())
+	for _, user := range []int{0, 1} {
+		_, err := service.ListFriends(context.Background(), f.userIDs[user], 20, "", nil)
+		require.NoError(t, err)
+	}
 
 	for _, user := range []int{0, 1} {
 		response = doRequest(http.MethodGet, "/friends", f.userIDs[user], "")

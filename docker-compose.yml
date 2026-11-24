@@ -31,6 +31,10 @@ services:
       TEST_SERVICE_URL: http://test-service:8081
       USER_SERVICE_URL: http://user-service:8082
       AUTH_SERVICE_URL: http://auth-service:8083
+      MEDIA_SERVICE_URL: http://media-service:8085
+      SOCIAL_SERVICE_URL: http://social-service:8086
+      RECOMMENDATION_SERVICE_URL: http://recommendation-service:8087
+      NOTIFICATION_SERVICE_URL: http://notification-service:8088
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/
       MINIO_ENDPOINT: http://minio:9000
@@ -41,9 +45,26 @@ services:
       - user-service
       - auth-service
       - media-service
+      - social-service
+      - recommendation-service
+      - notification-service
       - redis
       - rabbitmq
       - minio
+    networks:
+      - meloop-network
+
+  swagger-ui:
+    image: swaggerapi/swagger-ui:latest
+    profiles:
+      - dev
+    container_name: meloop-swagger-ui
+    ports:
+      - "8090:8080"
+    environment:
+      SWAGGER_JSON: /openapi.yaml
+    volumes:
+      - ./services/api-gateway/openapi.yaml:/openapi.yaml:ro
     networks:
       - meloop-network
 
@@ -66,7 +87,11 @@ services:
       - "8082:8082"
     environment:
       MEDIA_SERVICE_URL: http://media-service:8085
-      DATABASE_URL: ${DATABASE_URL:-postgres://postgres:postgres@host.docker.internal:5432/postgres?sslmode=disable}
+      DATABASE_URL: ${DATABASE_URL:?Debes configurar DATABASE_URL en .env}
+      SOCIAL_SERVICE_URL: http://social-service:8086
+      SOCIAL_SERVICE_INTERNAL_TOKEN: ${SOCIAL_SERVICE_INTERNAL_TOKEN:?Debes configurar SOCIAL_SERVICE_INTERNAL_TOKEN en .env}
+    depends_on:
+      - social-service
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
@@ -79,6 +104,36 @@ services:
     container_name: meloop-auth-service
     ports:
       - "8083:8083"
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgres://postgres:postgres@host.docker.internal:5432/postgres?sslmode=disable}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - redis
+    networks:
+      - meloop-network
+
+  social-service:
+    build:
+      context: .
+      dockerfile: services/social-service/Dockerfile
+    container_name: meloop-social-service
+    ports:
+      - "8086:8086"
+    environment:
+      SOCIAL_SERVICE_PORT: 8086
+      DATABASE_URL: ${DATABASE_URL:?Debes configurar DATABASE_URL en .env}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/
+      SOCIAL_SERVICE_INTERNAL_TOKEN: ${SOCIAL_SERVICE_INTERNAL_TOKEN:?Debes configurar SOCIAL_SERVICE_INTERNAL_TOKEN en .env}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_started
     networks:
       - meloop-network
 
@@ -98,6 +153,53 @@ services:
       MINIO_MEDIA_BUCKET: ${MINIO_MEDIA_BUCKET:-meloop-media}
     depends_on:
       - minio
+    networks:
+      - meloop-network
+
+  recommendation-service:
+    build:
+      context: .
+      dockerfile: services/recommendation-service/Dockerfile
+    container_name: meloop-recommendation-service
+    ports:
+      - "8087:8087"
+    environment:
+      RECOMMENDATION_SERVICE_ADDRESS: ":8087"
+      ML_SERVICE_URL: http://ml-service:8001
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/
+      DATABASE_URL: ${DATABASE_URL:-postgres://postgres:postgres@host.docker.internal:5432/postgres?sslmode=disable}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      ml-service:
+        condition: service_started
+      redis:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - meloop-network
+
+  notification-service:
+    build:
+      context: .
+      dockerfile: services/notification-service/Dockerfile
+    container_name: meloop-notification-service
+    ports:
+      - "8088:8088"
+    environment:
+      PORT: 8088
+      AUTH_SERVICE_URL: http://auth-service:8083
+      DATABASE_URL: ${DATABASE_URL:-postgres://postgres:postgres@host.docker.internal:5432/postgres?sslmode=disable}
+      RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      auth-service:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
     networks:
       - meloop-network
 
@@ -123,6 +225,12 @@ services:
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
     networks:
       - meloop-network
 
