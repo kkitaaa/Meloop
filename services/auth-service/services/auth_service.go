@@ -236,6 +236,10 @@ func (s *authService) Login(ctx context.Context, req *models.LoginRequest) (*mod
 	delete(s.failedLogins, emailKey)
 	s.failedMu.Unlock()
 
+	if err := s.repo.UpdateLastLogin(ctx, usuario.IDUsuario); err != nil {
+		return nil, fmt.Errorf("failed to update last login: %w", err)
+	}
+
 	token, err := generateSessionToken()
 
 	if err != nil {

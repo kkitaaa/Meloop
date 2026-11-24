@@ -17,12 +17,13 @@ import (
 )
 
 type mockUserRepository struct {
-	users              map[string]*models.Usuario
-	getByIDFunc        func(ctx context.Context, id string) (*models.Usuario, error)
-	getByUsernameFunc  func(ctx context.Context, username string) (*models.Usuario, error)
-	getByEmailFunc     func(ctx context.Context, email string) (*models.Usuario, error)
-	createFunc         func(ctx context.Context, user *models.Usuario) error
-	updatePasswordFunc func(ctx context.Context, id string, passwordHash string) error
+	users               map[string]*models.Usuario
+	getByIDFunc         func(ctx context.Context, id string) (*models.Usuario, error)
+	getByUsernameFunc   func(ctx context.Context, username string) (*models.Usuario, error)
+	getByEmailFunc      func(ctx context.Context, email string) (*models.Usuario, error)
+	createFunc          func(ctx context.Context, user *models.Usuario) error
+	updatePasswordFunc  func(ctx context.Context, id string, passwordHash string) error
+	updateLastLoginFunc func(ctx context.Context, id string) error
 }
 
 func (m *mockUserRepository) GetByID(ctx context.Context, id string) (*models.Usuario, error) {
@@ -79,6 +80,13 @@ func (m *mockUserRepository) UpdatePassword(ctx context.Context, id string, pass
 			u.ContrasenaHash = passwordHash
 			return nil
 		}
+	}
+	return nil
+}
+
+func (m *mockUserRepository) UpdateLastLogin(ctx context.Context, id string) error {
+	if m.updateLastLoginFunc != nil {
+		return m.updateLastLoginFunc(ctx, id)
 	}
 	return nil
 }
@@ -519,6 +527,7 @@ func TestRegister_DatabaseUniqueViolationRace(t *testing.T) {
 func TestLogin_Success(t *testing.T) {
 	cfg := &config.Config{PasswordMinLength: 8, SessionTTL: 24 * time.Hour}
 	hashedPassword, _ := bcrypt.GenerateFromPassword([]byte("meloop123"), bcrypt.DefaultCost)
+	lastLoginUpdated := false
 	repo := &mockUserRepository{
 		users: map[string]*models.Usuario{
 			"alan": {
@@ -527,6 +536,10 @@ func TestLogin_Success(t *testing.T) {
 				Correo:         "alan@meloop.com",
 				ContrasenaHash: string(hashedPassword),
 			},
+		},
+		updateLastLoginFunc: func(_ context.Context, id string) error {
+			lastLoginUpdated = id == "user-uuid-1"
+			return nil
 		},
 	}
 	sessionRepo := &mockSessionRepository{sessions: make(map[string]*models.SessionUser)}
@@ -550,6 +563,9 @@ func TestLogin_Success(t *testing.T) {
 	}
 	if res.User.ID != "user-uuid-1" || res.User.Username != "alan" || res.User.Email != "alan@meloop.com" {
 		t.Errorf("unexpected user details returned: %+v", res.User)
+	}
+	if !lastLoginUpdated {
+		t.Error("expected successful login to update fecha_ultimo_login")
 	}
 
 	// Verify it was saved in session repository
