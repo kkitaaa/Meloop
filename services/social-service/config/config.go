@@ -3,10 +3,12 @@ package config
 import "os"
 
 type Config struct {
-	DatabaseURL    string
-	RabbitMQURL    string
-	AuthServiceURL string
-	Port           string
+	DatabaseURL          string
+	RabbitMQURL          string
+	RedisURL             string
+	InternalServiceToken string
+	Port                 string
+	AuthServiceURL       string
 }
 
 func Load() *Config {
@@ -15,15 +17,17 @@ func Load() *Config {
 		databaseURL = "postgres://postgres:postgres@localhost:5432/meloop?sslmode=disable"
 	}
 
+	redisURL := os.Getenv("REDIS_URL")
+	if redisURL == "" {
+		redisURL = "redis://localhost:6379/0"
+	}
+
 	rabbitMQURL := os.Getenv("RABBITMQ_URL")
 	if rabbitMQURL == "" {
 		rabbitMQURL = "amqp://guest:guest@localhost:5672/"
 	}
 
-	authServiceURL := os.Getenv("AUTH_SERVICE_URL")
-	if authServiceURL == "" {
-		authServiceURL = "http://localhost:8083"
-	}
+	internalServiceToken := os.Getenv("SOCIAL_SERVICE_INTERNAL_TOKEN")
 
 	port := os.Getenv("SOCIAL_SERVICE_PORT")
 	if port == "" {
@@ -31,9 +35,10 @@ func Load() *Config {
 	}
 
 	return &Config{
-		DatabaseURL:    databaseURL,
-		RabbitMQURL:    rabbitMQURL,
+		DatabaseURL:          databaseURL,
+		RedisURL:             redisURL,
+		RabbitMQURL:          rabbitMQURL,
+		InternalServiceToken: internalServiceToken,
+		Port:                 port,
 		AuthServiceURL: authServiceURL,
-		Port:           port,
-	}
 }

@@ -3,8 +3,10 @@ package config
 import "os"
 
 type Config struct {
-	DatabaseURL string
-	RabbitMQURL string
+	DatabaseURL    string
+	RabbitMQURL    string
+	AuthServiceURL string
+	Port           string
 }
 
 func Load() Config {
@@ -18,5 +20,20 @@ func Load() Config {
 		rabbitMQURL = "amqp://guest:guest@localhost:5672/"
 	}
 
-	return Config{DatabaseURL: databaseURL, RabbitMQURL: rabbitMQURL}
+	authServiceURL := os.Getenv("AUTH_SERVICE_URL")
+	if authServiceURL == "" {
+		authServiceURL = "http://localhost:8083"
+	}
+
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8088"
+	}
+
+	return Config{
+		DatabaseURL:    databaseURL,
+		RabbitMQURL:    rabbitMQURL,
+		AuthServiceURL: authServiceURL,
+		Port:           port,
+	}
 }

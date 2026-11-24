@@ -57,6 +57,8 @@ type mockFriendshipService struct {
 	getFriendProfileFunc       func(ctx context.Context, userID, friendID string) (*models.FriendProfile, error)
 	getMutualFriendsFunc       func(ctx context.Context, userID, targetID string, limit int, cursor string) (*models.MutualFriendsResponse, error)
 	blockUserFunc              func(ctx context.Context, blockerID, blockedID string) error
+	unblockUserFunc            func(ctx context.Context, blockerID, blockedID string) error
+	getFriendsCountFunc        func(ctx context.Context, userID string) (int, error)
 	validateInteractionFunc    func(ctx context.Context, user1ID, user2ID string) error
 	getFriendSuggestionsFunc   func(ctx context.Context, userID string) ([]models.FriendSuggestion, error)
 	excludeBlockedFunc         func(ctx context.Context, userID string, candidateIDs []string) ([]string, error)
@@ -179,11 +181,83 @@ func (m *mockFriendshipService) BlockUser(ctx context.Context, blockerID, blocke
 	return nil
 }
 
+func (m *mockFriendshipService) UnblockUser(ctx context.Context, blockerID, blockedID string) error {
+	if m.unblockUserFunc != nil {
+		return m.unblockUserFunc(ctx, blockerID, blockedID)
+	}
+	return nil
+}
+
+func (m *mockFriendshipService) GetFriendsCount(ctx context.Context, userID string) (int, error) {
+	if m.getFriendsCountFunc != nil {
+		return m.getFriendsCountFunc(ctx, userID)
+	}
+	return 0, nil
+}
+
 func (m *mockFriendshipService) ValidateInteraction(ctx context.Context, user1ID, user2ID string) error {
 	if m.validateInteractionFunc != nil {
 		return m.validateInteractionFunc(ctx, user1ID, user2ID)
 	}
 	return nil
+}
+
+func TestInternalFriendsCount_RequiresServiceToken(t *testing.T) {
+	router := gin.New()
+	ctrl := controllers.NewFriendshipController(&mockFriendshipService{
+		getFriendsCountFunc: func(_ context.Context, userID string) (int, error) {
+			if userID != "usr-private" {
+				t.Fatalf("user ID = %q, want usr-private", userID)
+			}
+			return 5, nil
+		},
+	})
+	routes.SetupInternalCountRoutes(router, ctrl, "shared-secret")
+
+	for _, test := range []struct {
+		name       string
+		token      string
+		wantStatus int
+	}{
+		{name: "missing token", wantStatus: http.StatusUnauthorized},
+		{name: "invalid token", token: "wrong", wantStatus: http.StatusUnauthorized},
+		{name: "valid token", token: "shared-secret", wantStatus: http.StatusOK},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodGet, "/internal/users/usr-private/friends/count", nil)
+			if test.token != "" {
+				request.Header.Set("Authorization", "Bearer "+test.token)
+			}
+			recorder := httptest.NewRecorder()
+			router.ServeHTTP(recorder, request)
+			if recorder.Code != test.wantStatus {
+				t.Fatalf("status = %d, want %d: %s", recorder.Code, test.wantStatus, recorder.Body.String())
+			}
+			if test.wantStatus == http.StatusOK && !strings.Contains(recorder.Body.String(), `"count":5`) {
+				t.Fatalf("response does not contain expected count: %s", recorder.Body.String())
+			}
+		})
+	}
+}
+
+func TestUnblockUser_HTTP_UsesAuthenticatedUser(t *testing.T) {
+	var blockerID, blockedID string
+	router := setupTestRouter(&mockFriendshipService{
+		unblockUserFunc: func(_ context.Context, blocker, blocked string) error {
+			blockerID, blockedID = blocker, blocked
+			return nil
+		},
+	})
+	request := httptest.NewRequest(http.MethodDelete, "/friends/blocks/usr-target", nil)
+	setAuthenticatedUser(request, "usr-blocker")
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+	if blockerID != "usr-blocker" || blockedID != "usr-target" {
+		t.Fatalf("unblock called with (%q, %q)", blockerID, blockedID)
+	}
 }
 
 func setupTestRouter(svc services.FriendshipService) *gin.Engine {
@@ -346,7 +420,7 @@ func TestListFriends_HTTP_Exitoso(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
-		t.Fatalf("se esperaba código 200 OK, se obtuvo %d", w.Code)
+		t.Fatalf("se esperaba cÃ³digo 200 OK, se obtuvo %d", w.Code)
 	}
 
 	var resp map[string]interface{}
@@ -611,10 +685,10 @@ func TestBlockUser_HTTP_Autobloqueo(t *testing.T) {
 	}
 }
 
-func TestBlockUser_HTTP_YaBloqueado(t *testing.T) {
+func TestBlockUser_HTTP_Idempotente(t *testing.T) {
 	mockSvc := &mockFriendshipService{
 		blockUserFunc: func(ctx context.Context, blockerID, blockedID string) error {
-			return services.ErrAlreadyBlocked
+			return nil
 		},
 	}
 	router := setupTestRouter(mockSvc)
@@ -627,8 +701,8 @@ func TestBlockUser_HTTP_YaBloqueado(t *testing.T) {
 
 	router.ServeHTTP(w, req)
 
-	if w.Code != http.StatusConflict {
-		t.Fatalf("se esperaba 409 Conflict, se obtuvo %d", w.Code)
+	if w.Code != http.StatusOK {
+		t.Fatalf("se esperaba 200 OK, se obtuvo %d", w.Code)
 	}
 }
 
@@ -756,7 +830,7 @@ func TestGetFriendSuggestions_HTTP_NoAutenticado(t *testing.T) {
 	}
 	errBody := resp["error"].(map[string]interface{})
 	if errBody["code"] != "UNAUTHORIZED" {
-		t.Errorf("se esperaba código UNAUTHORIZED, se obtuvo %v", errBody["code"])
+		t.Errorf("se esperaba cÃ³digo UNAUTHORIZED, se obtuvo %v", errBody["code"])
 	}
 }
 
@@ -841,7 +915,7 @@ func TestGetFriendSuggestions_HTTP_SinPreferenciasMusicales(t *testing.T) {
 	}
 	errBody := resp["error"].(map[string]interface{})
 	if errBody["code"] != "VALIDATION_ERROR" {
-		t.Errorf("se esperaba código VALIDATION_ERROR, se obtuvo %v", errBody["code"])
+		t.Errorf("se esperaba cÃ³digo VALIDATION_ERROR, se obtuvo %v", errBody["code"])
 	}
 }
 
@@ -879,7 +953,7 @@ func TestGetFriendSuggestions_HTTP_ListaVaciaRetorna200(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
-		t.Fatalf("se esperaba 200 OK con lista vacía, se obtuvo %d", w.Code)
+		t.Fatalf("se esperaba 200 OK con lista vacÃ­a, se obtuvo %d", w.Code)
 	}
 
 	var resp map[string]interface{}
@@ -889,7 +963,7 @@ func TestGetFriendSuggestions_HTTP_ListaVaciaRetorna200(t *testing.T) {
 	}
 	data, ok := resp["data"].([]interface{})
 	if !ok || len(data) != 0 {
-		t.Fatalf("se esperaba lista vacía, se obtuvo %v", resp["data"])
+		t.Fatalf("se esperaba lista vacÃ­a, se obtuvo %v", resp["data"])
 	}
 }
 
@@ -918,10 +992,10 @@ func TestGetFriendSuggestions_HTTP_ErrorInterno_NoFugaDetalles(t *testing.T) {
 	}
 	errBody := resp["error"].(map[string]interface{})
 	if errBody["code"] != "INTERNAL_ERROR" {
-		t.Errorf("se esperaba código INTERNAL_ERROR, se obtuvo %v", errBody["code"])
+		t.Errorf("se esperaba cÃ³digo INTERNAL_ERROR, se obtuvo %v", errBody["code"])
 	}
 	if errBody["message"] != "Ha ocurrido un error interno" {
-		t.Errorf("se esperaba mensaje genérico, se obtuvo %v", errBody["message"])
+		t.Errorf("se esperaba mensaje genÃ©rico, se obtuvo %v", errBody["message"])
 	}
 }
 
@@ -1050,7 +1124,7 @@ func TestFriendshipController_ExcludeBlocked(t *testing.T) {
 		}
 	})
 
-	// 4. Lista de candidatos vacía
+	// 4. Lista de candidatos vacÃ­a
 	t.Run("Empty candidate list returns 200 with empty slices", func(t *testing.T) {
 		body := `{"user_id": "usr-ref", "candidate_ids": []}`
 		req, _ := http.NewRequest(http.MethodPost, "/internal/blocks/exclude", bytes.NewBufferString(body))
@@ -1063,7 +1137,7 @@ func TestFriendshipController_ExcludeBlocked(t *testing.T) {
 		}
 	})
 
-	// 5. Payload inválido
+	// 5. Payload invÃ¡lido
 	t.Run("Invalid JSON payload returns 400", func(t *testing.T) {
 		body := `invalid-json`
 		req, _ := http.NewRequest(http.MethodPost, "/internal/blocks/exclude", bytes.NewBufferString(body))

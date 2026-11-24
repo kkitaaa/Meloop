@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/meloop/social-service/models"
 	"github.com/meloop/social-service/client"
 	"github.com/meloop/social-service/repositories"
 	"github.com/meloop/social-service/services"
@@ -101,9 +102,13 @@ func setupFixture(t *testing.T) *fixture {
 	return testFixture
 }
 
-func (f *fixture) databaseService() services.FriendshipService {
+func (f *fixture) databaseService(publishers ...services.EventPublisher) services.FriendshipService {
 	repository := repositories.NewFriendshipRepository(f.pool)
-	return services.NewFriendshipService(repository, nil)
+	var publisher services.EventPublisher
+	if len(publishers) > 0 {
+		publisher = publishers[0]
+	}
+	return services.NewFriendshipService(repository, publisher)
 }
 
 func (f *fixture) createUser(t *testing.T, username string) string {
@@ -122,9 +127,10 @@ func (f *fixture) createUser(t *testing.T, username string) string {
 	return userID
 }
 
-func (f *fixture) createFriendship(t *testing.T, userA, userB int, status string) string {
+func (f *fixture) createFriendship(t *testing.T, userA, userB int, status string) models.FriendshipID {
 	t.Helper()
-	return f.createFriendshipIDs(t, f.userIDs[userA], f.userIDs[userB], status)
+	id := f.createFriendshipIDs(t, f.userIDs[userA], f.userIDs[userB], status)
+	return models.FriendshipID(id)
 }
 
 func (f *fixture) createFriendshipIDs(t *testing.T, userA, userB, status string) string {
