@@ -2,12 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/foundation.dart';
 
+import '../core/navigation/desktop_navigation_shell.dart';
 import '../core/navigation/responsive_navigation_shell.dart';
 import '../features/moderation/data/moderation_models.dart';
 import '../features/notifications/presentation/notification_scope.dart';
 import '../services/api_client.dart';
 import '../services/auth_session.dart';
-import 'feed_screen.dart';
 import 'kubernetes_connectivity_screen.dart';
 
 class AuthScreen extends StatefulWidget {
@@ -129,7 +129,7 @@ class _AuthScreenState extends State<AuthScreen> {
     const userRole = ModerationRole.user;
     final Widget destination = defaultTargetPlatform == TargetPlatform.android
         ? const ResponsiveNavigationShell(userRole: userRole)
-        : FeedScreen(userRole: userRole);
+        : const DesktopNavigationShell(userRole: userRole);
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(builder: (_) => destination),

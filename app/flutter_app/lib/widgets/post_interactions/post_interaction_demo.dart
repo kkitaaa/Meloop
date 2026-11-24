@@ -200,10 +200,14 @@ class _DemoLikeButtonState extends State<DemoLikeButton>
             ),
           ),
         ),
-        const SizedBox(width: 4),
+        const SizedBox(width: 6),
         Text(
           '$_likes Likes',
-          style: const TextStyle(color: _teal, fontSize: 11),
+          style: const TextStyle(
+            color: _teal,
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+          ),
         ),
       ],
     );

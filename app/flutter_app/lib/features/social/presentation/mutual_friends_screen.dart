@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import '../../../core/navigation/desktop_navigation_shell.dart';
 import 'package:flutter_app/features/profile/presentation/profile_screen.dart';
 import 'package:flutter_app/models/mutual_friends.dart';
 import 'package:flutter_app/services/api_client.dart';
@@ -146,18 +148,37 @@ class _MutualFriendsScreenState extends State<MutualFriendsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final insideDesktopShell = DesktopShellScope.maybeOf(context) != null;
     return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        backgroundColor: _tealAccent,
-        title: const Text(
-          'Amigos en común',
-          style: TextStyle(color: Colors.white, fontSize: 16),
-        ),
-        iconTheme: const IconThemeData(color: Colors.white),
-        elevation: 0,
-      ),
-      body: _buildBody(),
+      backgroundColor: insideDesktopShell ? Colors.transparent : Colors.white,
+      appBar: insideDesktopShell
+          ? null
+          : AppBar(
+              backgroundColor: _tealAccent,
+              title: const Text(
+                'Amigos en común',
+                style: TextStyle(color: Colors.white, fontSize: 16),
+              ),
+              iconTheme: const IconThemeData(color: Colors.white),
+              elevation: 0,
+            ),
+      body: insideDesktopShell
+          ? Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 820),
+                child: Container(
+                  margin: const EdgeInsets.symmetric(vertical: 20),
+                  color: Colors.white,
+                  child: Column(
+                    children: [
+                      const DesktopSubPageBar(title: 'Amigos en común'),
+                      Expanded(child: _buildBody()),
+                    ],
+                  ),
+                ),
+              ),
+            )
+          : _buildBody(),
     );
   }
 

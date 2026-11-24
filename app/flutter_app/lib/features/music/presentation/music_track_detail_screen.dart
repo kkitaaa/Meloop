@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import '../../../core/navigation/desktop_navigation_shell.dart';
 import 'package:flutter_app/features/music/presentation/music_track_tile.dart';
 import 'package:flutter_app/models/music_detail.dart';
 import 'package:flutter_app/models/music_track.dart';
@@ -244,9 +246,12 @@ class _MusicDetailScreenState extends State<MusicDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final insideDesktopShell = DesktopShellScope.maybeOf(context) != null;
     return Scaffold(
-      backgroundColor: const Color(0xFF0D5C5E),
-      appBar: _buildBrandedAppBar(),
+      backgroundColor: insideDesktopShell
+          ? Colors.transparent
+          : const Color(0xFF0D5C5E),
+      appBar: insideDesktopShell ? null : _buildBrandedAppBar(),
       body: Center(
         child: Padding(
           padding: const EdgeInsets.all(20),
@@ -254,11 +259,18 @@ class _MusicDetailScreenState extends State<MusicDetailScreen> {
             constraints: const BoxConstraints(maxWidth: 920),
             child: Container(
               color: const Color(0xFFF5F8F7),
-              child: _isLoading
-                  ? _buildSkeleton()
-                  : _errorMessage != null
-                  ? _buildError()
-                  : _buildContent(_detail!),
+              child: Column(
+                children: [
+                  if (insideDesktopShell) DesktopSubPageBar(title: _title),
+                  Expanded(
+                    child: _isLoading
+                        ? _buildSkeleton()
+                        : _errorMessage != null
+                        ? _buildError()
+                        : _buildContent(_detail!),
+                  ),
+                ],
+              ),
             ),
           ),
         ),

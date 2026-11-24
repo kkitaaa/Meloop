@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'core/navigation/desktop_navigation_shell.dart';
 import 'features/notifications/presentation/notification_feedback_overlay.dart';
 import 'features/notifications/presentation/notification_scope.dart';
 import 'features/notifications/state/notification_controller.dart';
@@ -8,7 +9,9 @@ import 'features/gamification/presentation/level_up_feedback_overlay.dart';
 import 'features/profile/presentation/profile_screen.dart';
 import 'services/auth_session.dart';
 import 'screens/auth_screen.dart';
+import 'theme/meloop_typography.dart';
 import 'widgets/app_background.dart';
+import 'widgets/desktop_viewport_scaler.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -53,6 +56,7 @@ class _MeloopAppState extends State<MeloopApp> {
       theme: ThemeData(
         primaryColor: const Color(0xFF11B49F),
         scaffoldBackgroundColor: Colors.transparent,
+        textTheme: MeloopTypography.lexendTextTheme(),
         pageTransitionsTheme: const PageTransitionsTheme(
           builders: {
             TargetPlatform.android: _MeloopPageTransitionsBuilder(),
@@ -64,26 +68,33 @@ class _MeloopAppState extends State<MeloopApp> {
         ),
       ),
       home: const AuthScreen(),
-      builder: (context, child) => NotificationScope(
-        controller: _notificationController,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            const AppBackground(),
-            LevelUpFeedbackOverlay(
-              onEquip: _openInventory,
-              child: NotificationFeedbackOverlay(
-                controller: _notificationController,
-                child: child ?? const SizedBox.shrink(),
+      builder: (context, child) => DesktopViewportScaler(
+        child: NotificationScope(
+          controller: _notificationController,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              const AppBackground(),
+              LevelUpFeedbackOverlay(
+                onEquip: _openInventory,
+                child: NotificationFeedbackOverlay(
+                  controller: _notificationController,
+                  child: child ?? const SizedBox.shrink(),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 
   void _openInventory() {
+    final desktopShell = DesktopNavigationShell.activeController;
+    if (desktopShell != null) {
+      desktopShell.openProfile(openInventory: true);
+      return;
+    }
     final navigator = _navigatorKey.currentState;
     if (navigator == null) {
       throw StateError('No hay un navegador disponible para abrir el perfil.');

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/navigation/desktop_navigation_shell.dart';
+
 import 'dart:async';
 
 import 'package:flutter_app/widgets/states/loading_state.dart';
@@ -183,27 +185,30 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
   Widget build(BuildContext context) {
     final double screenWidth = MediaQuery.of(context).size.width;
     final bool isDesktop = screenWidth > 900;
+    final bool insideDesktopShell = DesktopShellScope.maybeOf(context) != null;
 
     return Scaffold(
-      backgroundColor: _bgColor, // Fondo verde característico de Meloop
-      appBar: AppBar(
-        backgroundColor: _tealAccent,
-        title: const Text(
-          "Usuarios bloqueados",
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        iconTheme: const IconThemeData(color: Colors.white),
-        elevation: 0,
-        centerTitle: true,
-      ),
+      backgroundColor: insideDesktopShell ? Colors.transparent : _bgColor,
+      appBar: insideDesktopShell
+          ? null
+          : AppBar(
+              backgroundColor: _tealAccent,
+              title: const Text(
+                "Usuarios bloqueados",
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              iconTheme: const IconThemeData(color: Colors.white),
+              elevation: 0,
+              centerTitle: true,
+            ),
       body: Center(
         child: ConstrainedBox(
           constraints: BoxConstraints(
-            maxWidth: isDesktop ? 650 : double.infinity,
+            maxWidth: isDesktop ? 760 : double.infinity,
           ),
           child: Container(
             margin: EdgeInsets.all(isDesktop ? 24.0 : 0),
@@ -223,6 +228,8 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
               borderRadius: BorderRadius.circular(isDesktop ? 16 : 0),
               child: Column(
                 children: [
+                  if (insideDesktopShell)
+                    const DesktopSubPageBar(title: 'Usuarios bloqueados'),
                   Padding(
                     padding: const EdgeInsets.all(24.0),
                     child: Row(

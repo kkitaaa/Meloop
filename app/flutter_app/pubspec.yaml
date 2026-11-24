@@ -42,6 +42,7 @@ dependencies:
   dio: ^5.11.1
   url_launcher: ^6.3.2
   flutter_secure_storage: ^11.2.0
+  google_fonts: ^9.0.0
 
 dev_dependencies:
   flutter_test:
@@ -67,6 +68,12 @@ flutter:
   uses-material-design: true
   assets:
     - assets/imagenes/
+    - assets/textures/
+  fonts:
+    - family: RobotoCondensed
+      fonts:
+        - asset: assets/fonts/RobotoCondensed-Regular.ttf
+          weight: 400
 
   # To add assets to your application, add an assets section, like this:
   # assets:

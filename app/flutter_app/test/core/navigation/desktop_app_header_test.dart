@@ -1,16 +1,22 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_app/core/navigation/desktop_navigation_shell.dart';
 import 'package:flutter_app/features/notifications/presentation/notification_scope.dart';
 import 'package:flutter_app/features/notifications/state/notification_controller.dart';
 import 'package:flutter_app/features/notifications/state/notification_repository.dart';
 import 'package:flutter_app/features/search/presentation/global_search_route.dart';
+import 'package:flutter_app/services/api_client.dart';
 import 'package:flutter_app/widgets/desktop_app_header.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 
 void main() {
   testWidgets(
-    'desktop header uses the three navigation pills and bottom radius',
+    'desktop header renders navigation pills, bottom radius, and pfp dropdown menu',
     (tester) async {
-      tester.view.physicalSize = const Size(1280, 900);
+      tester.view.physicalSize = const Size(1920, 1080);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
@@ -21,6 +27,7 @@ void main() {
       )..start();
       addTearDown(controller.dispose);
       var selectedArtists = false;
+      var openedProfile = false;
 
       await tester.pumpWidget(
         NotificationScope(
@@ -32,6 +39,7 @@ void main() {
                 onHomeTap: () {},
                 onFriendsTap: () {},
                 onArtistsTap: () => selectedArtists = true,
+                onProfileTap: () => openedProfile = true,
                 onSearchTap: () {},
               ),
             ),
@@ -42,41 +50,50 @@ void main() {
       expect(find.text('Inicio'), findsOneWidget);
       expect(find.text('Amigos'), findsOneWidget);
       expect(find.text('Artistas y canciones'), findsOneWidget);
-      expect(find.text('Perfil'), findsNothing);
-      expect(find.byTooltip('Ajustes'), findsOneWidget);
+      expect(find.byTooltip('Ajustes'), findsNothing);
+      expect(find.byTooltip('Búsqueda global'), findsOneWidget);
+      expect(find.byTooltip('Perfil y opciones'), findsOneWidget);
 
-      final selectedButton = find.byWidgetPredicate(
-        (widget) =>
-            widget is Container &&
-            widget.decoration is BoxDecoration &&
-            (widget.decoration! as BoxDecoration).gradient != null &&
-            (widget.decoration! as BoxDecoration).borderRadius ==
-                BorderRadius.circular(24),
-      );
-      expect(tester.getSize(selectedButton).height, 42);
+      // Todos los botones de la navbar tienen el mismo ancho y están centrados
+      final homeWidth = tester
+          .getSize(
+            find.ancestor(
+              of: find.text('Inicio'),
+              matching: find.byType(AnimatedContainer),
+            ),
+          )
+          .width;
+      final friendsWidth = tester
+          .getSize(
+            find.ancestor(
+              of: find.text('Amigos'),
+              matching: find.byType(AnimatedContainer),
+            ),
+          )
+          .width;
+      final artistsWidth = tester
+          .getSize(
+            find.ancestor(
+              of: find.text('Artistas y canciones'),
+              matching: find.byType(AnimatedContainer),
+            ),
+          )
+          .width;
+      expect(homeWidth, friendsWidth);
+      expect(friendsWidth, artistsWidth);
 
-      final navigationPill = find.byWidgetPredicate(
-        (widget) =>
-            widget is Container &&
-            widget.decoration is BoxDecoration &&
-            (widget.decoration! as BoxDecoration).color ==
-                const Color(0xFF16877F),
+      final pillCenter = tester.getCenter(
+        find.byKey(const ValueKey('nav-bar-pill-row')),
+      );
+      expect(pillCenter.dx, closeTo(960, 1));
+      expect(pillCenter.dy, closeTo(42, 0.5));
+      expect(
+        tester.getCenter(find.byTooltip('Búsqueda global')).dy,
+        closeTo(42, 0.5),
       );
       expect(
-        tester.getSize(navigationPill).width,
-        tester.getSize(selectedButton).width * 3 + 10,
-      );
-      final searchButton = find.byTooltip('Búsqueda global');
-      expect(tester.getSize(searchButton), const Size(48, 48));
-      expect(tester.getCenter(navigationPill).dx, 640);
-      expect(
-        tester.getTopLeft(searchButton).dx,
-        greaterThan(tester.getTopRight(navigationPill).dx),
-      );
-      expect(
-        tester.getTopLeft(searchButton).dx -
-            tester.getTopRight(navigationPill).dx,
-        12,
+        tester.getCenter(find.byTooltip('Perfil y opciones')).dy,
+        closeTo(42, 0.5),
       );
 
       final header = tester.widget<Container>(
@@ -95,37 +112,32 @@ void main() {
             )
             .first,
       );
-      expect(header, isNotNull);
-      final headerDecoration = header.decoration! as BoxDecoration;
-      final headerGradient = headerDecoration.gradient! as LinearGradient;
+      final headerGradient =
+          (header.decoration! as BoxDecoration).gradient! as LinearGradient;
       expect(headerGradient.colors, const [
         Color(0xFF59E5C9),
         Color(0xFF00AF92),
       ]);
-      expect(
-        tester
-            .widget<Image>(
-              find.byWidgetPredicate(
-                (widget) =>
-                    widget is Image &&
-                    widget.image is AssetImage &&
-                    (widget.image as AssetImage).assetName ==
-                        'assets/imagenes/meloop.png',
-              ),
-            )
-            .height,
-        38,
-      );
 
       await tester.tap(find.text('Artistas y canciones'));
       expect(selectedArtists, isTrue);
+
+      await tester.tap(find.byTooltip('Perfil y opciones'));
+      await tester.pumpAndSettle();
+      expect(find.text('Mirar Perfil'), findsOneWidget);
+      expect(find.text('Preferencias musicales'), findsOneWidget);
+      expect(find.text('Usuarios bloqueados'), findsOneWidget);
+
+      await tester.tap(find.text('Mirar Perfil'));
+      await tester.pumpAndSettle();
+      expect(openedProfile, isTrue);
     },
   );
 
   testWidgets(
-    'desktop section navigation returns to home without stale routes',
+    'DesktopNavigationShell keeps a single global navbar across sections and profile',
     (tester) async {
-      tester.view.physicalSize = const Size(1280, 900);
+      tester.view.physicalSize = const Size(1920, 1080);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
@@ -136,30 +148,56 @@ void main() {
       )..start();
       addTearDown(controller.dispose);
 
+      final apiClient = ApiClient(
+        httpClient: MockClient(
+          (_) async => http.Response(
+            jsonEncode({
+              'success': true,
+              'data': {
+                'items': [],
+                'page': 1,
+                'pageSize': 5,
+                'hasMore': false,
+              },
+              'error': null,
+            }),
+            200,
+            headers: {'content-type': 'application/json; charset=utf-8'},
+          ),
+        ),
+      );
+      addTearDown(apiClient.close);
+
       await tester.pumpWidget(
         NotificationScope(
           controller: controller,
-          child: const MaterialApp(home: _NavigationTestPage('Inicio')),
+          child: MaterialApp(
+            home: DesktopNavigationShell(apiClient: apiClient),
+          ),
         ),
       );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(DesktopAppHeader), findsOneWidget);
+      expect(find.text('Chat'), findsNothing);
+      final initialTopLeft = tester.getTopLeft(find.byType(DesktopAppHeader));
+
+      await tester.tap(find.text('Amigos').first);
+      await tester.pumpAndSettle();
+      expect(find.byType(DesktopAppHeader), findsOneWidget);
+      expect(tester.getTopLeft(find.byType(DesktopAppHeader)), initialTopLeft);
 
       await tester.tap(find.text('Artistas y canciones'));
       await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('section-Artistas')), findsOneWidget);
-      final artistsRoute = ModalRoute.of(
-        tester.element(find.byKey(const ValueKey('section-Artistas'))),
-      )!;
-      expect(artistsRoute.transitionDuration, Duration.zero);
-      expect(artistsRoute.reverseTransitionDuration, Duration.zero);
+      expect(find.byType(DesktopAppHeader), findsOneWidget);
+      expect(tester.getTopLeft(find.byType(DesktopAppHeader)), initialTopLeft);
 
-      await tester.tap(find.text('Amigos'));
+      await tester.tap(find.byTooltip('Perfil y opciones'));
       await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('section-Amigos')), findsOneWidget);
-
-      await tester.tap(find.text('Inicio'));
+      await tester.tap(find.text('Mirar Perfil'));
       await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('section-Inicio')), findsOneWidget);
-      expect(find.byKey(const ValueKey('section-Artistas')), findsNothing);
+      expect(find.byType(DesktopAppHeader), findsOneWidget);
+      expect(tester.getTopLeft(find.byType(DesktopAppHeader)), initialTopLeft);
     },
   );
 

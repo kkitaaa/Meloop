@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+
+import '../../../core/navigation/desktop_navigation_shell.dart';
 import 'package:flutter_app/features/music/presentation/music_search_screen.dart';
 import 'package:flutter_app/features/music/presentation/music_track_detail_screen.dart';
 import 'package:flutter_app/models/music_preferences.dart';
@@ -271,9 +273,50 @@ class _MusicPreferencesScreenState extends State<MusicPreferencesScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final insideDesktopShell = DesktopShellScope.maybeOf(context) != null;
+    final content = _isLoading && _preferences == null
+        ? const Center(
+            child: CircularProgressIndicator(color: Color(0xFF1ABC9C)),
+          )
+        : _errorMessage != null && _preferences == null
+        ? _buildLoadError()
+        : RefreshIndicator(
+            onRefresh: _loadPreferences,
+            color: const Color(0xFF0D7771),
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+              children: [
+                _buildIntro(),
+                if (_errorMessage != null) ...[
+                  const SizedBox(height: 12),
+                  _buildRefreshError(),
+                ],
+                const SizedBox(height: 16),
+                _buildSection(
+                  title: 'Canciones',
+                  type: 'track',
+                  icon: Icons.music_note_rounded,
+                ),
+                _buildSection(
+                  title: 'Artistas',
+                  type: 'artist',
+                  icon: Icons.people_alt_outlined,
+                ),
+                _buildSection(
+                  title: 'Géneros',
+                  type: 'genre',
+                  icon: Icons.category_outlined,
+                ),
+              ],
+            ),
+          );
+
     return Scaffold(
-      backgroundColor: const Color(0xFF0D5C5E),
-      appBar: _buildBrandedAppBar(),
+      backgroundColor: insideDesktopShell
+          ? Colors.transparent
+          : const Color(0xFF0D5C5E),
+      appBar: insideDesktopShell ? null : _buildBrandedAppBar(),
       body: Center(
         child: Padding(
           padding: const EdgeInsets.all(20),
@@ -281,45 +324,13 @@ class _MusicPreferencesScreenState extends State<MusicPreferencesScreen> {
             constraints: const BoxConstraints(maxWidth: 920),
             child: Container(
               color: const Color(0xFFF5F8F7),
-              child: _isLoading && _preferences == null
-                  ? const Center(
-                      child: CircularProgressIndicator(
-                        color: Color(0xFF1ABC9C),
-                      ),
-                    )
-                  : _errorMessage != null && _preferences == null
-                  ? _buildLoadError()
-                  : RefreshIndicator(
-                      onRefresh: _loadPreferences,
-                      color: const Color(0xFF0D7771),
-                      child: ListView(
-                        physics: const AlwaysScrollableScrollPhysics(),
-                        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-                        children: [
-                          _buildIntro(),
-                          if (_errorMessage != null) ...[
-                            const SizedBox(height: 12),
-                            _buildRefreshError(),
-                          ],
-                          const SizedBox(height: 16),
-                          _buildSection(
-                            title: 'Canciones',
-                            type: 'track',
-                            icon: Icons.music_note_rounded,
-                          ),
-                          _buildSection(
-                            title: 'Artistas',
-                            type: 'artist',
-                            icon: Icons.people_alt_outlined,
-                          ),
-                          _buildSection(
-                            title: 'Géneros',
-                            type: 'genre',
-                            icon: Icons.category_outlined,
-                          ),
-                        ],
-                      ),
-                    ),
+              child: Column(
+                children: [
+                  if (insideDesktopShell)
+                    const DesktopSubPageBar(title: 'Preferencias musicales'),
+                  Expanded(child: content),
+                ],
+              ),
             ),
           ),
         ),

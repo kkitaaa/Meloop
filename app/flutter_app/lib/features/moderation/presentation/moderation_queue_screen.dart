@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/navigation/desktop_navigation_shell.dart';
+
 import '../data/moderation_models.dart';
 import '../data/moderation_repository.dart';
 
@@ -162,12 +164,25 @@ class _ModerationQueueScreenState extends State<ModerationQueueScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final insideDesktopShell = DesktopShellScope.maybeOf(context) != null;
     if (!_canModerate) {
       return Scaffold(
         backgroundColor: Colors.transparent,
-        appBar: AppBar(title: const Text('Moderación')),
-        body: const Center(
-          child: Text('Esta sección está disponible solo para moderadores.'),
+        appBar: insideDesktopShell
+            ? null
+            : AppBar(title: const Text('Moderación')),
+        body: Column(
+          children: [
+            if (insideDesktopShell)
+              const DesktopSubPageBar(title: 'Moderación'),
+            const Expanded(
+              child: Center(
+                child: Text(
+                  'Esta sección está disponible solo para moderadores.',
+                ),
+              ),
+            ),
+          ],
         ),
       );
     }
@@ -175,13 +190,17 @@ class _ModerationQueueScreenState extends State<ModerationQueueScreen> {
     final isDesktop = MediaQuery.sizeOf(context).width > 900;
     return Scaffold(
       backgroundColor: Colors.transparent,
-      appBar: AppBar(
-        title: const Text('Cola de moderación'),
-        backgroundColor: const Color(0xFF1ABC9C),
-        foregroundColor: Colors.white,
-      ),
+      appBar: insideDesktopShell
+          ? null
+          : AppBar(
+              title: const Text('Cola de moderación'),
+              backgroundColor: const Color(0xFF1ABC9C),
+              foregroundColor: Colors.white,
+            ),
       body: Column(
         children: [
+          if (insideDesktopShell)
+            const DesktopSubPageBar(title: 'Cola de moderación'),
           _buildFilters(),
           Expanded(
             child: isDesktop

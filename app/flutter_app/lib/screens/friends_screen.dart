@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 
 import '../core/navigation/artists_and_songs_screen.dart';
+import '../core/navigation/desktop_navigation_shell.dart';
 import '../features/profile/presentation/profile_screen.dart';
 import '../features/search/presentation/global_search_route.dart';
 import '../widgets/desktop_app_header.dart';
@@ -100,12 +101,13 @@ class _FriendsScreenState extends State<FriendsScreen> {
   Widget build(BuildContext context) {
     final double screenWidth = MediaQuery.of(context).size.width;
     final bool isDesktop = screenWidth > 900;
+    final bool insideDesktopShell = DesktopShellScope.maybeOf(context) != null;
 
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: Column(
         children: [
-          _buildTopBar(isDesktop, context),
+          if (!insideDesktopShell) _buildTopBar(isDesktop, context),
           Expanded(
             child: isDesktop ? _buildDesktopLayout() : _buildMobileLayout(),
           ),

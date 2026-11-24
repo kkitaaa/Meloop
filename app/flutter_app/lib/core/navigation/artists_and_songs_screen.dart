@@ -6,6 +6,7 @@ import '../../features/search/presentation/global_search_route.dart';
 import '../../screens/friends_screen.dart';
 import '../../widgets/desktop_app_header.dart';
 import '../../widgets/mobile_app_header.dart';
+import 'desktop_navigation_shell.dart';
 
 class ArtistsAndSongsScreen extends StatefulWidget {
   const ArtistsAndSongsScreen({super.key});
@@ -36,6 +37,7 @@ class _ArtistsAndSongsScreenState extends State<ArtistsAndSongsScreen> {
     final isDesktop = screenWidth > 900;
     final isAndroidMobile =
         !isDesktop && defaultTargetPlatform == TargetPlatform.android;
+    final insideDesktopShell = DesktopShellScope.maybeOf(context) != null;
     final results = _catalog
         .where(
           (item) => item.title.toLowerCase().contains(_query.toLowerCase()),
@@ -46,38 +48,39 @@ class _ArtistsAndSongsScreenState extends State<ArtistsAndSongsScreen> {
       backgroundColor: Colors.transparent,
       body: Column(
         children: [
-          if (isAndroidMobile)
-            MobileAppHeader(onSearchTap: () => openGlobalSearch(context))
-          else if (isDesktop)
-            DesktopAppHeader(
-              activeSection: DesktopNavigationSection.artists,
-              onHomeTap: () => navigateToDesktopHome(context),
-              onFriendsTap: () => navigateToDesktopSection(
-                context,
-                (_) => const FriendsScreen(),
-              ),
-              onArtistsTap: () {},
-              onProfileTap: () => navigateToDesktopSection(
-                context,
-                (_) => const ProfileScreen(),
-              ),
-              onSearchTap: () => openGlobalSearch(context),
-            )
-          else
-            Container(
-              height: 55,
-              color: _accentColor,
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              alignment: Alignment.centerLeft,
-              child: const Text(
-                'Artistas y canciones',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
+          if (!insideDesktopShell)
+            if (isAndroidMobile)
+              MobileAppHeader(onSearchTap: () => openGlobalSearch(context))
+            else if (isDesktop)
+              DesktopAppHeader(
+                activeSection: DesktopNavigationSection.artists,
+                onHomeTap: () => navigateToDesktopHome(context),
+                onFriendsTap: () => navigateToDesktopSection(
+                  context,
+                  (_) => const FriendsScreen(),
+                ),
+                onArtistsTap: () {},
+                onProfileTap: () => navigateToDesktopSection(
+                  context,
+                  (_) => const ProfileScreen(),
+                ),
+                onSearchTap: () => openGlobalSearch(context),
+              )
+            else
+              Container(
+                height: 55,
+                color: _accentColor,
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                alignment: Alignment.centerLeft,
+                child: const Text(
+                  'Artistas y canciones',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
-            ),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
