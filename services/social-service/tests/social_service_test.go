@@ -20,19 +20,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type testSessionValidator struct{}
-
-func (testSessionValidator) ValidateToken(_ context.Context, token string) (string, error) {
-	if token == "invalid" {
-		return "", client.ErrInvalidSession
-	}
-	return token, nil
-}
-
-func setAuthenticatedUser(request *http.Request, userID string) {
-	request.Header.Set("Authorization", "Bearer "+userID)
-}
-
 type recordingBlockPublisher struct {
 	requests     []models.FriendRequest
 	err          error

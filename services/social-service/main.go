@@ -41,7 +41,7 @@ func run() error {
 	router := gin.New()
 	router.Use(logging.GinMiddleware(logger))
 	router.Use(httpresponse.GinRecoveryWithLogger(logger))
-	routes.SetupRoutes(router, controller, client.NewAuthClient(cfg.AuthServiceURL))
+	routes.SetupRoutes(router, controller, authClient)
 	routes.SetupInternalCountRoutes(router, controller, cfg.InternalServiceToken)
 
 	logger.Info("service_listening", "port", cfg.Port)

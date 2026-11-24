@@ -44,7 +44,6 @@ services:
       - test-service
       - user-service
       - auth-service
-      - social-service
       - media-service
       - social-service
       - recommendation-service
@@ -136,9 +135,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
-      - auth-service
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+      auth-service:
+        condition: service_started
     networks:
       - meloop-network
 

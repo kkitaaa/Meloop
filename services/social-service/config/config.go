@@ -27,6 +27,11 @@ func Load() *Config {
 		rabbitMQURL = "amqp://guest:guest@localhost:5672/"
 	}
 
+	authServiceURL := os.Getenv("AUTH_SERVICE_URL")
+	if authServiceURL == "" {
+		authServiceURL = "http://localhost:8083"
+	}
+
 	internalServiceToken := os.Getenv("SOCIAL_SERVICE_INTERNAL_TOKEN")
 
 	port := os.Getenv("SOCIAL_SERVICE_PORT")
@@ -40,5 +45,6 @@ func Load() *Config {
 		RabbitMQURL:          rabbitMQURL,
 		InternalServiceToken: internalServiceToken,
 		Port:                 port,
-		AuthServiceURL: authServiceURL,
+		AuthServiceURL:       authServiceURL,
+	}
 }

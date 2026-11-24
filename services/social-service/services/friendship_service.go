@@ -204,7 +204,8 @@ func (s *friendshipService) GetMutualFriends(ctx context.Context, userID, target
 		Count:   query.Count,
 		Friends: []models.MutualFriend{},
 	}
-	if query.Visibility == "PRIVADO" || (query.Visibility == "AMIGOS" && !query.ViewerFriend) {
+	isAllowed := query.Visibility == "PUBLICO" || (query.Visibility == "AMIGOS" && query.ViewerFriend)
+	if !isAllowed {
 		result.Hidden = true
 		return result, nil
 	}

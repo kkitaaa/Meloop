@@ -664,6 +664,7 @@ func (r *postgresFriendshipRepository) BlockUser(ctx context.Context, blockerID,
 	if err := tx.Commit(ctx); err != nil {
 		return nil, err
 	}
+	r.invalidateSocialCountCache(ctx, blockerID, blockedID)
 	return cancelledRequests, nil
 }
 
