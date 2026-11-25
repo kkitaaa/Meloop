@@ -54,4 +54,15 @@ func SetupRoutes(router *gin.Engine) {
 			"",
 		),
 	)
+
+	// Enrutar peticiones de publicaciones, comentarios, respuestas, likes y feed principal
+	postServiceDefault := "http://post-service.student-mcrisosto.svc.cluster.local:8084"
+	router.Any("/api/v1/posts", controllers.SessionAuth(), controllers.ProxyToService("POST_SERVICE_URL", postServiceDefault, ""))
+	router.Any("/api/v1/posts/*any", controllers.SessionAuth(), controllers.ProxyToService("POST_SERVICE_URL", postServiceDefault, ""))
+	router.Any("/v1/feed", controllers.SessionAuth(), controllers.ProxyToService("POST_SERVICE_URL", postServiceDefault, ""))
+	router.Any("/v1/feed/*any", controllers.SessionAuth(), controllers.ProxyToService("POST_SERVICE_URL", postServiceDefault, ""))
+	router.Any("/v1/posts", controllers.SessionAuth(), controllers.ProxyToService("POST_SERVICE_URL", postServiceDefault, ""))
+	router.Any("/v1/posts/*any", controllers.SessionAuth(), controllers.ProxyToService("POST_SERVICE_URL", postServiceDefault, ""))
+	router.Any("/posts", controllers.SessionAuth(), controllers.ProxyToService("POST_SERVICE_URL", postServiceDefault, ""))
+	router.Any("/posts/*any", controllers.SessionAuth(), controllers.ProxyToService("POST_SERVICE_URL", postServiceDefault, ""))
 }
