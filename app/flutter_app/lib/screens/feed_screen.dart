@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -20,10 +21,10 @@ import '../widgets/app_settings_menu.dart';
 import '../widgets/desktop_app_header.dart';
 import '../widgets/friends_sidebar.dart';
 import '../widgets/meloop_pill_tabs.dart';
+import '../widgets/meloop_toast_pill.dart';
 import '../widgets/mobile_app_header.dart';
 import '../widgets/paper/stacked_paper_card.dart';
 import '../widgets/post_card.dart';
-import '../widgets/rumi_xp_notice.dart';
 import '../widgets/states/empty_state.dart';
 import '../widgets/states/error_state.dart';
 import '../widgets/states/loading_state.dart';
@@ -74,6 +75,7 @@ class FeedScreenState extends State<FeedScreen> {
   late final ApiClient _apiClient;
   late final bool _ownsApiClient;
   final ScrollController _scrollController = ScrollController();
+  final ScrollController _mobileNestedScrollController = ScrollController();
   final List<Map<String, dynamic>> _posts = [];
 
   bool _isInitialLoading = true;
@@ -100,16 +102,31 @@ class FeedScreenState extends State<FeedScreen> {
     if (_scrollController.hasClients &&
         _scrollController.position.pixels >=
             _scrollController.position.maxScrollExtent - 280) {
-      if (!_isInitialLoading && !_isLoadingMore && _hasMore && !_hasError) {
-        _fetchMorePosts();
-      }
+      _maybeLoadMorePosts();
     }
+  }
+
+  void _maybeLoadMorePosts() {
+    if (!_isInitialLoading && !_isLoadingMore && _hasMore && !_hasError) {
+      _fetchMorePosts();
+    }
+  }
+
+  bool _handleMobileScrollNotification(ScrollNotification notification) {
+    if (notification.metrics.axis == Axis.vertical &&
+        notification.metrics.maxScrollExtent > 0 &&
+        notification.metrics.pixels >=
+            notification.metrics.maxScrollExtent - 280) {
+      _maybeLoadMorePosts();
+    }
+    return false;
   }
 
   @override
   void dispose() {
     _scrollController.removeListener(_handleInfiniteScroll);
     _scrollController.dispose();
+    _mobileNestedScrollController.dispose();
     if (_ownsApiClient) _apiClient.close();
     super.dispose();
   }
@@ -146,6 +163,9 @@ class FeedScreenState extends State<FeedScreen> {
       });
       if (_scrollController.hasClients) {
         _scrollController.jumpTo(0);
+      }
+      if (_mobileNestedScrollController.hasClients) {
+        _mobileNestedScrollController.jumpTo(0);
       }
     } on ApiException catch (error) {
       if (!mounted || requestGeneration != _requestGeneration) return;
@@ -240,8 +260,10 @@ class FeedScreenState extends State<FeedScreen> {
       });
     });
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: RumiXpNotice(xpAwarded: result.xpAwarded)),
+    showMeloopToastPill(
+      context,
+      message: 'Blog publicado',
+      xpAwarded: result.xpAwarded,
     );
   }
 
@@ -474,21 +496,63 @@ class FeedScreenState extends State<FeedScreen> {
   }
 
   Widget _buildMobileLayout() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        children: [
-          const SizedBox(height: 12),
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 320),
-            child: _buildPolaroidProfile(compactPhotoHeight: 160),
-          ),
-          const SizedBox(height: 16),
-          _buildListeningTo(),
-          const SizedBox(height: 20),
-          SizedBox(height: 700, child: _buildFeedPaper(isMobile: true)),
-        ],
-      ),
+    final username = AuthSession.shared.user?.username ?? 'Nombre.de.usuario';
+    final gamification = GamificationDemoController.instance;
+    const collapseTravel =
+        _MobileFeedCollapsibleHeader.expandedHeight -
+        _MobileFeedCollapsibleHeader.collapsedHeight;
+
+    return AnimatedBuilder(
+      animation: gamification,
+      builder: (context, _) {
+        return Stack(
+          children: [
+            Positioned.fill(
+              child: NestedScrollView(
+                controller: _mobileNestedScrollController,
+                headerSliverBuilder: (context, innerBoxIsScrolled) => const [
+                  SliverToBoxAdapter(child: SizedBox(height: collapseTravel)),
+                ],
+                body: Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    10,
+                    _MobileFeedCollapsibleHeader.collapsedHeight + 4,
+                    10,
+                    0,
+                  ),
+                  child: _buildFeedPaper(isMobile: true),
+                ),
+              ),
+            ),
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: AnimatedBuilder(
+                animation: _mobileNestedScrollController,
+                builder: (context, _) {
+                  final offset = _mobileNestedScrollController.hasClients
+                      ? _mobileNestedScrollController.offset.clamp(
+                          0.0,
+                          collapseTravel,
+                        )
+                      : 0.0;
+                  return _MobileFeedCollapsibleHeader(
+                    shrinkOffset: offset,
+                    username: username,
+                    level: gamification.level,
+                    xp: gamification.xp,
+                    xpNeeded: gamification.experienceNeeded,
+                    levelLabel: _levelRankLabel(gamification.level),
+                    activePinColor: gamification.activePinColor,
+                    onProfileTap: _openOwnProfile,
+                  );
+                },
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -899,17 +963,23 @@ class FeedScreenState extends State<FeedScreen> {
   }
 
   Widget _buildFeedPaper({bool isMobile = false}) {
+    final bool isAndroidMobile =
+        isMobile && defaultTargetPlatform == TargetPlatform.android;
+    final bool showMobileHeader =
+        !isAndroidMobile || _apiClient.environment == Environment.development;
     final paper = StackedPaperCard(
       padding: EdgeInsets.fromLTRB(
-        isMobile ? 16 : 44,
-        isMobile ? 24 : 34,
-        isMobile ? 16 : 44,
-        20,
+        isMobile ? 10 : 44,
+        isMobile ? (showMobileHeader ? 14 : 12) : 34,
+        isMobile ? 10 : 44,
+        isMobile ? 0 : 20,
       ),
       child: Column(
         children: [
-          _buildFeedHeader(isMobile: isMobile),
-          SizedBox(height: isMobile ? 16 : 24),
+          if (showMobileHeader) ...[
+            _buildFeedHeader(isMobile: isMobile),
+            SizedBox(height: isMobile ? 12 : 24),
+          ],
 
           // Estados de carga, error, vacío y feed con scroll infinito
           Expanded(
@@ -925,38 +995,47 @@ class FeedScreenState extends State<FeedScreen> {
                 : _posts.isEmpty
                 ? const EmptyState(
                     title: "Feed vacío",
-                    message: "Aún no hay publicaciones recientes. ¡Sé el primero en crear un blog!",
+                    message:
+                        "Aún no hay publicaciones recientes. ¡Sé el primero en crear un blog!",
                     icon: Icons.post_add,
                   )
-                : ListView.builder(
-                    controller: _scrollController,
-                    padding: EdgeInsets.only(
-                      right: isMobile ? 0 : 8,
-                      bottom: 24,
-                    ),
-                    itemCount: _posts.length + (_isLoadingMore ? 1 : 0),
-                    itemBuilder: (context, index) {
-                      if (index == _posts.length) {
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 24.0),
-                          child: Center(
-                            child: CircularProgressIndicator(
-                              color: _tealAccent,
+                : NotificationListener<ScrollNotification>(
+                    onNotification: isMobile
+                        ? _handleMobileScrollNotification
+                        : null,
+                    child: ListView.builder(
+                      controller: isMobile ? null : _scrollController,
+                      physics: isMobile
+                          ? const AlwaysScrollableScrollPhysics()
+                          : null,
+                      padding: EdgeInsets.only(
+                        right: isMobile ? 0 : 8,
+                        bottom: isAndroidMobile ? 142 : 24,
+                      ),
+                      itemCount: _posts.length + (_isLoadingMore ? 1 : 0),
+                      itemBuilder: (context, index) {
+                        if (index == _posts.length) {
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 24.0),
+                            child: Center(
+                              child: CircularProgressIndicator(
+                                color: _tealAccent,
+                              ),
                             ),
-                          ),
+                          );
+                        }
+                        return PostCard(
+                          postData: _posts[index],
+                          tealAccent: _tealAccent,
+                          apiClient: _apiClient,
+                          onDelete: () {
+                            setState(() {
+                              _posts.removeAt(index);
+                            });
+                          },
                         );
-                      }
-                      return PostCard(
-                        postData: _posts[index],
-                        tealAccent: _tealAccent,
-                        apiClient: _apiClient,
-                        onDelete: () {
-                          setState(() {
-                            _posts.removeAt(index);
-                          });
-                        },
-                      );
-                    },
+                      },
+                    ),
                   ),
           ),
         ],
@@ -964,7 +1043,7 @@ class FeedScreenState extends State<FeedScreen> {
     );
 
     if (isMobile) {
-      return TapeCornerOverlay(leftWidth: 112, rightWidth: 96, child: paper);
+      return TapeCornerOverlay(leftWidth: 96, rightWidth: 84, child: paper);
     }
     return TapeCornerOverlay(leftWidth: 175, rightWidth: 152, child: paper);
   }
@@ -1048,32 +1127,74 @@ class FeedScreenState extends State<FeedScreen> {
       ),
     );
 
+    final topCornersRow = SizedBox(
+      width: double.infinity,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [titleWidget, const SizedBox(width: 12), writeButton],
+      ),
+    );
+
     if (isMobile) {
-      return Wrap(
-        spacing: 12,
-        runSpacing: 12,
-        alignment: WrapAlignment.center,
-        crossAxisAlignment: WrapCrossAlignment.center,
+      final isAndroidMobile = defaultTargetPlatform == TargetPlatform.android;
+      if (isAndroidMobile) {
+        // En Android ya existe el botón flotante de "Crear blog" en la barra
+        // inferior, así que el papel del feed prioriza las pestañas de filtro
+        // (igual que en el mockup) o el título compacto si no hay filtros.
+        if (showCategoryFilters) {
+          return Center(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: filterBar,
+            ),
+          );
+        }
+        return SizedBox(
+          width: double.infinity,
+          child: Align(alignment: Alignment.centerLeft, child: titleWidget),
+        );
+      }
+      if (!showCategoryFilters) return topCornersRow;
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          titleWidget,
-          if (showCategoryFilters) filterBar,
-          writeButton,
+          topCornersRow,
+          const SizedBox(height: 12),
+          Center(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: filterBar,
+            ),
+          ),
         ],
       );
     }
 
     return LayoutBuilder(
       builder: (context, constraints) {
+        if (!showCategoryFilters) {
+          return SizedBox(
+            height: 52,
+            width: double.infinity,
+            child: topCornersRow,
+          );
+        }
+
         if (constraints.maxWidth < 700) {
-          return Wrap(
-            spacing: 16,
-            runSpacing: 14,
-            alignment: WrapAlignment.spaceBetween,
-            crossAxisAlignment: WrapCrossAlignment.center,
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              titleWidget,
-              if (showCategoryFilters) filterBar,
-              writeButton,
+              topCornersRow,
+              const SizedBox(height: 14),
+              Center(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: filterBar,
+                ),
+              ),
             ],
           );
         }
@@ -1085,12 +1206,589 @@ class FeedScreenState extends State<FeedScreen> {
             alignment: Alignment.center,
             children: [
               Align(alignment: Alignment.centerLeft, child: titleWidget),
-              if (showCategoryFilters) Center(child: filterBar),
+              Center(child: filterBar),
               Align(alignment: Alignment.centerRight, child: writeButton),
             ],
           ),
         );
       },
+    );
+  }
+}
+
+/// Cabecera colapsable de la vista móvil del Feed:
+/// - Al inicio del scroll (`t = 0`) muestra el diseño de dos columnas del mockup:
+///   polaroid con pin a la izquierda y tarjetas de Nivel/XP + Escuchando a la derecha.
+/// - Al bajar (`t -> 1`) escala la foto de perfil, retira suavemente el pin,
+///   oculta la sección "Escuchando" y expande/destaca la tarjeta de Nivel y XP.
+class _MobileFeedCollapsibleHeader extends StatelessWidget {
+  const _MobileFeedCollapsibleHeader({
+    required this.shrinkOffset,
+    required this.username,
+    required this.level,
+    required this.xp,
+    required this.xpNeeded,
+    required this.levelLabel,
+    required this.activePinColor,
+    required this.onProfileTap,
+  });
+
+  final double shrinkOffset;
+  final String username;
+  final int level;
+  final int xp;
+  final int xpNeeded;
+  final String levelLabel;
+  final Color? activePinColor;
+  final VoidCallback onProfileTap;
+
+  static const double expandedHeight = 228.0;
+  static const double collapsedHeight = 80.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final travel = expandedHeight - collapsedHeight;
+    final rawT = (shrinkOffset / travel).clamp(0.0, 1.0);
+    final currentHeight = ui.lerpDouble(expandedHeight, collapsedHeight, rawT)!;
+    final t = Curves.easeOutCubic.transform(rawT);
+    final pinT = (1.0 - (rawT / 0.35)).clamp(0.0, 1.0);
+    final polaroidTextT = (1.0 - (rawT / 0.36)).clamp(0.0, 1.0);
+    final listeningT = (1.0 - (rawT / 0.45)).clamp(0.0, 1.0);
+    final xpExpandedOpacity = (1.0 - ((rawT - 0.04) / 0.36)).clamp(0.0, 1.0);
+    final xpCompactOpacity = Curves.easeOut.transform(
+      ((rawT - 0.28) / 0.44).clamp(0.0, 1.0),
+    );
+    final xpFraction = xpNeeded == 0
+        ? 0.0
+        : (xp / xpNeeded).clamp(0.0, 1.0).toDouble();
+
+    return SizedBox(
+      height: currentHeight,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final width = constraints.maxWidth;
+          const hPad = 12.0;
+          const gap = 10.0;
+          final innerWidth = math.max(0.0, width - hPad * 2);
+
+          final expandedLeftW = (innerWidth * 0.40).clamp(128.0, 168.0);
+          const collapsedLeftW = 60.0;
+          final leftW = ui.lerpDouble(expandedLeftW, collapsedLeftW, t)!;
+          final leftH = ui.lerpDouble(200.0, 60.0, t)!;
+          final leftTop = ui.lerpDouble(18.0, 10.0, t)!;
+          final polaroidPad = ui.lerpDouble(9.0, 4.0, t)!;
+
+          final rightLeft = hPad + leftW + gap;
+          final rightW = math.max(0.0, innerWidth - leftW - gap);
+
+          final xpTop = ui.lerpDouble(18.0, 10.0, t)!;
+          final xpH = ui.lerpDouble(95.0, 60.0, t)!;
+
+          final expandedRightLeft = hPad + expandedLeftW + gap;
+          final expandedRightW = math.max(0.0, innerWidth - expandedLeftW - gap);
+          final listeningTop = ui.lerpDouble(123.0, 76.0, 1.0 - listeningT)!;
+          final listeningScale = ui.lerpDouble(0.92, 1.0, listeningT)!;
+
+          return Stack(
+            clipBehavior: Clip.none,
+            children: [
+              // Fondo sutil al colapsar para separar la barra fija del feed
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          const Color(
+                            0xFF0A4754,
+                          ).withValues(alpha: 0.92 * rawT),
+                          const Color(
+                            0xFF0A4754,
+                          ).withValues(alpha: 0.72 * rawT),
+                          const Color(0xFF0A4754).withValues(alpha: 0.0),
+                        ],
+                        stops: const [0.0, 0.78, 1.0],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
+              // 1. Tarjeta "Escuchando" (se oculta suavemente al bajar)
+              if (listeningT > 0.01)
+                Positioned(
+                  key: const ValueKey<String>('mobile-header-listening'),
+                  left: expandedRightLeft,
+                  top: listeningTop,
+                  width: expandedRightW,
+                  height: 95.0,
+                  child: IgnorePointer(
+                    ignoring: listeningT < 0.25,
+                    child: Opacity(
+                      opacity: listeningT,
+                      child: Transform.scale(
+                        scale: listeningScale,
+                        alignment: Alignment.topCenter,
+                        child: _buildMobileListeningCard(),
+                      ),
+                    ),
+                  ),
+                ),
+
+              // 2. Tarjeta Nivel / XP (se expande y gana protagonismo al bajar)
+              Positioned(
+                key: const ValueKey<String>('mobile-header-xp'),
+                left: rightLeft,
+                top: xpTop,
+                width: rightW,
+                height: xpH,
+                child: _buildMobileXpCard(
+                  xpFraction: xpFraction,
+                  expandedOpacity: xpExpandedOpacity,
+                  compactOpacity: xpCompactOpacity,
+                ),
+              ),
+
+              // 3. Polaroid del perfil (escala a mini avatar al bajar)
+              Positioned(
+                key: const ValueKey<String>('mobile-header-pfp'),
+                left: hPad,
+                top: leftTop,
+                width: leftW,
+                height: leftH,
+                child: GestureDetector(
+                  onTap: onProfileTap,
+                  child: _buildMobilePolaroid(
+                    width: leftW,
+                    height: leftH,
+                    padding: polaroidPad,
+                    textOpacity: polaroidTextT,
+                    collapseT: t,
+                  ),
+                ),
+              ),
+
+              // 4. Pin superior de la polaroid (se retira suavemente al bajar)
+              if (pinT > 0.01)
+                Positioned(
+                  key: const ValueKey<String>('mobile-header-pin'),
+                  left: hPad + leftW / 2 - 19,
+                  top: ui.lerpDouble(-8.0, 2.0, pinT)!,
+                  child: IgnorePointer(
+                    child: Opacity(
+                      opacity: pinT,
+                      child: Transform.scale(
+                        scale: ui.lerpDouble(0.35, 1.0, pinT)!,
+                        child: CustomizablePin(
+                          color: activePinColor,
+                          size: 38,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildMobilePolaroid({
+    required double width,
+    required double height,
+    required double padding,
+    required double textOpacity,
+    required double collapseT,
+  }) {
+    final innerW = math.max(0.0, width - padding * 2);
+    final innerH = math.max(0.0, height - padding * 2);
+    final expandedPhotoH = math.min(innerW, 114.0);
+    final photoH = ui.lerpDouble(expandedPhotoH, innerH, collapseT)!
+        .clamp(0.0, innerH);
+    final photoW = ui.lerpDouble(innerW, innerH, collapseT)!.clamp(0.0, innerW);
+    final iconSize = ui.lerpDouble(34.0, 24.0, collapseT)!;
+
+    return StackedPaperCard(
+      textureAsset: 'assets/textures/photopaper.png',
+      backAngleDegrees: ui.lerpDouble(-1.5, 0.0, collapseT),
+      paperShadowBlur: ui.lerpDouble(12.0, 8.0, collapseT)!,
+      padding: EdgeInsets.all(padding),
+      child: ClipRect(
+        child: Stack(
+          alignment: Alignment.topCenter,
+          children: [
+            Align(
+              alignment: Alignment.topCenter,
+              child: SizedBox(
+                width: photoW,
+                height: photoH,
+                child: MeloopImagePlaceholder(
+                  iconSize: iconSize,
+                  backgroundColor: const Color(0xFFE7ECEB),
+                  iconColor: const Color(0xFF7B8E8C),
+                  borderColor: const Color(0xFFD0DADA),
+                ),
+              ),
+            ),
+            if (textOpacity > 0.01 && innerH - photoH > 24)
+              Positioned(
+                left: 0,
+                right: 0,
+                top: photoH + 8,
+                child: Opacity(
+                  opacity: textOpacity,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Transform.rotate(
+                        angle: -2.0 * math.pi / 180.0,
+                        child: Text(
+                          username,
+                          textAlign: TextAlign.center,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: MeloopTypography.username(
+                            fontSize: 18.5,
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFF1E2525),
+                            height: 1.15,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        'Me siento: Feliz',
+                        textAlign: TextAlign.center,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: MeloopTypography.lexend(
+                          fontSize: 11.5,
+                          color: const Color(0xFF6B7777),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMobileXpCard({
+    required double xpFraction,
+    required double expandedOpacity,
+    required double compactOpacity,
+  }) {
+    final borderGlowAlpha = 0.55 * compactOpacity;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        boxShadow: compactOpacity > 0.05
+            ? [
+                BoxShadow(
+                  color: const Color(
+                    0xFF4BE3C8,
+                  ).withValues(alpha: 0.24 * compactOpacity),
+                  blurRadius: 14 * compactOpacity,
+                  offset: const Offset(0, 3),
+                ),
+              ]
+            : null,
+      ),
+      child: StackedPaperCard(
+        tintColor: Color.lerp(
+          const Color(0xFFDDF5F7),
+          const Color(0xFFCFF3F6),
+          compactOpacity,
+        ),
+        backAngleDegrees: 1.3,
+        paperShadowBlur: ui.lerpDouble(12.0, 9.0, compactOpacity)!,
+        child: Container(
+          decoration: BoxDecoration(
+            border: Border.all(
+              color: const Color(
+                0xFF28B5A3,
+              ).withValues(alpha: borderGlowAlpha),
+              width: 1.5,
+            ),
+          ),
+          padding: EdgeInsets.symmetric(
+            horizontal: ui.lerpDouble(12.0, 14.0, compactOpacity)!,
+            vertical: ui.lerpDouble(8.0, 6.0, compactOpacity)!,
+          ),
+          child: ClipRect(
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                // Vista expandida (mockup superior derecho) dentro de OverflowBox
+                // para evitar desbordes durante la transición intermedia de altura.
+                if (expandedOpacity > 0.01)
+                  OverflowBox(
+                    minHeight: 0,
+                    maxHeight: 110,
+                    alignment: Alignment.center,
+                    child: Opacity(
+                      opacity: expandedOpacity,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(
+                                Icons.star_border_rounded,
+                                color: Color(0xFF158A82),
+                                size: 17,
+                              ),
+                              const SizedBox(width: 4),
+                              Flexible(
+                                child: Text(
+                                  'Nivel $level • $levelLabel',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: MeloopTypography.lexend(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: const Color(0xFF1B2B2B),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          _buildXpProgressBar(
+                            fraction: xpFraction,
+                            height: 15,
+                            emphasized: false,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '$xp / $xpNeeded EXP',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: MeloopTypography.lexend(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: const Color(0xFF4F9F99),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                // Vista colapsada con énfasis en Nivel y XP
+                if (compactOpacity > 0.01)
+                  OverflowBox(
+                    minHeight: 0,
+                    maxHeight: 80,
+                    alignment: Alignment.center,
+                    child: Opacity(
+                      opacity: compactOpacity,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(
+                                Icons.star_rounded,
+                                color: Color(0xFF10988A),
+                                size: 17,
+                              ),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  'Nivel $level • $levelLabel',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: MeloopTypography.lexend(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: const Color(0xFF122828),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF158A82),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Text(
+                                  '$xp / $xpNeeded EXP',
+                                  style: MeloopTypography.lexend(
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          _buildXpProgressBar(
+                            fraction: xpFraction,
+                            height: 14,
+                            emphasized: true,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildXpProgressBar({
+    required double fraction,
+    required double height,
+    required bool emphasized,
+  }) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(end: fraction),
+      duration: const Duration(milliseconds: 420),
+      curve: Curves.easeOutCubic,
+      builder: (context, value, _) {
+        return Container(
+          height: height,
+          width: double.infinity,
+          decoration: BoxDecoration(
+            color: const Color(0xFF3E8A85),
+            borderRadius: BorderRadius.circular(height / 2),
+          ),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: FractionallySizedBox(
+              widthFactor: value.clamp(0.06, 1.0),
+              child: Container(
+                height: height,
+                decoration: BoxDecoration(
+                  gradient: emphasized
+                      ? const LinearGradient(
+                          colors: [Color(0xFF6CF3DC), Color(0xFF2ED4B8)],
+                        )
+                      : null,
+                  color: emphasized ? null : const Color(0xFF4BE3C8),
+                  borderRadius: BorderRadius.circular(height / 2),
+                  border: Border.all(
+                    color: const Color(0xFF0E6C66),
+                    width: 1.4,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildMobileListeningCard() {
+    return StackedPaperCard(
+      tintColor: const Color(0xFFF6F1D5),
+      backAngleDegrees: -1.1,
+      paperShadowBlur: 11,
+      padding: const EdgeInsets.fromLTRB(10, 7, 10, 9),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(
+            'Escuchando',
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: MeloopTypography.lexend(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: const Color(0xFF1A2020),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Expanded(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFF1D7E78), Color(0xFF135F5C)],
+                ),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                children: [
+                  const MeloopImagePlaceholder(
+                    width: 34,
+                    height: 34,
+                    iconSize: 16,
+                    borderRadius: BorderRadius.all(Radius.circular(5)),
+                    backgroundColor: Color(0xFF215E5A),
+                    iconColor: Color(0xFFA7D9D4),
+                    borderColor: Color(0xFF2E7873),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          'Flashing Lights',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: MeloopTypography.musicPlayer(
+                            color: Colors.white,
+                            fontSize: 13.5,
+                            height: 1.1,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Graduation · Kanye West',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: MeloopTypography.musicPlayer(
+                            color: Colors.white.withValues(alpha: 0.78),
+                            fontSize: 11.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Container(
+                    width: 18,
+                    height: 18,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.2),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.graphic_eq_rounded,
+                      color: Colors.white,
+                      size: 11,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

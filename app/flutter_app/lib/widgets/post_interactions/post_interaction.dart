@@ -25,6 +25,7 @@ class PostLikeButton extends StatefulWidget {
     required this.likes,
     required this.initiallyLiked,
     required this.service,
+    this.compact = false,
     this.onLikesChanged,
     this.onLikedChanged,
   });
@@ -32,6 +33,7 @@ class PostLikeButton extends StatefulWidget {
   final String postId;
   final int likes;
   final bool initiallyLiked;
+  final bool compact;
   final ValueChanged<int>? onLikesChanged;
   final ValueChanged<bool>? onLikedChanged;
   final PostInteractionService service;
@@ -122,6 +124,10 @@ class _PostLikeButtonState extends State<PostLikeButton>
 
   @override
   Widget build(BuildContext context) {
+    final iconSize = widget.compact ? 19.0 : 23.0;
+    final boxWidth = widget.compact ? 26.0 : 34.0;
+    final boxHeight = widget.compact ? 28.0 : 36.0;
+
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -133,8 +139,8 @@ class _PostLikeButtonState extends State<PostLikeButton>
               onTap: _isUpdating ? null : _toggleLike,
               borderRadius: BorderRadius.circular(6),
               child: SizedBox(
-                width: 34,
-                height: 36,
+                width: boxWidth,
+                height: boxHeight,
                 child: Stack(
                   clipBehavior: Clip.none,
                   alignment: Alignment.center,
@@ -146,7 +152,7 @@ class _PostLikeButtonState extends State<PostLikeButton>
                       child: Icon(
                         _liked ? Icons.favorite : Icons.favorite_border,
                         color: _liked ? _like : _teal,
-                        size: 23,
+                        size: iconSize,
                       ),
                     ),
                     if (_liked)
@@ -159,10 +165,10 @@ class _PostLikeButtonState extends State<PostLikeButton>
                                 .toDouble(),
                             child: Transform.scale(
                               scale: 1 + _animationController.value * .7,
-                              child: const Icon(
+                              child: Icon(
                                 Icons.favorite,
                                 color: _like,
-                                size: 23,
+                                size: iconSize,
                               ),
                             ),
                           ),
@@ -203,12 +209,12 @@ class _PostLikeButtonState extends State<PostLikeButton>
             ),
           ),
         ),
-        const SizedBox(width: 6),
+        SizedBox(width: widget.compact ? 4 : 6),
         Text(
           '$_likes Likes',
-          style: const TextStyle(
+          style: TextStyle(
             color: _teal,
-            fontSize: 14,
+            fontSize: widget.compact ? 12 : 14,
             fontWeight: FontWeight.w500,
           ),
         ),
