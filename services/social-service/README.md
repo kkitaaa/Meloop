@@ -9,7 +9,7 @@ Microservicio encargado de la gestión de relaciones sociales en Meloop:
 
 ## Endpoints Principales
 
-### Rutas Protegidas (`/friends`) - Requiere sesión / Header `X-User-ID`:
+### Rutas protegidas de amistades (`/friends`)
 - `POST /friends/requests`: Enviar solicitud de amistad.
 - `GET /friends/requests/received`: Listar solicitudes recibidas.
 - `GET /friends/requests/sent`: Listar solicitudes enviadas.
@@ -24,6 +24,9 @@ Microservicio encargado de la gestión de relaciones sociales en Meloop:
 - `GET /friends/validate-interaction`: Validar interacción bidireccional entre usuarios.
 - `GET /friends/suggestions`: Obtener sugerencias de amistad ordenadas por compatibilidad.
 - `POST /friends/blocks/exclude`: Excluir usuarios bloqueados para el usuario autenticado.
+
+### Amigos en común
+- `GET /v1/social/users/:id/mutual-friends?limit=20&cursor=`: Consultar amigos en común.
 
 ### Endpoint Interno (`/internal`) - Comunicación entre Microservicios:
 - `POST /internal/blocks/exclude`:
@@ -138,3 +141,19 @@ persistida en PostgreSQL.
 La prueba `TestSocialCountCacheAsideInvalidationFallbackAndConcurrency` usa `TEST_DATABASE_URL` para
 verificar las consultas SQL e invalidaciones contra una base aislada. También puede usar Redis real mediante
 `TEST_REDIS_URL`; si no se configura, usa miniredis.
+
+La consulta de amigos en común calcula la intersección en PostgreSQL, excluye cuentas con acciones de moderación
+`BAN` o `SUSPENSION` y filtra candidatos bloqueados con el usuario consultante. La visibilidad de la lista se
+configura mediante `visibilidad_amigos` en la configuración existente de privacidad.
+
+Las rutas protegidas de social-service requieren `Authorization: Bearer <token>` y validan la sesión mediante
+`GET /auth/validate` de auth-service. La identidad del contexto se toma únicamente de la respuesta validada;
+`X-User-ID` no se acepta como prueba de identidad. Configura `AUTH_SERVICE_URL` con la URL interna de auth-service
+(por defecto `http://localhost:8083`). Si auth-service no está disponible, las rutas protegidas responden
+`503 Service Unavailable` y no permiten el acceso.
+
+RN-05 se aplica exclusivamente a `GET /v1/social/users/:id/mutual-friends`: se considera inactivo un usuario cuyo
+último inicio de sesión, publicación o interacción sea anterior a seis meses calendario. La fecha de creación
+también protege a las cuentas recién registradas. Para cuentas existentes sin fecha de creación ni actividad
+registrada, el filtrado es conservador y no las clasifica como inactivas. Una actividad posterior vuelve a
+considerar activa la cuenta dentro de este endpoint.

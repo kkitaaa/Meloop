@@ -46,6 +46,9 @@ type FriendshipRepository interface {
 	GetBlockedUsersCount(ctx context.Context, userID string) (int, error)
 	GetBlockedCount(ctx context.Context, userID string) (int, error)
 	IsBlocked(ctx context.Context, user1ID, user2ID string) (bool, error)
+	GetMutualFriendsQuery(ctx context.Context, userID, targetID string) (models.MutualFriendsQuery, error)
+	GetMutualFriendsPage(ctx context.Context, userID, targetID, cursor string, limit int) ([]string, bool, error)
+	ListMutualFriendProfiles(ctx context.Context, userIDs []string) ([]models.MutualFriend, error)
 	ValidateInteraction(ctx context.Context, user1ID, user2ID string) error
 	GetEligibleCandidates(ctx context.Context, userID string) ([]models.CandidateUser, error)
 	GetMutualFriendsCount(ctx context.Context, userID string, candidateIDs []string) (map[string]int, error)
@@ -661,6 +664,7 @@ func (r *postgresFriendshipRepository) BlockUser(ctx context.Context, blockerID,
 	if err := tx.Commit(ctx); err != nil {
 		return nil, err
 	}
+	r.invalidateSocialCountCache(ctx, blockerID, blockedID)
 	return cancelledRequests, nil
 }
 
@@ -708,6 +712,186 @@ func (r *postgresFriendshipRepository) IsBlocked(ctx context.Context, user1ID, u
 		return false, err
 	}
 	return blocked, nil
+}
+
+const mutualFriendsCTE = `
+	WITH inactivity_threshold AS (
+		SELECT (DATE_TRUNC('day', CURRENT_TIMESTAMP) - INTERVAL '6 months') AS threshold
+	),
+	user_friends AS (
+		SELECT CASE
+			WHEN a.id_usuario_1::text = $1 THEN a.id_usuario_2::text
+			ELSE a.id_usuario_1::text
+		END AS friend_id
+		FROM amistad a
+		WHERE (a.id_usuario_1::text = $1 OR a.id_usuario_2::text = $1)
+		  AND a.estado = 'ACEPTADA'
+	),
+	target_friends AS (
+		SELECT CASE
+			WHEN a.id_usuario_1::text = $2 THEN a.id_usuario_2::text
+			ELSE a.id_usuario_1::text
+		END AS friend_id
+		FROM amistad a
+		WHERE (a.id_usuario_1::text = $2 OR a.id_usuario_2::text = $2)
+		  AND a.estado = 'ACEPTADA'
+	),
+	mutual_friends AS (
+		SELECT friend_id FROM user_friends
+		INTERSECT
+		SELECT friend_id FROM target_friends
+	),
+	active_mutual_friends AS (
+		SELECT m.friend_id
+		FROM mutual_friends m
+		JOIN usuario u ON u.id_usuario::text = m.friend_id
+		CROSS JOIN inactivity_threshold t
+		WHERE m.friend_id <> $1
+		  AND m.friend_id <> $2
+		  AND NOT EXISTS (
+			SELECT 1
+			FROM accion_moderacion am
+			WHERE am.id_usuario_afectado::text = m.friend_id
+			  AND UPPER(am.tipo_accion) IN ('BAN', 'SUSPENSION', 'INACTIVO', 'DESACTIVADO')
+		  )
+		  AND (
+			(u.fecha_creacion IS NOT NULL AND u.fecha_creacion >= t.threshold)
+			OR (u.fecha_ultimo_login IS NOT NULL AND u.fecha_ultimo_login >= t.threshold)
+			OR EXISTS (
+				SELECT 1 FROM publicacion p
+				WHERE p.id_usuario::text = m.friend_id
+				  AND p.fecha_creacion >= t.threshold
+			)
+			OR EXISTS (
+				SELECT 1 FROM interaccion i
+				WHERE i.id_usuario::text = m.friend_id
+				  AND i.fecha_creacion >= t.threshold
+			)
+			OR (
+				u.fecha_creacion IS NULL
+				AND u.fecha_ultimo_login IS NULL
+				AND NOT EXISTS (
+					SELECT 1 FROM publicacion p
+					WHERE p.id_usuario::text = m.friend_id
+				)
+				AND NOT EXISTS (
+					SELECT 1 FROM interaccion i
+					WHERE i.id_usuario::text = m.friend_id
+				)
+			)
+		  )
+	),
+	visible_mutual_friends AS (
+		SELECT m.friend_id
+		FROM active_mutual_friends m
+		WHERE NOT EXISTS (
+			SELECT 1
+			FROM bloqueo b
+			WHERE (b.id_usuario_bloqueador::text = $1 AND b.id_usuario_bloqueado::text = m.friend_id)
+			   OR (b.id_usuario_bloqueador::text = m.friend_id AND b.id_usuario_bloqueado::text = $1)
+		)
+	)
+`
+
+func (r *postgresFriendshipRepository) GetMutualFriendsQuery(ctx context.Context, userID, targetID string) (models.MutualFriendsQuery, error) {
+	if r.pool == nil {
+		return models.MutualFriendsQuery{}, errors.New("database connection pool is not initialized")
+	}
+
+	var result models.MutualFriendsQuery
+	err := r.pool.QueryRow(ctx, mutualFriendsCTE+`
+		SELECT
+			EXISTS (SELECT 1 FROM usuario WHERE id_usuario::text = $2),
+			EXISTS (
+				SELECT 1 FROM amistad
+				WHERE ((id_usuario_1::text = $1 AND id_usuario_2::text = $2)
+				    OR (id_usuario_1::text = $2 AND id_usuario_2::text = $1))
+				  AND estado = 'ACEPTADA'
+			),
+			COALESCE(
+				(SELECT visibilidad_amigos FROM configuracion_privacidad WHERE id_usuario::text = $2),
+				'PUBLICO'
+			),
+			(SELECT COUNT(*) FROM visible_mutual_friends)`,
+		userID, targetID,
+	).Scan(
+		&result.TargetExists,
+		&result.ViewerFriend,
+		&result.Visibility,
+		&result.Count,
+	)
+	if err != nil {
+		return models.MutualFriendsQuery{}, err
+	}
+	return result, nil
+}
+
+func (r *postgresFriendshipRepository) GetMutualFriendsPage(ctx context.Context, userID, targetID, cursor string, limit int) ([]string, bool, error) {
+	if r.pool == nil {
+		return nil, false, errors.New("database connection pool is not initialized")
+	}
+
+	var friendIDs []string
+	var hasMore bool
+	err := r.pool.QueryRow(ctx, mutualFriendsCTE+`,
+		page AS (
+			SELECT friend_id
+			FROM visible_mutual_friends
+			WHERE friend_id > $3
+			ORDER BY friend_id ASC
+			LIMIT $4
+		)
+		SELECT
+			COALESCE(
+				(SELECT array_agg(friend_id ORDER BY friend_id) FROM page),
+				ARRAY[]::text[]
+			),
+			(
+				SELECT COUNT(*) = $4 AND EXISTS (
+					SELECT 1
+					FROM visible_mutual_friends
+					WHERE friend_id > (SELECT MAX(friend_id) FROM page)
+				)
+				FROM page
+			)`,
+		userID, targetID, cursor, limit,
+	).Scan(&friendIDs, &hasMore)
+	if err != nil {
+		return nil, false, err
+	}
+	return friendIDs, hasMore, nil
+}
+
+func (r *postgresFriendshipRepository) ListMutualFriendProfiles(ctx context.Context, userIDs []string) ([]models.MutualFriend, error) {
+	if r.pool == nil {
+		return nil, errors.New("database connection pool is not initialized")
+	}
+	if len(userIDs) == 0 {
+		return []models.MutualFriend{}, nil
+	}
+
+	rows, err := r.pool.Query(ctx, `
+		SELECT u.id_usuario::text, u.username, COALESCE(p.foto_perfil, '')
+		FROM usuario u
+		LEFT JOIN perfil p ON p.id_usuario::text = u.id_usuario::text
+		WHERE u.id_usuario::text = ANY($1::text[])
+		ORDER BY u.id_usuario::text ASC`,
+		userIDs,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	friends := make([]models.MutualFriend, 0, len(userIDs))
+	for rows.Next() {
+		var friend models.MutualFriend
+		if err := rows.Scan(&friend.ID, &friend.Username, &friend.AvatarURL); err != nil {
+			return nil, err
+		}
+		friends = append(friends, friend)
+	}
+	return friends, rows.Err()
 }
 
 func (r *postgresFriendshipRepository) ValidateInteraction(ctx context.Context, user1ID, user2ID string) error {

@@ -17,6 +17,10 @@ type friendshipRepositoryFake struct {
 	listFriendsErr    error
 	removeFriendErr   error
 	getProfileErr     error
+	mutualQuery       models.MutualFriendsQuery
+	mutualPageIDs     []string
+	mutualHasMore     bool
+	mutualProfiles    []models.MutualFriend
 	blockUserErr      error
 	validateErr       error
 	request           *models.FriendRequest
@@ -92,6 +96,21 @@ func (f *friendshipRepositoryFake) GetFriendProfile(ctx context.Context, userID,
 		return nil, f.getProfileErr
 	}
 	return f.profile, nil
+}
+
+func (f *friendshipRepositoryFake) GetMutualFriendsQuery(context.Context, string, string) (models.MutualFriendsQuery, error) {
+	return f.mutualQuery, nil
+}
+
+func (f *friendshipRepositoryFake) GetMutualFriendsPage(context.Context, string, string, string, int) ([]string, bool, error) {
+	return f.mutualPageIDs, f.mutualHasMore, nil
+}
+
+func (f *friendshipRepositoryFake) ListMutualFriendProfiles(context.Context, []string) ([]models.MutualFriend, error) {
+	if f.mutualProfiles == nil {
+		return []models.MutualFriend{}, nil
+	}
+	return f.mutualProfiles, nil
 }
 
 func (f *friendshipRepositoryFake) BlockUser(ctx context.Context, blockerID, blockedID string) ([]models.FriendRequest, error) {
@@ -284,6 +303,99 @@ func TestFriendshipServiceActionsEnforceAuthorizationAndState(t *testing.T) {
 			}
 			if err := test.call(NewFriendshipService(repo, nil)); !errors.Is(err, test.err) {
 				t.Fatalf("error = %v, want %v", err, test.err)
+			}
+		})
+	}
+}
+
+func TestFriendshipServiceRejectsMutualFriendsLimitAboveMaximum(t *testing.T) {
+	service := NewFriendshipService(&friendshipRepositoryFake{}, nil)
+	_, err := service.GetMutualFriends(context.Background(), "viewer", "target", MaxMutualFriendsLimit+1, "")
+	if !errors.Is(err, ErrInvalidPagination) {
+		t.Fatalf("error = %v, want %v", err, ErrInvalidPagination)
+	}
+}
+
+func TestFriendshipServiceMutualFriendsPrivacyFailClosed(t *testing.T) {
+	commonFriend := models.MutualFriend{ID: "friend-1", Username: "amigo1", AvatarURL: "https://example.com/a.png"}
+
+	tests := []struct {
+		name         string
+		visibility   string
+		viewerFriend bool
+		wantHidden   bool
+		wantFriends  int
+	}{
+		{
+			name:         "PUBLICO allows list exposure",
+			visibility:   "PUBLICO",
+			viewerFriend: false,
+			wantHidden:   false,
+			wantFriends:  1,
+		},
+		{
+			name:         "AMIGOS with viewer as friend allows list exposure",
+			visibility:   "AMIGOS",
+			viewerFriend: true,
+			wantHidden:   false,
+			wantFriends:  1,
+		},
+		{
+			name:         "AMIGOS with viewer not friend hides list",
+			visibility:   "AMIGOS",
+			viewerFriend: false,
+			wantHidden:   true,
+			wantFriends:  0,
+		},
+		{
+			name:         "PRIVADO hides list",
+			visibility:   "PRIVADO",
+			viewerFriend: true,
+			wantHidden:   true,
+			wantFriends:  0,
+		},
+		{
+			name:         "UNKNOWN visibility hides list (fail-closed)",
+			visibility:   "UNKNOWN",
+			viewerFriend: true,
+			wantHidden:   true,
+			wantFriends:  0,
+		},
+		{
+			name:         "EMPTY visibility hides list (fail-closed)",
+			visibility:   "",
+			viewerFriend: true,
+			wantHidden:   true,
+			wantFriends:  0,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := &friendshipRepositoryFake{
+				mutualQuery: models.MutualFriendsQuery{
+					TargetExists: true,
+					ViewerFriend: tc.viewerFriend,
+					Visibility:   tc.visibility,
+					Count:        1,
+				},
+				mutualPageIDs:  []string{"friend-1"},
+				mutualProfiles: []models.MutualFriend{commonFriend},
+			}
+			service := NewFriendshipService(repo, nil)
+
+			resp, err := service.GetMutualFriends(context.Background(), "viewer-id", "target-id", 20, "")
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if resp.Count != 1 {
+				t.Fatalf("resp.Count = %d, want 1", resp.Count)
+			}
+			if resp.Hidden != tc.wantHidden {
+				t.Fatalf("resp.Hidden = %v, want %v", resp.Hidden, tc.wantHidden)
+			}
+			if len(resp.Friends) != tc.wantFriends {
+				t.Fatalf("len(resp.Friends) = %d, want %d", len(resp.Friends), tc.wantFriends)
 			}
 		})
 	}
