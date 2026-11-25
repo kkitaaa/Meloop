@@ -1,6 +1,9 @@
-import 'package:flutter/material.dart';
-import 'package:flutter/gestures.dart';
+import 'dart:async';
+import 'dart:math' as math;
+import 'dart:ui' as ui;
+
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 
 import '../core/navigation/desktop_navigation_shell.dart';
 import '../core/navigation/responsive_navigation_shell.dart';
@@ -8,6 +11,9 @@ import '../features/moderation/data/moderation_models.dart';
 import '../features/notifications/presentation/notification_scope.dart';
 import '../services/api_client.dart';
 import '../services/auth_session.dart';
+import '../theme/meloop_typography.dart';
+import '../widgets/paper/stacked_paper_card.dart';
+import '../widgets/parallax_album_covers.dart';
 import 'kubernetes_connectivity_screen.dart';
 
 class AuthScreen extends StatefulWidget {
@@ -19,21 +25,39 @@ class AuthScreen extends StatefulWidget {
   State<AuthScreen> createState() => _AuthScreenState();
 }
 
-class _AuthScreenState extends State<AuthScreen> {
+class _AuthScreenState extends State<AuthScreen>
+    with SingleTickerProviderStateMixin {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _usernameController = TextEditingController();
   late final ApiClient _apiClient;
   late final bool _ownsApiClient;
+  late final AnimationController _bgController;
 
+  bool _isRegisterMode = false;
   bool _isSubmitting = false;
   String? _authError;
+
+  static bool get _isTestBinding {
+    try {
+      return WidgetsBinding.instance.runtimeType.toString().contains('Test');
+    } catch (_) {
+      return false;
+    }
+  }
 
   @override
   void initState() {
     super.initState();
     _ownsApiClient = widget.apiClient == null;
     _apiClient = widget.apiClient ?? ApiClient();
+    _bgController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 20),
+    );
+    if (!_isTestBinding) {
+      _bgController.repeat();
+    }
     if (AuthSession.shared.isAuthenticated) {
       _restoreSession();
     }
@@ -41,11 +65,20 @@ class _AuthScreenState extends State<AuthScreen> {
 
   @override
   void dispose() {
+    _bgController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     _usernameController.dispose();
     if (_ownsApiClient) _apiClient.close();
     super.dispose();
+  }
+
+  void _switchMode({required bool isRegister}) {
+    if (_isRegisterMode == isRegister) return;
+    setState(() {
+      _isRegisterMode = isRegister;
+      _authError = null;
+    });
   }
 
   Future<void> _restoreSession() async {
@@ -136,305 +169,691 @@ class _AuthScreenState extends State<AuthScreen> {
     );
   }
 
+  void _openDiagnostics() {
+    Navigator.push<void>(
+      context,
+      MaterialPageRoute<void>(
+        builder: (_) => const KubernetesConnectivityScreen(),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    double screenWidth = MediaQuery.of(context).size.width;
-    bool isDesktop = screenWidth > 800;
-
-    // Anchos y paddings dinámicos para respirar en celular
-    double containerWidth = isDesktop ? 420 : screenWidth * 0.92;
-    double horizontalPadding = isDesktop ? 40.0 : 24.0;
-    double verticalPadding = isDesktop ? 40.0 : 32.0;
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final isDesktop = screenWidth > 800;
 
     return Scaffold(
-      // Evita que la imagen de fondo se comprima al abrir el teclado
       resizeToAvoidBottomInset: false,
+      backgroundColor: const Color(0xFF004562),
       body: Stack(
+        fit: StackFit.expand,
         children: [
-          Positioned.fill(
-            child: Image.asset(
-              'assets/imagenes/fondo.png',
-              fit: BoxFit.cover,
-              alignment: isDesktop ? Alignment.centerLeft : Alignment.center,
-            ),
+          // Fondo radial animado (un solo shader draw en su propio RepaintBoundary
+          // para consumo mínimo de GPU).
+          RepaintBoundary(
+            child: _AnimatedTealRadialBackground(animation: _bgController),
           ),
 
-          // Capa de oscurecimiento suave solo para móvil
-          if (!isDesktop)
-            Positioned.fill(
-              child: Container(color: Colors.black.withValues(alpha: 0.15)),
-            ),
-
-          SafeArea(
-            child: Center(
-              child: SingleChildScrollView(
-                child: Align(
-                  alignment: isDesktop
-                      ? Alignment.centerRight
-                      : Alignment.center,
-                  child: Padding(
-                    padding: EdgeInsets.only(
-                      right: isDesktop ? screenWidth * 0.1 : 0,
-                    ),
-                    child: Container(
-                      width: containerWidth,
-                      padding: EdgeInsets.symmetric(
-                        horizontal: horizontalPadding,
-                        vertical: verticalPadding,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF455A55),
-                        borderRadius: BorderRadius.circular(
-                          isDesktop ? 12 : 24,
-                        ),
-                        // Sombra elegante para dar volumen en el celular
-                        boxShadow: [
-                          if (!isDesktop)
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.4),
-                              blurRadius: 20,
-                              offset: const Offset(0, 10),
-                            ),
-                        ],
-                      ),
-                      child: DefaultTabController(
-                        length: 2,
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Image.asset(
-                              'assets/imagenes/meloop.png',
-                              height: isDesktop ? 55 : 45,
-                            ),
-                            const SizedBox(height: 24),
-
-                            const TabBar(
-                              indicatorColor: Color(0xFF1ABC9C),
-                              indicatorWeight: 3,
-                              labelColor: Colors.white,
-                              unselectedLabelColor: Colors.white60,
-                              dividerColor: Colors.transparent, // Elimina la línea base gris nativa
-                              tabs: [
-                                Tab(text: 'Iniciar Sesión'),
-                                Tab(text: 'Registrarse'),
-                              ],
-                            ),
-                            const SizedBox(height: 24),
-
-                            SizedBox(
-                              height: 380,
-                              child: TabBarView(
-                                children: [
-                                  _buildLoginForm(context),
-                                  _buildRegisterForm(),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
+          // Carátulas con paralaje concentradas en el área visible izquierda,
+          // con un leve solapamiento (70px) detrás del borde izquierdo del panel
+          // derecho opaco para un corte natural sin desperdiciar portadas ocultas.
+          if (isDesktop)
+            Positioned(
+              left: 0,
+              top: 0,
+              bottom: 0,
+              width: math.max(
+                0.0,
+                screenWidth - (screenWidth * 0.30).clamp(400.0, 560.0) + 70.0,
+              ),
+              child: RepaintBoundary(
+                child: ParallaxAlbumCovers(animate: !_isTestBinding),
               ),
             ),
+
+          if (isDesktop)
+            _buildDesktopLayout(screenWidth)
+          else
+            _buildMobileLayout(screenWidth),
+
+          // Botón de diagnóstico oculto en la esquina inferior derecha:
+          // solo aparece y se vuelve clickeable tras 3 segundos de hover.
+          Positioned(
+            right: 16,
+            bottom: 14,
+            child: _HiddenDiagnosticCorner(onPressed: _openDiagnostics),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildLoginForm(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const SizedBox(height: 8),
-        const Text(
-          'Correo Electronico:',
-          style: TextStyle(color: Colors.white, fontSize: 13),
-        ),
-        const SizedBox(height: 8),
-        TextField(
-          controller: _emailController,
-          keyboardType: TextInputType
-              .emailAddress, // Muestra el teclado con el "@" en celular
-          decoration: InputDecoration(
-            filled: true,
-            fillColor: Colors.white,
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 16,
-              vertical: 14,
-            ),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide.none,
-            ),
-          ),
-        ),
-        const SizedBox(height: 20),
-        const Text(
-          'Contraseña:',
-          style: TextStyle(color: Colors.white, fontSize: 13),
-        ),
-        const SizedBox(height: 8),
-        TextField(
-          controller: _passwordController,
-          obscureText: true,
-          decoration: InputDecoration(
-            filled: true,
-            fillColor: Colors.white,
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 16,
-              vertical: 14,
-            ),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide.none,
-            ),
-          ),
-        ),
-        const SizedBox(height: 32),
+  Widget _buildDesktopLayout(double screenWidth) {
+    final double panelWidth = (screenWidth * 0.30).clamp(400.0, 560.0);
 
-        Center(
-          child: ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF1ABC9C),
-              padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 14),
-              elevation: 0,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(24),
+    return Row(
+      children: [
+        const Expanded(child: SizedBox.shrink()),
+        Container(
+          width: panelWidth,
+          height: double.infinity,
+          decoration: BoxDecoration(
+            color: const Color(0xFF3E524F),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.28),
+                blurRadius: 32,
+                offset: const Offset(-8, 0),
+              ),
+            ],
+          ),
+          child: SafeArea(
+            child: Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 40,
+                  vertical: 44,
+                ),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 380),
+                  child: _buildAuthCardContent(isDesktop: true),
+                ),
               ),
             ),
-            onPressed: _isSubmitting ? null : _login,
-            child: _isSubmitting
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Text(
-                    'Iniciar sesión',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
           ),
         ),
-        if (_authError != null) ...[
-          const SizedBox(height: 12),
-          Text(
-            _authError!,
-            style: const TextStyle(color: Colors.white, fontSize: 13),
-            textAlign: TextAlign.center,
-          ),
-        ],
-        const Spacer(),
-
-        Center(
-          child: RichText(
-            text: TextSpan(
-              text: 'No tienes cuenta? ',
-              style: const TextStyle(color: Colors.white70, fontSize: 13),
-              children: [
-                TextSpan(
-                  text: 'Crea una aqui',
-                  style: const TextStyle(
-                    color: Color(0xFF1ABC9C),
-                    fontSize: 13,
-                    fontWeight: FontWeight.bold,
-                  ),
-                  recognizer: TapGestureRecognizer()..onTap = () {},
-                ),
-              ],
-            ),
-          ),
-        ),
-        if (kDebugMode)
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton.icon(
-              onPressed: () {
-                Navigator.push<void>(
-                  context,
-                  MaterialPageRoute<void>(
-                    builder: (_) => const KubernetesConnectivityScreen(),
-                  ),
-                );
-              },
-              icon: const Icon(Icons.monitor_heart, size: 16),
-              label: const Text('Diagnóstico de conexión'),
-            ),
-          ),
-        const SizedBox(height: 8),
       ],
     );
   }
 
-  Widget _buildRegisterForm() {
+  Widget _buildMobileLayout(double screenWidth) {
+    return SafeArea(
+      child: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 28),
+          child: Container(
+            width: math.min(screenWidth * 0.92, 420),
+            padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 34),
+            decoration: BoxDecoration(
+              color: const Color(0xB32E4240),
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.32),
+                  blurRadius: 24,
+                  offset: const Offset(0, 10),
+                ),
+              ],
+            ),
+            child: _buildAuthCardContent(isDesktop: false),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAuthCardContent({required bool isDesktop}) {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
       children: [
-        const SizedBox(height: 8),
-        const Text('Usuario', style: TextStyle(color: Colors.white)),
-        const SizedBox(height: 6),
-        TextField(
-          controller: _usernameController,
-          decoration: const InputDecoration(
-            filled: true,
-            fillColor: Colors.white,
-            border: OutlineInputBorder(),
-            contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          ),
+        MeloopLogoSticker(
+          height: isDesktop ? 76 : 56,
+          strokeWidth: isDesktop ? 3.2 : 2.6,
         ),
-        const SizedBox(height: 12),
-        const Text('Correo electrónico', style: TextStyle(color: Colors.white)),
-        const SizedBox(height: 6),
-        TextField(
-          controller: _emailController,
-          keyboardType: TextInputType.emailAddress,
-          decoration: const InputDecoration(
-            filled: true,
-            fillColor: Colors.white,
-            border: OutlineInputBorder(),
-            contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          ),
+        SizedBox(height: isDesktop ? 44 : 28),
+
+        // Pestañas con indicador deslizante suave
+        _AuthModeTabs(
+          isRegister: _isRegisterMode,
+          onSelect: (isRegister) => _switchMode(isRegister: isRegister),
         ),
-        const SizedBox(height: 12),
-        const Text('Contraseña', style: TextStyle(color: Colors.white)),
-        const SizedBox(height: 6),
-        TextField(
-          controller: _passwordController,
-          obscureText: true,
-          decoration: const InputDecoration(
-            filled: true,
-            fillColor: Colors.white,
-            border: OutlineInputBorder(),
-            contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          ),
-        ),
-        if (_authError != null) ...[
-          const SizedBox(height: 8),
-          Text(
-            _authError!,
-            style: const TextStyle(color: Colors.white, fontSize: 12),
-          ),
-        ],
-        const Spacer(),
-        Center(
-          child: ElevatedButton(
-            onPressed: _isSubmitting ? null : _register,
-            child: _isSubmitting
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Text('Crear cuenta'),
+        SizedBox(height: isDesktop ? 36 : 24),
+
+        // Altura mínima fija para que el logo y las pestañas nunca se muevan
+        // al cambiar entre Iniciar Sesión y Registrarse.
+        ConstrainedBox(
+          constraints: BoxConstraints(minHeight: isDesktop ? 440 : 410),
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 220),
+            reverseDuration: const Duration(milliseconds: 160),
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeOutCubic,
+            layoutBuilder: (currentChild, previousChildren) => Stack(
+              alignment: Alignment.topCenter,
+              children: [
+                ...previousChildren,
+                ?currentChild,
+              ],
+            ),
+            transitionBuilder: (child, animation) {
+              final isIncomingRegister =
+                  child.key == const ValueKey('register-form');
+              final direction = isIncomingRegister ? 1.0 : -1.0;
+              final slideTween = Tween<Offset>(
+                begin: Offset(0.06 * direction, 0),
+                end: Offset.zero,
+              );
+              return FadeTransition(
+                opacity: animation,
+                child: SlideTransition(
+                  position: slideTween.animate(animation),
+                  child: child,
+                ),
+              );
+            },
+            child: _isRegisterMode
+                ? _buildRegisterForm(key: const ValueKey('register-form'))
+                : _buildLoginForm(key: const ValueKey('login-form')),
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildLoginForm({required Key key}) {
+    return Column(
+      key: key,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _fieldLabel('Correo Electrónico:'),
+        const SizedBox(height: 8),
+        _buildTextField(
+          controller: _emailController,
+          keyboardType: TextInputType.emailAddress,
+          textInputAction: TextInputAction.next,
+        ),
+        const SizedBox(height: 22),
+        _fieldLabel('Contraseña:'),
+        const SizedBox(height: 8),
+        _buildTextField(
+          controller: _passwordController,
+          obscureText: true,
+          textInputAction: TextInputAction.done,
+          onSubmitted: (_) {
+            if (!_isSubmitting) _login();
+          },
+        ),
+        if (_authError != null) ...[
+          const SizedBox(height: 16),
+          _buildErrorBanner(_authError!),
+        ],
+        const SizedBox(height: 36),
+        Center(
+          child: _buildSubmitButton(
+            label: 'Iniciar sesión',
+            onPressed: _isSubmitting ? null : _login,
+          ),
+        ),
+        const SizedBox(height: 28),
+        Center(
+          child: _buildSwitchLink(
+            prompt: '¿No tienes cuenta? ',
+            actionLabel: 'Crea una aquí',
+            onTap: () => _switchMode(isRegister: true),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildRegisterForm({required Key key}) {
+    return Column(
+      key: key,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _fieldLabel('Usuario:'),
+        const SizedBox(height: 8),
+        _buildTextField(
+          controller: _usernameController,
+          textInputAction: TextInputAction.next,
+        ),
+        const SizedBox(height: 18),
+        _fieldLabel('Correo Electrónico:'),
+        const SizedBox(height: 8),
+        _buildTextField(
+          controller: _emailController,
+          keyboardType: TextInputType.emailAddress,
+          textInputAction: TextInputAction.next,
+        ),
+        const SizedBox(height: 18),
+        _fieldLabel('Contraseña:'),
+        const SizedBox(height: 8),
+        _buildTextField(
+          controller: _passwordController,
+          obscureText: true,
+          textInputAction: TextInputAction.done,
+          onSubmitted: (_) {
+            if (!_isSubmitting) _register();
+          },
+        ),
+        if (_authError != null) ...[
+          const SizedBox(height: 16),
+          _buildErrorBanner(_authError!),
+        ],
+        const SizedBox(height: 32),
+        Center(
+          child: _buildSubmitButton(
+            label: 'Crear cuenta',
+            onPressed: _isSubmitting ? null : _register,
+          ),
+        ),
+        const SizedBox(height: 24),
+        Center(
+          child: _buildSwitchLink(
+            prompt: '¿Ya tienes una cuenta? ',
+            actionLabel: 'Inicia sesión aquí',
+            onTap: () => _switchMode(isRegister: false),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _fieldLabel(String text) {
+    return Text(
+      text,
+      style: MeloopTypography.lexend(
+        color: Colors.white,
+        fontSize: 15,
+        fontWeight: FontWeight.w400,
+      ),
+    );
+  }
+
+  Widget _buildTextField({
+    required TextEditingController controller,
+    bool obscureText = false,
+    TextInputType? keyboardType,
+    TextInputAction? textInputAction,
+    ValueChanged<String>? onSubmitted,
+  }) {
+    return TextField(
+      controller: controller,
+      obscureText: obscureText,
+      keyboardType: keyboardType,
+      textInputAction: textInputAction,
+      onSubmitted: onSubmitted,
+      style: MeloopTypography.lexend(
+        color: const Color(0xFF172222),
+        fontSize: 15,
+      ),
+      decoration: InputDecoration(
+        filled: true,
+        fillColor: Colors.white,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 18,
+          vertical: 15,
+        ),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: Color(0xFF68B6AA), width: 1.5),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: Color(0xFF68B6AA), width: 1.5),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: Color(0xFF56E4C8), width: 2.2),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSubmitButton({
+    required String label,
+    required VoidCallback? onPressed,
+  }) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xFF5CE6CC), Color(0xFF0FB49A)],
+        ),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white, width: 2),
+      ),
+      child: ElevatedButton(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.transparent,
+          disabledBackgroundColor: Colors.transparent,
+          shadowColor: Colors.transparent,
+          elevation: 0,
+          padding: const EdgeInsets.symmetric(horizontal: 44, vertical: 16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+        ),
+        onPressed: onPressed,
+        child: _isSubmitting
+            ? const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.2,
+                  color: Colors.white,
+                ),
+              )
+            : Text(
+                label,
+                style: MeloopTypography.lexend(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+      ),
+    );
+  }
+
+  Widget _buildErrorBanner(String message) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0x33FF6B6B),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0x88FF8A8A)),
+      ),
+      child: Text(
+        message,
+        style: MeloopTypography.lexend(color: Colors.white, fontSize: 13),
+        textAlign: TextAlign.center,
+      ),
+    );
+  }
+
+  Widget _buildSwitchLink({
+    required String prompt,
+    required String actionLabel,
+    required VoidCallback onTap,
+  }) {
+    return Wrap(
+      alignment: WrapAlignment.center,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        Text(
+          prompt,
+          style: MeloopTypography.lexend(color: Colors.white, fontSize: 14),
+        ),
+        MouseRegion(
+          cursor: SystemMouseCursors.click,
+          child: GestureDetector(
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: Text(
+                actionLabel,
+                style: MeloopTypography.lexend(
+                  color: const Color(0xFF39E0C1),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _AuthModeTabs extends StatelessWidget {
+  const _AuthModeTabs({required this.isRegister, required this.onSelect});
+
+  final bool isRegister;
+  final ValueChanged<bool> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 320),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: _AuthTabItem(
+                  label: 'Iniciar Sesión',
+                  selected: !isRegister,
+                  onTap: () => onSelect(false),
+                ),
+              ),
+              Expanded(
+                child: _AuthTabItem(
+                  label: 'Registrarse',
+                  selected: isRegister,
+                  onTap: () => onSelect(true),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            height: 7,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                Container(
+                  height: 3,
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                AnimatedAlign(
+                  duration: const Duration(milliseconds: 280),
+                  curve: Curves.easeOutCubic,
+                  alignment: isRegister
+                      ? Alignment.centerRight
+                      : Alignment.centerLeft,
+                  child: FractionallySizedBox(
+                    widthFactor: 0.5,
+                    child: Container(
+                      height: 7,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF56E4C8),
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: Colors.white, width: 1.5),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AuthTabItem extends StatelessWidget {
+  const _AuthTabItem({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: AnimatedDefaultTextStyle(
+            duration: const Duration(milliseconds: 200),
+            style: MeloopTypography.lexend(
+              color: selected
+                  ? Colors.white
+                  : Colors.white.withValues(alpha: 0.72),
+              fontSize: 19,
+              fontWeight: selected ? FontWeight.w500 : FontWeight.w400,
+            ),
+            child: Text(label, textAlign: TextAlign.center),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Fondo radial con el mismo gradiente de la pantalla de carga (`#248686` →
+/// `#004562`) cuyo punto luminoso se desplaza suavemente con bajo costo de GPU.
+class _AnimatedTealRadialBackground extends StatelessWidget {
+  const _AnimatedTealRadialBackground({required this.animation});
+
+  final Animation<double> animation;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: animation,
+      builder: (context, _) => CustomPaint(
+        painter: _MovingRadialGradientPainter(progress: animation.value),
+        child: const SizedBox.expand(),
+      ),
+    );
+  }
+}
+
+class _MovingRadialGradientPainter extends CustomPainter {
+  const _MovingRadialGradientPainter({required this.progress});
+
+  final double progress;
+
+  static const _brightColor = Color(0xFF248686);
+  static const _deepColor = Color(0xFF004562);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.isEmpty) return;
+
+    final t = progress * 2 * math.pi;
+    // Órbita suave tipo Lissajous sobre el lienzo izquierdo/central
+    final centerX = size.width * (0.26 + 0.16 * math.sin(t));
+    final centerY = size.height * (0.42 + 0.24 * math.sin(2 * t + 0.5));
+    final radiusX = size.width * 0.72;
+    final radiusY = size.height * 0.78;
+
+    canvas.save();
+    canvas.translate(centerX, centerY);
+    canvas.scale(radiusX, radiusY);
+    final shader = ui.Gradient.radial(
+      Offset.zero,
+      1.0,
+      const [_brightColor, _deepColor],
+      const [0.0, 1.0],
+    );
+    canvas.drawRect(
+      Rect.fromLTRB(
+        -centerX / radiusX,
+        -centerY / radiusY,
+        (size.width - centerX) / radiusX,
+        (size.height - centerY) / radiusY,
+      ),
+      Paint()..shader = shader,
+    );
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _MovingRadialGradientPainter oldDelegate) =>
+      oldDelegate.progress != progress;
+}
+
+/// Esquina oculta de diagnóstico: invisible y no clickeable hasta mantener el
+/// cursor encima durante 3 segundos continuos.
+class _HiddenDiagnosticCorner extends StatefulWidget {
+  const _HiddenDiagnosticCorner({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  State<_HiddenDiagnosticCorner> createState() =>
+      _HiddenDiagnosticCornerState();
+}
+
+class _HiddenDiagnosticCornerState extends State<_HiddenDiagnosticCorner> {
+  Timer? _hoverTimer;
+  bool _revealed = false;
+
+  void _onEnter(PointerEvent _) {
+    if (_revealed) return;
+    _hoverTimer?.cancel();
+    _hoverTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted) setState(() => _revealed = true);
+    });
+  }
+
+  void _onExit(PointerEvent _) {
+    _hoverTimer?.cancel();
+    _hoverTimer = null;
+    if (_revealed) {
+      setState(() => _revealed = false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _hoverTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: _onEnter,
+      onExit: _onExit,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minWidth: 210, minHeight: 44),
+        child: Align(
+          alignment: Alignment.bottomRight,
+          child: IgnorePointer(
+            ignoring: !_revealed,
+            child: AnimatedOpacity(
+              opacity: _revealed ? 1.0 : 0.0,
+              duration: const Duration(milliseconds: 240),
+              curve: Curves.easeOut,
+              child: TextButton.icon(
+                style: TextButton.styleFrom(
+                  foregroundColor: Colors.white.withValues(alpha: 0.9),
+                  backgroundColor: Colors.black.withValues(alpha: 0.28),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 10,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+                onPressed: widget.onPressed,
+                icon: const Icon(Icons.monitor_heart_outlined, size: 16),
+                label: Text(
+                  'Diagnóstico de conexión',
+                  style: MeloopTypography.lexend(
+                    fontSize: 12.5,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
