@@ -51,21 +51,12 @@ func (r *PostgresFeedRepository) GetMainFeed(userID string, limit, offset int) (
 			FROM INTERACCION WHERE tipo = 'comentario' GROUP BY id_publicacion
 		) c ON p.id_publicacion = c.id_publicacion
 		WHERE (
-			p.id_usuario = ?
-			OR (
-				p.id_usuario IN (
-					SELECT id_usuario_2 FROM AMISTAD WHERE id_usuario_1 = ? AND UPPER(estado) = 'ACEPTADA'
-					UNION
-					SELECT id_usuario_1 FROM AMISTAD WHERE id_usuario_2 = ? AND UPPER(estado) = 'ACEPTADA'
-				)
-				AND UPPER(COALESCE(privacy.visibilidad_publicaciones, 'PUBLICO')) = 'AMIGOS'
-			)
-			OR UPPER(COALESCE(privacy.visibilidad_publicaciones, 'PUBLICO')) = 'PUBLICO'
-		)
-		AND NOT EXISTS (
-			SELECT 1 FROM BLOQUEO b
-			WHERE (b.id_usuario_bloqueador::text = ? AND b.id_usuario_bloqueado = p.id_usuario)
-				OR (b.id_usuario_bloqueado::text = ? AND b.id_usuario_bloqueador = p.id_usuario)
+			p.id_usuario IN (
+				SELECT id_usuario_2 FROM AMISTAD WHERE id_usuario_1 = ? AND UPPER(estado) = 'ACEPTADA'
+				UNION
+				SELECT id_usuario_1 FROM AMISTAD WHERE id_usuario_2 = ? AND UPPER(estado) = 'ACEPTADA'
+			) 
+			-- OR p.es_publico = true (Falta definir en BD)
 		)
 		ORDER BY p.fecha_creacion DESC
 		LIMIT ? OFFSET ?
