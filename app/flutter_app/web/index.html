@@ -180,13 +180,22 @@
   </div>
 
   <script>
-    window.addEventListener('flutter-first-frame', function () {
+    window.dismissMeloopSplash = function () {
       var splash = document.getElementById('meloop-splash');
-      if (!splash) return;
+      if (!splash || splash.classList.contains('hidden')) return;
       splash.classList.add('hidden');
       window.setTimeout(function () {
         if (splash.parentNode) splash.parentNode.removeChild(splash);
       }, 420);
+    };
+
+    // Fallback de seguridad en caso de que la app tarde demasiado o no notifique.
+    window.addEventListener('flutter-first-frame', function () {
+      window.setTimeout(function () {
+        if (typeof window.dismissMeloopSplash === 'function') {
+          window.dismissMeloopSplash();
+        }
+      }, 15000);
     });
   </script>
 

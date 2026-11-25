@@ -4,22 +4,32 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 
-import '../core/navigation/desktop_navigation_shell.dart';
 import '../core/navigation/responsive_navigation_shell.dart';
 import '../features/moderation/data/moderation_models.dart';
 import '../features/notifications/presentation/notification_scope.dart';
 import '../services/api_client.dart';
 import '../services/auth_session.dart';
 import '../theme/meloop_typography.dart';
+import '../utils/web_splash.dart';
 import '../widgets/paper/stacked_paper_card.dart';
 import '../widgets/parallax_album_covers.dart';
+import 'feed_screen.dart';
 import 'kubernetes_connectivity_screen.dart';
 
 class AuthScreen extends StatefulWidget {
   final ApiClient? apiClient;
+  final VoidCallback? onReadyForSplashDismiss;
+  final Future<void> Function(BuildContext context, bool isDesktop)?
+  preloadImages;
 
-  const AuthScreen({super.key, this.apiClient});
+  const AuthScreen({
+    super.key,
+    this.apiClient,
+    this.onReadyForSplashDismiss,
+    this.preloadImages,
+  });
 
   @override
   State<AuthScreen> createState() => _AuthScreenState();
@@ -36,6 +46,9 @@ class _AuthScreenState extends State<AuthScreen>
 
   bool _isRegisterMode = false;
   bool _isSubmitting = false;
+  bool _preloadStarted = false;
+  bool _assetsReady = false;
+  bool _splashDismissed = false;
   String? _authError;
 
   static bool get _isTestBinding {
@@ -55,12 +68,64 @@ class _AuthScreenState extends State<AuthScreen>
       vsync: this,
       duration: const Duration(seconds: 20),
     );
-    if (!_isTestBinding) {
-      _bgController.repeat();
-    }
     if (AuthSession.shared.isAuthenticated) {
       _restoreSession();
     }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_preloadStarted) return;
+    _preloadStarted = true;
+
+    if (_isTestBinding &&
+        widget.onReadyForSplashDismiss == null &&
+        widget.preloadImages == null) {
+      _assetsReady = true;
+      return;
+    }
+
+    final isDesktop = MediaQuery.sizeOf(context).width > 800;
+    unawaited(_preloadLoginAssets(isDesktop));
+  }
+
+  Future<void> _preloadLoginAssets(bool isDesktop) async {
+    try {
+      final preloadTask = widget.preloadImages != null
+          ? widget.preloadImages!(context, isDesktop)
+          : Future.wait<void>([
+              MeloopLogoSticker.preload(
+                context,
+                height: isDesktop ? 76 : 56,
+              ),
+              if (isDesktop) ParallaxAlbumCovers.preload(context),
+              if (!_isTestBinding)
+                GoogleFonts.pendingFonts()
+                    .timeout(const Duration(seconds: 3))
+                    .then<void>((_) {}, onError: (_, _) {}),
+            ]);
+      await preloadTask.timeout(const Duration(seconds: 12));
+    } catch (_) {
+      // Si ocurre algún error o timeout, revelamos igualmente el login.
+    }
+
+    if (!mounted) return;
+    setState(() => _assetsReady = true);
+    if (!_isTestBinding && !_bgController.isAnimating) {
+      _bgController.repeat();
+    }
+    // Esperamos un cuadro completo para que Flutter pinte las imágenes ya
+    // decodificadas antes de desvanecer la pantalla de carga inicial.
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+    _dismissSplashOnce();
+  }
+
+  void _dismissSplashOnce() {
+    if (_splashDismissed) return;
+    _splashDismissed = true;
+    (widget.onReadyForSplashDismiss ?? dismissWebSplash)();
   }
 
   @override
@@ -162,11 +227,12 @@ class _AuthScreenState extends State<AuthScreen>
     const userRole = ModerationRole.user;
     final Widget destination = defaultTargetPlatform == TargetPlatform.android
         ? const ResponsiveNavigationShell(userRole: userRole)
-        : const DesktopNavigationShell(userRole: userRole);
+        : FeedScreen(userRole: userRole);
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(builder: (_) => destination),
     );
+    _dismissSplashOnce();
   }
 
   void _openDiagnostics() {
@@ -208,7 +274,9 @@ class _AuthScreenState extends State<AuthScreen>
                 screenWidth - (screenWidth * 0.30).clamp(400.0, 560.0) + 70.0,
               ),
               child: RepaintBoundary(
-                child: ParallaxAlbumCovers(animate: !_isTestBinding),
+                child: ParallaxAlbumCovers(
+                  animate: !_isTestBinding && _assetsReady,
+                ),
               ),
             ),
 
@@ -515,7 +583,6 @@ class _AuthScreenState extends State<AuthScreen>
           colors: [Color(0xFF5CE6CC), Color(0xFF0FB49A)],
         ),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.white, width: 2),
       ),
       child: ElevatedButton(
         style: ElevatedButton.styleFrom(
@@ -660,7 +727,6 @@ class _AuthModeTabs extends StatelessWidget {
                       decoration: BoxDecoration(
                         color: const Color(0xFF56E4C8),
                         borderRadius: BorderRadius.circular(4),
-                        border: Border.all(color: Colors.white, width: 1.5),
                       ),
                     ),
                   ),

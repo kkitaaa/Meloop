@@ -22,16 +22,10 @@ class ParallaxAlbumCovers extends StatefulWidget {
 
   final bool animate;
 
-  @override
-  State<ParallaxAlbumCovers> createState() => _ParallaxAlbumCoversState();
-}
-
-class _ParallaxAlbumCoversState extends State<ParallaxAlbumCovers>
-    with SingleTickerProviderStateMixin {
-  static const int _decodeSizePx = 360;
+  static const int decodeSizePx = 360;
 
   // Orden exacto según número de copia en assets/textures/PLACEHOLDER_ALBUMCOVER/
-  static const List<String> _placeholderAlbumCovers = [
+  static const List<String> placeholderAlbumCovers = [
     'assets/textures/PLACEHOLDER_ALBUMCOVER/image.png',
     'assets/textures/PLACEHOLDER_ALBUMCOVER/image copy.png',
     'assets/textures/PLACEHOLDER_ALBUMCOVER/image copy 2.png',
@@ -43,16 +37,13 @@ class _ParallaxAlbumCoversState extends State<ParallaxAlbumCovers>
     'assets/textures/PLACEHOLDER_ALBUMCOVER/image copy 8.png',
     'assets/textures/PLACEHOLDER_ALBUMCOVER/image copy 9.png',
     'assets/textures/PLACEHOLDER_ALBUMCOVER/image copy 10.png',
-    'assets/textures/PLACEHOLDER_ALBUMCOVER/image copy 11.png',
     'assets/textures/PLACEHOLDER_ALBUMCOVER/image copy 12.png',
-    'assets/textures/PLACEHOLDER_ALBUMCOVER/image copy 13.png',
     'assets/textures/PLACEHOLDER_ALBUMCOVER/image copy 14.png',
     'assets/textures/PLACEHOLDER_ALBUMCOVER/image copy 15.png',
     'assets/textures/PLACEHOLDER_ALBUMCOVER/image copy 16.png',
     'assets/textures/PLACEHOLDER_ALBUMCOVER/image copy 17.png',
     'assets/textures/PLACEHOLDER_ALBUMCOVER/image copy 18.png',
     'assets/textures/PLACEHOLDER_ALBUMCOVER/image copy 19.png',
-    'assets/textures/PLACEHOLDER_ALBUMCOVER/image copy 20.png',
     'assets/textures/PLACEHOLDER_ALBUMCOVER/image copy 21.png',
     'assets/textures/PLACEHOLDER_ALBUMCOVER/image copy 22.png',
     'assets/textures/PLACEHOLDER_ALBUMCOVER/image copy 23.png',
@@ -62,6 +53,31 @@ class _ParallaxAlbumCoversState extends State<ParallaxAlbumCovers>
     'assets/textures/PLACEHOLDER_ALBUMCOVER/image copy 27.png',
     'assets/textures/PLACEHOLDER_ALBUMCOVER/image copy 28.png',
   ];
+
+  /// Precarga y decodifica todas las carátulas al mismo tamaño (`360×360`) que
+  /// usa el widget para que aparezcan listas desde el primer cuadro visible.
+  static Future<void> preload(BuildContext context) async {
+    await Future.wait(
+      placeholderAlbumCovers.map(
+        (assetPath) => precacheImage(
+          ResizeImage.resizeIfNeeded(
+            decodeSizePx,
+            decodeSizePx,
+            AssetImage(assetPath),
+          ),
+          context,
+          onError: (_, _) {},
+        ),
+      ),
+    );
+  }
+
+  @override
+  State<ParallaxAlbumCovers> createState() => _ParallaxAlbumCoversState();
+}
+
+class _ParallaxAlbumCoversState extends State<ParallaxAlbumCovers>
+    with SingleTickerProviderStateMixin {
 
   // Planos de paralaje con carriles horizontales desfasados entre sí para que
   // las portadas se repartan de forma uniforme y solo solapen bordes/esquinas.
@@ -115,6 +131,22 @@ class _ParallaxAlbumCoversState extends State<ParallaxAlbumCovers>
     super.initState();
     if (widget.animate) {
       _ticker = createTicker(_onTick)..start();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant ParallaxAlbumCovers oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.animate == oldWidget.animate) return;
+    if (widget.animate) {
+      _lastTick = null;
+      _ticker ??= createTicker(_onTick);
+      if (!_ticker!.isActive) {
+        _ticker!.start();
+      }
+    } else {
+      _ticker?.stop();
+      _lastTick = null;
     }
   }
 
@@ -180,13 +212,13 @@ class _ParallaxAlbumCoversState extends State<ParallaxAlbumCovers>
   }) {
     final spec = _depthSpecs[depth];
     final assetPath =
-        _placeholderAlbumCovers[_nextAssetIndex %
-            _placeholderAlbumCovers.length];
+        ParallaxAlbumCovers.placeholderAlbumCovers[_nextAssetIndex %
+            ParallaxAlbumCovers.placeholderAlbumCovers.length];
     _nextAssetIndex++;
 
     final double size =
         (spec.minSize + _random.nextDouble() * (spec.maxSize - spec.minSize))
-            .clamp(spec.minSize, _decodeSizePx.toDouble())
+            .clamp(spec.minSize, ParallaxAlbumCovers.decodeSizePx.toDouble())
             .toDouble();
 
     final laneIdx =
@@ -360,9 +392,10 @@ class _ParallaxAlbumCoversState extends State<ParallaxAlbumCovers>
                             album.assetPath,
                             width: album.size,
                             height: album.size,
-                            cacheWidth: _decodeSizePx,
-                            cacheHeight: _decodeSizePx,
+                            cacheWidth: ParallaxAlbumCovers.decodeSizePx,
+                            cacheHeight: ParallaxAlbumCovers.decodeSizePx,
                             fit: BoxFit.cover,
+                            gaplessPlayback: true,
                             isAntiAlias: true,
                             filterQuality: FilterQuality.medium,
                             errorBuilder: (context, error, stackTrace) =>

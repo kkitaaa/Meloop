@@ -414,13 +414,35 @@ class MeloopLogoSticker extends StatelessWidget {
   final double strokeWidth;
   final bool whiteOnly;
 
+  static int decodedHeightFor(BuildContext context, double height) {
+    final dpr = MediaQuery.maybeDevicePixelRatioOf(context) ?? 1.0;
+    return (height * dpr * 2).round().clamp(48, 605);
+  }
+
+  /// Precarga el logo con el mismo `cacheHeight` exacto que usa el widget para
+  /// garantizar que esté decodificado en `ImageCache` antes de revelar la vista.
+  static Future<void> preload(
+    BuildContext context, {
+    double height = 56,
+  }) async {
+    final decodedHeight = decodedHeightFor(context, height);
+    await precacheImage(
+      ResizeImage.resizeIfNeeded(
+        null,
+        decodedHeight,
+        const AssetImage('assets/imagenes/meloop.png'),
+      ),
+      context,
+      onError: (_, _) {},
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     // meloop.png mide 2075x605 (~13x más grande que 46px). Usar FilterQuality.medium
     // (mipmaps trilineales) junto a cacheHeight evita el aliasing de bicubic 4x4
     // en Skia/CanvasKit (Edge/Chrome) al reducir imágenes muy grandes.
-    final dpr = MediaQuery.maybeDevicePixelRatioOf(context) ?? 1.0;
-    final decodedHeight = (height * dpr * 2).round().clamp(48, 605);
+    final decodedHeight = decodedHeightFor(context, height);
 
     if (whiteOnly) {
       return Image.asset(

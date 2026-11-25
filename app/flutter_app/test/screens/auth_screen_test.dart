@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:ui';
 
@@ -153,6 +154,43 @@ void main() {
       await tester.pump(const Duration(milliseconds: 50));
       final movedY = tester.getTopLeft(firstCover).dy;
       expect(movedY, lessThan(startY));
+    },
+  );
+
+  testWidgets(
+    'splash dismissal waits until login images finish preloading and rendering',
+    (tester) async {
+      tester.view.physicalSize = const Size(1920, 1080);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final preloadCompleter = Completer<void>();
+      var splashDismissCount = 0;
+      bool? preloadedDesktopFlag;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: AuthScreen(
+            preloadImages: (context, isDesktop) {
+              preloadedDesktopFlag = isDesktop;
+              return preloadCompleter.future;
+            },
+            onReadyForSplashDismiss: () => splashDismissCount++,
+          ),
+        ),
+      );
+
+      // Mientras las imágenes aún están cargando, el splash NO debe ocultarse.
+      await tester.pump();
+      expect(preloadedDesktopFlag, isTrue);
+      expect(splashDismissCount, 0);
+
+      // Una vez terminada la precarga y pintado el siguiente cuadro, se oculta.
+      preloadCompleter.complete();
+      await tester.pump();
+      await tester.pump();
+      expect(splashDismissCount, 1);
     },
   );
 }
