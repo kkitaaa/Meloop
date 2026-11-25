@@ -250,11 +250,18 @@ class _PostAudioControlsState extends State<PostAudioControls> {
                                   ),
                                 ),
                                 const SizedBox(width: 8),
-                                Text(
-                                  '${_formatDuration(position)} / ${_formatDuration(duration ?? Duration.zero)}',
-                                  style: MeloopTypography.musicPlayer(
-                                    color: Colors.white.withValues(alpha: 0.85),
-                                    fontSize: 12.5,
+                                Flexible(
+                                  child: Text(
+                                    '${_formatDuration(position)} / ${_formatDuration(duration ?? Duration.zero)}',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    textAlign: TextAlign.end,
+                                    style: MeloopTypography.musicPlayer(
+                                      color: Colors.white.withValues(
+                                        alpha: 0.85,
+                                      ),
+                                      fontSize: 12.5,
+                                    ),
                                   ),
                                 ),
                               ],

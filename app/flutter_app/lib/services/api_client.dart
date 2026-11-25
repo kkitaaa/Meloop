@@ -36,17 +36,21 @@ class ApiClient implements PostPublisher {
   final bool _ownsClient;
   final bool _ownsDio;
   final AuthSession _session;
+  final Environment _environment;
+  Environment get environment => _environment;
 
   ApiClient({
     http.Client? httpClient,
     Dio? dio,
     AuthSession? session,
+    Environment? environment,
     this._timeout = const Duration(seconds: 10),
   }) : _httpClient = httpClient ?? http.Client(),
        _ownsClient = httpClient == null,
        _dio = dio ?? Dio(),
        _ownsDio = dio == null,
-       _session = session ?? AuthSession.shared {
+       _session = session ?? AuthSession.shared,
+       _environment = environment ?? ApiConfig.environment {
     _dio.options
       ..baseUrl = ApiConfig.baseUrl
       ..connectTimeout = _timeout
@@ -288,7 +292,7 @@ class ApiClient implements PostPublisher {
     required int page,
     int pageSize = 5,
   }) {
-    final isDevelopment = ApiConfig.environment == Environment.development;
+    final isDevelopment = _environment == Environment.development;
     final queryParameters = <String, String>{
       'page': '$page',
       if (isDevelopment) 'category': category,
@@ -298,7 +302,7 @@ class ApiClient implements PostPublisher {
 
     return _send(
       () => _httpClient.get(
-        _uriFor(ApiConfig.feedEndpoint)
+        _uriFor(ApiConfig.feedEndpointFor(_environment))
             .replace(queryParameters: queryParameters),
         headers: _headers,
       ),

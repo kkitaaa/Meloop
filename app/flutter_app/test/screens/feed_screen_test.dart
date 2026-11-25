@@ -26,8 +26,8 @@ void main() {
             'success': true,
             'data': {
               'items': [
-                _post((page - 1) * 5 + 1, category),
-                _post((page - 1) * 5 + 2, category),
+                for (var index = 0; index < 5; index++)
+                  _post((page - 1) * 5 + index + 1, category),
               ],
               'page': page,
               'pageSize': 5,
@@ -47,13 +47,16 @@ void main() {
     expect(find.text('Post recent 1'), findsOneWidget);
     expect(requests.single.queryParameters['category'], 'recent');
 
-    await tester.ensureVisible(find.text('Cargar más blogs'));
-    await tester.tap(find.text('Cargar más blogs'));
+    await tester.dragFrom(
+      tester.getCenter(find.text('Post recent 1')),
+      const Offset(0, -700),
+    );
+    await tester.pumpAndSettle();
     await tester.pumpAndSettle();
     expect(find.text('Post recent 6'), findsOneWidget);
     expect(requests[1].queryParameters['page'], '2');
 
-    await tester.tap(find.text('amigos'));
+    await tester.tap(find.text('Amigos'));
     await tester.pumpAndSettle();
     expect(find.text('Post friends 1'), findsOneWidget);
     expect(requests.last.queryParameters['category'], 'friends');
@@ -89,6 +92,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Gateway no disponible.'), findsOneWidget);
+    await tester.ensureVisible(find.text('Reintentar'));
     await tester.tap(find.text('Reintentar'));
     await tester.pumpAndSettle();
     expect(requestCount, 2);

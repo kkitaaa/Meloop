@@ -10,6 +10,11 @@ import 'package:http/testing.dart';
 
 void main() {
   testWidgets('saves a privacy change and confirms it visibly', (tester) async {
+    tester.view.physicalSize = const Size(800, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
     final session = AuthSession(persistent: false);
     await session.establish(
       sessionToken: 'settings-token',
@@ -25,6 +30,17 @@ void main() {
       session: session,
       httpClient: MockClient((request) async {
         expect(request.headers['authorization'], 'Bearer settings-token');
+        if (request.method == 'GET' && request.url.path == '/users/me') {
+          return _response({
+            'success': true,
+            'data': {
+              'id_usuario': 'user-1',
+              'username': 'Ana',
+              'correo': 'ana@example.test',
+            },
+            'error': null,
+          });
+        }
         if (request.method == 'GET' &&
             request.url.path == '/users/me/privacy') {
           return _response(_privacySettings('PUBLICO'));
@@ -53,11 +69,11 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(profileVisibility);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Nadie').last);
+    await tester.tap(find.text('Privado').last);
     await tester.pumpAndSettle();
 
     expect(privacyUpdates, 1);
-    expect(find.text('Privacidad actualizada.'), findsOneWidget);
+    expect(find.text('Configuración de privacidad guardada.'), findsOneWidget);
   });
 }
 

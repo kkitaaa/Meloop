@@ -93,7 +93,7 @@ void main() {
       await session.clear();
     });
 
-    test('reports a missing role in the login response', () async {
+    test('accepts a login response without an optional role', () async {
       final client = ApiClient(
         session: AuthSession(persistent: false),
         httpClient: MockClient((_) async {
@@ -116,16 +116,11 @@ void main() {
         }),
       );
 
-      await expectLater(
-        client.login(email: 'ana@example.test', password: 'password123'),
-        throwsA(
-          isA<ApiException>().having(
-            (error) => error.message,
-            'message',
-            'El servidor no devolvió el rol del usuario.',
-          ),
-        ),
+      final user = await client.login(
+        email: 'ana@example.test',
+        password: 'password123',
       );
+      expect(user.id, 'user-1');
       client.close();
     });
 
@@ -497,7 +492,7 @@ void main() {
       final client = ApiClient(
         httpClient: MockClient((request) async {
           expect(request.method, 'POST');
-          expect(request.url.path, '/friends/requests');
+          expect(request.url.path, '/v1/social/friends/requests');
           expect(jsonDecode(request.body), {'id_usuario': 'friend-1'});
           return _jsonResponse(
             statusCode: 201,

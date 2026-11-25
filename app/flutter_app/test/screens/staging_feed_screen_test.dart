@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_app/config/api_config.dart';
 import 'package:flutter_app/screens/feed_screen.dart';
 import 'package:flutter_app/services/api_client.dart';
 import 'package:flutter_app/services/auth_session.dart';
@@ -30,6 +31,7 @@ void main() {
     addTearDown(session.clear);
 
     final client = ApiClient(
+      environment: Environment.staging,
       session: session,
       httpClient: MockClient((request) async {
         expect(request.url.path, '/v1/feed');

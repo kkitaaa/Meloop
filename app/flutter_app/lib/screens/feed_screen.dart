@@ -971,7 +971,7 @@ class FeedScreenState extends State<FeedScreen> {
 
   Widget _buildFeedHeader({required bool isMobile}) {
     final showCategoryFilters =
-        ApiConfig.environment == Environment.development;
+        _apiClient.environment == Environment.development;
     final titleWidget = Transform.rotate(
       // En Figma +2.66° inclina hacia arriba a la derecha (CCW = negativo en Flutter)
       angle: -2.66 * math.pi / 180.0,
