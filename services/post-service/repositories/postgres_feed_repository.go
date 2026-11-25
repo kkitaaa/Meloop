@@ -54,9 +54,9 @@ func (r *PostgresFeedRepository) GetMainFeed(userID string, limit, offset int) (
 			p.id_usuario = ?
 			OR (
 				p.id_usuario IN (
-					SELECT id_usuario_2 FROM AMISTAD WHERE id_usuario_1 = ? AND estado = 'aceptada'
+					SELECT id_usuario_2 FROM AMISTAD WHERE id_usuario_1 = ? AND UPPER(estado) = 'ACEPTADA'
 					UNION
-					SELECT id_usuario_1 FROM AMISTAD WHERE id_usuario_2 = ? AND estado = 'aceptada'
+					SELECT id_usuario_1 FROM AMISTAD WHERE id_usuario_2 = ? AND UPPER(estado) = 'ACEPTADA'
 				)
 				AND UPPER(COALESCE(privacy.visibilidad_publicaciones, 'PUBLICO')) = 'AMIGOS'
 			)
