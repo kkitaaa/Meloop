@@ -2,6 +2,9 @@ import 'dart:async';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+
+import '../../../core/navigation/desktop_navigation_shell.dart';
+
 import 'package:flutter_app/features/music/presentation/music_track_detail_screen.dart';
 import 'package:flutter_app/features/music/presentation/music_track_tile.dart';
 import 'package:flutter_app/models/music_track.dart';
@@ -351,12 +354,15 @@ class _MusicSearchScreenState extends State<MusicSearchScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final insideDesktopShell = DesktopShellScope.maybeOf(context) != null;
     return DefaultTabController(
       length: _availableTypes.length,
       initialIndex: _selectedTypeIndex,
       child: Scaffold(
-        backgroundColor: const Color(0xFF0D5C5E),
-        appBar: _buildBrandedAppBar(),
+        backgroundColor: insideDesktopShell
+            ? Colors.transparent
+            : const Color(0xFF0D5C5E),
+        appBar: insideDesktopShell ? null : _buildBrandedAppBar(),
         body: Center(
           child: Padding(
             padding: const EdgeInsets.all(20),
@@ -366,6 +372,8 @@ class _MusicSearchScreenState extends State<MusicSearchScreen> {
                 color: Colors.white,
                 child: Column(
                   children: [
+                    if (insideDesktopShell)
+                      const DesktopSubPageBar(title: 'Buscar música'),
                     Padding(
                       padding: const EdgeInsets.fromLTRB(24, 20, 24, 12),
                       child: _buildSearchInput(),

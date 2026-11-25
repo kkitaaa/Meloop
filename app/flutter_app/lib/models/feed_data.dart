@@ -1,5 +1,5 @@
 class FeedPost {
-  final int id;
+  final Object id;
   final String user;
   final String? userId;
   final String time;
@@ -36,17 +36,37 @@ class FeedPost {
   });
 
   factory FeedPost.fromJson(Object? json) {
+    final id = json is Map<String, dynamic> ? json['id'] : null;
+    final user = json is Map<String, dynamic>
+        ? json['user'] ?? json['author_username']
+        : null;
+    final userId = json is Map<String, dynamic>
+        ? json['user_id'] ?? json['author_id']
+        : null;
+    final rawTime = json is Map<String, dynamic> ? json['time'] : null;
+    final createdAt = json is Map<String, dynamic> ? json['created_at'] : null;
+    final time = rawTime is String ? rawTime : _formatFeedTime(createdAt);
+    final likes = json is Map<String, dynamic>
+        ? json['likes'] ?? json['likes_count'] ?? 0
+        : null;
+    final comments = json is Map<String, dynamic>
+        ? json['comments'] ?? json['comments_count'] ?? 0
+        : null;
+    final imageUrl = json is Map<String, dynamic>
+        ? json['image_url'] ?? json['media_url']
+        : null;
+
     if (json is! Map<String, dynamic> ||
-        json['id'] is! int ||
-        json['user'] is! String ||
-        (json['user_id'] != null && json['user_id'] is! String) ||
-        json['time'] is! String ||
+        (id is! int && (id is! String || id.isEmpty)) ||
+        user is! String ||
+        (userId != null && userId is! String) ||
+        time == null ||
         json['content'] is! String ||
-        json['likes'] is! int ||
-        json['comments'] is! int ||
-        json['isAuthor'] is! bool ||
-        json['isEdited'] is! bool ||
-        json['within24Hours'] is! bool ||
+        likes is! int ||
+        comments is! int ||
+        (json['isAuthor'] != null && json['isAuthor'] is! bool) ||
+        (json['isEdited'] != null && json['isEdited'] is! bool) ||
+        (json['within24Hours'] != null && json['within24Hours'] is! bool) ||
         (json['song'] != null && json['song'] is! String) ||
         (json['song_id'] != null && json['song_id'] is! String) ||
         (json['spotify_track_id'] != null &&
@@ -54,29 +74,29 @@ class FeedPost {
         (json['artist'] != null && json['artist'] is! String) ||
         (json['audio_url'] != null && json['audio_url'] is! String) ||
         (json['audio_name'] != null && json['audio_name'] is! String) ||
-        (json['image_url'] != null && json['image_url'] is! String)) {
+        (imageUrl != null && imageUrl is! String)) {
       throw const FormatException(
         'Una publicación del feed tiene datos inválidos.',
       );
     }
 
     return FeedPost(
-      id: json['id'] as int,
-      user: json['user'] as String,
-      userId: json['user_id'] as String?,
-      time: json['time'] as String,
+      id: id,
+      user: user,
+      userId: userId as String?,
+      time: time,
       content: json['content'] as String,
       song: json['song'] as String?,
       songId: (json['song_id'] ?? json['spotify_track_id']) as String?,
       artist: json['artist'] as String?,
       audioUrl: json['audio_url'] as String?,
       audioName: json['audio_name'] as String?,
-      likes: json['likes'] as int,
-      comments: json['comments'] as int,
-      isAuthor: json['isAuthor'] as bool,
-      isEdited: json['isEdited'] as bool,
-      within24Hours: json['within24Hours'] as bool,
-      imageUrl: json['image_url'] as String?,
+      likes: likes,
+      comments: comments,
+      isAuthor: json['isAuthor'] as bool? ?? false,
+      isEdited: json['isEdited'] as bool? ?? false,
+      within24Hours: json['within24Hours'] as bool? ?? true,
+      imageUrl: imageUrl as String?,
     );
   }
 
@@ -114,21 +134,51 @@ class FeedPage {
   });
 
   factory FeedPage.fromJson(Object? json) {
-    if (json is! Map<String, dynamic> ||
-        json['items'] is! List ||
-        json['page'] is! int ||
-        json['pageSize'] is! int ||
-        json['hasMore'] is! bool) {
+    if (json is! Map<String, dynamic>) {
       throw const FormatException(
         'La respuesta del feed tiene datos inválidos.',
       );
     }
 
+    final page = json['page'];
+    final items = json['items'];
+    final pageSize = json['pageSize'];
+    final hasMore = json['hasMore'];
+    if (items is List && page is int && pageSize is int && hasMore is bool) {
+      return FeedPage(
+        items: items.map(FeedPost.fromJson).toList(),
+        page: page,
+        pageSize: pageSize,
+        hasMore: hasMore,
+      );
+    }
+
+    final data = json['data'];
+    final limit = json['limit'];
+    if (data is! List || page is! int || limit is! int || limit <= 0) {
+      throw const FormatException(
+        'La respuesta del feed tiene datos inválidos.',
+      );
+    }
+
+    final feedItems = data.map(FeedPost.fromJson).toList();
     return FeedPage(
-      items: (json['items'] as List).map(FeedPost.fromJson).toList(),
-      page: json['page'] as int,
-      pageSize: json['pageSize'] as int,
-      hasMore: json['hasMore'] as bool,
+      items: feedItems,
+      page: page,
+      pageSize: limit,
+      hasMore: feedItems.length >= limit,
     );
   }
+}
+
+String? _formatFeedTime(Object? value) {
+  if (value is! String) return null;
+  final createdAt = DateTime.tryParse(value);
+  if (createdAt == null) return null;
+
+  final elapsed = DateTime.now().difference(createdAt.toLocal());
+  if (elapsed.isNegative || elapsed.inMinutes < 1) return 'Ahora';
+  if (elapsed.inHours < 1) return 'Hace ${elapsed.inMinutes} min';
+  if (elapsed.inDays < 1) return 'Hace ${elapsed.inHours} h';
+  return 'Hace ${elapsed.inDays} días';
 }

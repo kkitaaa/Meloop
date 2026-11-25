@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 
+import 'desktop_navigation_shell.dart';
 import '../../features/profile/presentation/profile_screen.dart';
 import '../../features/search/presentation/global_search_route.dart';
 import '../../screens/friends_screen.dart';
@@ -36,6 +37,7 @@ class _ArtistsAndSongsScreenState extends State<ArtistsAndSongsScreen> {
     final isDesktop = screenWidth > 900;
     final isAndroidMobile =
         !isDesktop && defaultTargetPlatform == TargetPlatform.android;
+    final insideDesktopShell = DesktopShellScope.maybeOf(context) != null;
     final results = _catalog
         .where(
           (item) => item.title.toLowerCase().contains(_query.toLowerCase()),
@@ -46,9 +48,9 @@ class _ArtistsAndSongsScreenState extends State<ArtistsAndSongsScreen> {
       backgroundColor: Colors.transparent,
       body: Column(
         children: [
-          if (isAndroidMobile)
+          if (!insideDesktopShell && isAndroidMobile)
             MobileAppHeader(onSearchTap: () => openGlobalSearch(context))
-          else if (isDesktop)
+          else if (!insideDesktopShell && isDesktop)
             DesktopAppHeader(
               activeSection: DesktopNavigationSection.artists,
               onHomeTap: () => navigateToDesktopHome(context),
@@ -63,7 +65,7 @@ class _ArtistsAndSongsScreenState extends State<ArtistsAndSongsScreen> {
               ),
               onSearchTap: () => openGlobalSearch(context),
             )
-          else
+          else if (!insideDesktopShell)
             Container(
               height: 55,
               color: _accentColor,

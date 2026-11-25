@@ -23,6 +23,29 @@ Emulator. Para un dispositivo Android físico, configura `API_BASE_URL` con una
 dirección alcanzable desde ese dispositivo; `localhost` y `10.0.2.2` no son
 direcciones para el host de un teléfono físico.
 
+## Staging
+
+Para probar el Gateway de staging desde Windows:
+
+```powershell
+cd app\flutter_app
+flutter run -d windows `
+  --dart-define=FLUTTER_ENV=staging `
+  --dart-define=API_BASE_URL=https://meloop-acofre.dev.censei.cl
+```
+
+En Android Emulator usa la misma URL HTTPS. `API_BASE_URL` debe ser solo el
+origen del Gateway; no agregues `/api` al final. El cliente define la ruta
+completa de cada servicio.
+
+El Gateway enruta autenticación por `/auth`, usuarios por `/users`, amistades
+por `/friends` y gamificación por `/api/v1/gamification`. La portada Flutter
+solicita `GET /v1/feed?page=1&limit=5`; el servicio requiere sesión y el header
+`X-User-ID`. Este endpoint no procesa filtros de categoría, por lo que la app
+oculta esos filtros en staging y producción. Desarrollo local conserva el feed
+de demostración `GET /api/feed?category=recent&page=1&pageSize=5`. `/api/demo`
+y `/v1/social/users/.../mutual-friends` también conservan sus prefijos propios.
+
 ## Staging y producción
 
 Pasa la URL real del Ingress o LoadBalancer del API Gateway:
@@ -46,7 +69,8 @@ entorno específicas; consulta el propio script para la lista completa.
 | Login / registro | `POST /auth/login`, `POST /auth/register` | Requiere auth-service, Redis y base de datos |
 | Renovación / logout / validar | `/auth/refresh`, `/auth/logout`, `/auth/validate` | Requiere sesión válida |
 | Prueba HTTP | `GET, POST /api/demo` | Gateway |
-| Feed | `GET /api/feed` | Feed de demostración del Gateway |
+| Feed desarrollo | `GET /api/feed` | Feed de demostración con categoría y pageSize |
+| Feed staging/producción | `GET /v1/feed?page=1&limit=5` | Requiere sesión y `X-User-ID` |
 | Recomendaciones | `/recommendations/...` | Depende de recommendation-service y sus dependencias |
 | WebSocket | Ruta opcional `WEBSOCKET_PATH` | Sin servidor WebSocket en los manifests actuales |
 

@@ -2,12 +2,14 @@ import 'dart:async';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+
+import '../../../core/navigation/desktop_navigation_shell.dart';
+
 import 'package:flutter_app/features/music/presentation/music_search_screen.dart';
 import 'package:flutter_app/features/music/presentation/music_track_detail_screen.dart';
 import 'package:flutter_app/models/music_preferences.dart';
 import 'package:flutter_app/models/music_track.dart';
 import 'package:flutter_app/services/api_client.dart';
-import 'package:flutter_app/features/settings/presentation/settings_page_shell.dart';
 
 class MusicPreferencesScreen extends StatefulWidget {
   final ApiClient? apiClient;
@@ -227,48 +229,113 @@ class _MusicPreferencesScreenState extends State<MusicPreferencesScreen> {
       ..showSnackBar(SnackBar(content: Text(message)));
   }
 
+  PreferredSizeWidget _buildBrandedAppBar() {
+    return PreferredSize(
+      preferredSize: const Size.fromHeight(55),
+      child: Container(
+        height: 55,
+        color: const Color(0xFF1ABC9C),
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        child: Row(
+          children: [
+            IconButton(
+              tooltip: 'Volver',
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+              onPressed: () => Navigator.maybePop(context),
+              icon: const Icon(
+                Icons.arrow_back_rounded,
+                color: Colors.white,
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 16),
+            Image.asset(
+              'assets/imagenes/meloop.png',
+              height: 24,
+              fit: BoxFit.contain,
+            ),
+            const SizedBox(width: 24),
+            const Text(
+              'Preferencias musicales',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const Spacer(),
+            const Icon(Icons.graphic_eq_rounded, color: Colors.white, size: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return SettingsPageShell(
-      title: 'Preferencias musicales',
-      icon: Icons.graphic_eq_rounded,
-      child: _isLoading && _preferences == null
-          ? const Center(
-              child: CircularProgressIndicator(color: Color(0xFF1ABC9C)),
-            )
-          : _errorMessage != null && _preferences == null
-          ? _buildLoadError()
-          : RefreshIndicator(
-              onRefresh: _loadPreferences,
-              color: const Color(0xFF0D7771),
-              child: ListView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+    final insideDesktopShell = DesktopShellScope.maybeOf(context) != null;
+    final content = _isLoading && _preferences == null
+        ? const Center(
+            child: CircularProgressIndicator(color: Color(0xFF1ABC9C)),
+          )
+        : _errorMessage != null && _preferences == null
+        ? _buildLoadError()
+        : RefreshIndicator(
+            onRefresh: _loadPreferences,
+            color: const Color(0xFF0D7771),
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+              children: [
+                _buildIntro(),
+                if (_errorMessage != null) ...[
+                  const SizedBox(height: 12),
+                  _buildRefreshError(),
+                ],
+                const SizedBox(height: 16),
+                _buildSection(
+                  title: 'Canciones',
+                  type: 'track',
+                  icon: Icons.music_note_rounded,
+                ),
+                _buildSection(
+                  title: 'Artistas',
+                  type: 'artist',
+                  icon: Icons.people_alt_outlined,
+                ),
+                _buildSection(
+                  title: 'Géneros',
+                  type: 'genre',
+                  icon: Icons.category_outlined,
+                ),
+              ],
+            ),
+          );
+
+    return Scaffold(
+      backgroundColor: insideDesktopShell
+          ? Colors.transparent
+          : const Color(0xFF0D5C5E),
+      appBar: insideDesktopShell ? null : _buildBrandedAppBar(),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 920),
+            child: Container(
+              color: const Color(0xFFF5F8F7),
+              child: Column(
                 children: [
-                  _buildIntro(),
-                  if (_errorMessage != null) ...[
-                    const SizedBox(height: 12),
-                    _buildRefreshError(),
-                  ],
-                  const SizedBox(height: 16),
-                  _buildSection(
-                    title: 'Canciones',
-                    type: 'track',
-                    icon: Icons.music_note_rounded,
-                  ),
-                  _buildSection(
-                    title: 'Artistas',
-                    type: 'artist',
-                    icon: Icons.people_alt_outlined,
-                  ),
-                  _buildSection(
-                    title: 'Géneros',
-                    type: 'genre',
-                    icon: Icons.category_outlined,
-                  ),
+                  if (insideDesktopShell)
+                    const DesktopSubPageBar(title: 'Preferencias musicales'),
+                  Expanded(child: content),
                 ],
               ),
             ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -344,8 +411,8 @@ class _MusicPreferencesScreenState extends State<MusicPreferencesScreen> {
       elevation: 0,
       color: Colors.white,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(14),
-        side: const BorderSide(color: SettingsColors.border),
+        borderRadius: BorderRadius.circular(18),
+        side: const BorderSide(color: Color(0xFFE4ECEA)),
       ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
@@ -368,7 +435,7 @@ class _MusicPreferencesScreenState extends State<MusicPreferencesScreen> {
                   child: Text(
                     title,
                     style: const TextStyle(
-                      color: SettingsColors.text,
+                      color: Color(0xFF183D3B),
                       fontSize: 16,
                       fontWeight: FontWeight.w700,
                     ),

@@ -1,28 +1,33 @@
 import 'dart:async';
-
-import 'package:flutter/material.dart';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 
-import '../services/api_client.dart';
-import 'friends_screen.dart';
-import '../../features/profile/presentation/profile_screen.dart';
-import '../features/posts/presentation/post_editor_dialog.dart';
-import '../features/search/presentation/global_search_screen.dart';
-import '../widgets/app_settings_menu.dart';
-import '../widgets/desktop_app_header.dart';
-import '../widgets/desktop_chat.dart';
-import '../widgets/mobile_app_header.dart';
+import '../config/api_config.dart';
+import '../core/navigation/artists_and_songs_screen.dart';
+import '../core/navigation/desktop_navigation_shell.dart';
+import '../features/gamification/presentation/gamification_demo_controller.dart';
 import '../features/moderation/data/moderation_models.dart';
 import '../features/moderation/presentation/moderation_queue_screen.dart';
-import '../core/navigation/artists_and_songs_screen.dart';
-import '../features/gamification/presentation/gamification_demo_controller.dart';
-import '../widgets/level_progress/level_progress.dart';
-import '../../widgets/post_card.dart';
-import '../../widgets/rumi_xp_notice.dart';
-import '../../widgets/states/loading_state.dart';
-import '../../widgets/states/empty_state.dart';
-import '../../widgets/states/error_state.dart';
+import '../features/posts/presentation/post_editor_dialog.dart';
+import '../features/profile/presentation/profile_screen.dart';
+import '../features/search/presentation/global_search_route.dart';
+import '../services/api_client.dart';
+import '../services/auth_session.dart';
+import '../theme/meloop_typography.dart';
+import '../widgets/app_settings_menu.dart';
+import '../widgets/desktop_app_header.dart';
+import '../widgets/friends_sidebar.dart';
+import '../widgets/meloop_pill_tabs.dart';
+import '../widgets/mobile_app_header.dart';
+import '../widgets/paper/stacked_paper_card.dart';
+import '../widgets/post_card.dart';
+import '../widgets/rumi_xp_notice.dart';
+import '../widgets/states/empty_state.dart';
+import '../widgets/states/error_state.dart';
+import '../widgets/states/loading_state.dart';
+import 'friends_screen.dart';
 
 class FeedScreen extends StatefulWidget {
   final ApiClient? apiClient;
@@ -40,6 +45,29 @@ class FeedScreen extends StatefulWidget {
 
 class FeedScreenState extends State<FeedScreen> {
   static const int _pageSize = 5;
+  static const _suggestedArtists =
+      <({String name, String genres, String stats})>[
+        (
+          name: 'Travis Scott',
+          genres: 'Hip Hop · Pop Rap · Hip Hop experimental',
+          stats: '100+ Canciones · 8 Álbumes',
+        ),
+        (
+          name: 'JPEGMAFIA',
+          genres: 'Hip Hop experimental · Hip Hop alternativo',
+          stats: '100+ Canciones · 6 Álbumes',
+        ),
+        (
+          name: 'Hideki Naganuma',
+          genres: 'J-POP · Electrónica · Funk · Breakbeat',
+          stats: '25+ Canciones · 5 Álbumes',
+        ),
+        (
+          name: 'Nanahira',
+          genres: 'J-POP · Electrónica · Denpa · Breakcore',
+          stats: '100+ Canciones · 14 Álbumes',
+        ),
+      ];
 
   final Color _tealAccent = const Color(0xFF1ABC9C);
 
@@ -65,19 +93,22 @@ class FeedScreenState extends State<FeedScreen> {
     _ownsApiClient = widget.apiClient == null;
 
     _fetchInitialPosts();
-    _scrollController.addListener(() {
-      if (_scrollController.hasClients &&
-          _scrollController.position.pixels >=
-              _scrollController.position.maxScrollExtent - 200) {
-        if (!_isInitialLoading && !_isLoadingMore && _hasMore && !_hasError) {
-          _fetchMorePosts();
-        }
+    _scrollController.addListener(_handleInfiniteScroll);
+  }
+
+  void _handleInfiniteScroll() {
+    if (_scrollController.hasClients &&
+        _scrollController.position.pixels >=
+            _scrollController.position.maxScrollExtent - 280) {
+      if (!_isInitialLoading && !_isLoadingMore && _hasMore && !_hasError) {
+        _fetchMorePosts();
       }
-    });
+    }
   }
 
   @override
   void dispose() {
+    _scrollController.removeListener(_handleInfiniteScroll);
     _scrollController.dispose();
     if (_ownsApiClient) _apiClient.close();
     super.dispose();
@@ -113,6 +144,9 @@ class FeedScreenState extends State<FeedScreen> {
         _currentPage = page.page;
         _hasMore = page.hasMore;
       });
+      if (_scrollController.hasClients) {
+        _scrollController.jumpTo(0);
+      }
     } on ApiException catch (error) {
       if (!mounted || requestGeneration != _requestGeneration) return;
       setState(() {
@@ -180,7 +214,11 @@ class FeedScreenState extends State<FeedScreen> {
     setState(() {
       _posts.insert(0, {
         "id": post['id'] ?? DateTime.now().microsecondsSinceEpoch,
-        "user": post['user'] ?? post['username'] ?? "Tú",
+        "user":
+            post['user'] ??
+            post['username'] ??
+            AuthSession.shared.user?.username ??
+            "Tú",
         "user_id": post['user_id'],
         "time": "Hace un momento",
         "content": post['content'] ?? result.content,
@@ -218,34 +256,70 @@ class FeedScreenState extends State<FeedScreen> {
     );
   }
 
-  void _openSearch() {
+  void _openOwnProfile() {
+    final shell = DesktopShellScope.maybeOf(context);
+    if (shell != null) {
+      shell.openProfile();
+      return;
+    }
     Navigator.push(
       context,
       MaterialPageRoute<void>(
-        builder: (_) => GlobalSearchScreen(apiClient: _apiClient),
+        builder: (_) => ProfileScreen(apiClient: _apiClient),
+      ),
+    );
+  }
+
+  void _openArtistsSection() {
+    final shell = DesktopShellScope.maybeOf(context);
+    if (shell != null) {
+      shell.openArtists();
+      return;
+    }
+    navigateToDesktopSection(context, (_) => const ArtistsAndSongsScreen());
+  }
+
+  void _openFriendsSection() {
+    final shell = DesktopShellScope.maybeOf(context);
+    if (shell != null) {
+      shell.openFriends();
+      return;
+    }
+    navigateToDesktopSection(context, (_) => const FriendsScreen());
+  }
+
+  void _openUserProfile(String username, String? userId) {
+    final shell = DesktopShellScope.maybeOf(context);
+    if (shell != null) {
+      shell.openProfile(username: username, userId: userId);
+      return;
+    }
+    Navigator.push(
+      context,
+      MaterialPageRoute<void>(
+        builder: (_) => ProfileScreen(
+          username: username,
+          userId: userId,
+          apiClient: _apiClient,
+        ),
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final double screenWidth = MediaQuery.of(context).size.width;
+    final double screenWidth = MediaQuery.sizeOf(context).width;
     final bool isDesktop = screenWidth > 900;
+    final bool insideDesktopShell = DesktopShellScope.maybeOf(context) != null;
 
     return Scaffold(
       backgroundColor: Colors.transparent,
-      body: Stack(
+      body: Column(
         children: [
-          Column(
-            children: [
-              _buildTopBar(isDesktop),
-              Expanded(
-                child: isDesktop ? _buildDesktopLayout() : _buildMobileLayout(),
-              ),
-            ],
+          if (!insideDesktopShell) _buildTopBar(isDesktop),
+          Expanded(
+            child: isDesktop ? _buildDesktopLayout() : _buildMobileLayout(),
           ),
-          if (isDesktop)
-            const Positioned(right: 24, bottom: 0, child: DesktopChat()),
         ],
       ),
     );
@@ -259,25 +333,17 @@ class FeedScreenState extends State<FeedScreen> {
         onHomeTap: () {},
         onFriendsTap: () =>
             navigateToDesktopSection(context, (_) => const FriendsScreen()),
-        onArtistsTap: () => navigateToDesktopSection(
-          context,
-          (_) => const ArtistsAndSongsScreen(),
-        ),
-        onProfileTap: () => Navigator.push(
-          context,
-          MaterialPageRoute<void>(
-            builder: (_) => ProfileScreen(apiClient: _apiClient),
-          ),
-        ),
+        onArtistsTap: _openArtistsSection,
+        onProfileTap: _openOwnProfile,
         onModerationTap: canModerate ? _openModerationQueue : null,
-        onSearchTap: _openSearch,
+        onSearchTap: () => openGlobalSearch(context),
         apiClient: _apiClient,
       );
     }
 
     if (defaultTargetPlatform == TargetPlatform.android) {
       return MobileAppHeader(
-        onSearchTap: _openSearch,
+        onSearchTap: () => openGlobalSearch(context),
         onModerationTap: canModerate ? _openModerationQueue : null,
         apiClient: _apiClient,
       );
@@ -302,7 +368,7 @@ class FeedScreenState extends State<FeedScreen> {
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
                 icon: const Icon(Icons.search, color: Colors.white, size: 20),
-                onPressed: _openSearch,
+                onPressed: () => openGlobalSearch(context),
               ),
               const SizedBox(width: 16),
               AppSettingsMenu(apiClient: _apiClient),
@@ -310,15 +376,7 @@ class FeedScreenState extends State<FeedScreen> {
               const Icon(Icons.notifications, color: Colors.white, size: 20),
               const SizedBox(width: 16),
               InkWell(
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) =>
-                          ProfileScreen(apiClient: _apiClient),
-                    ),
-                  );
-                },
+                onTap: _openOwnProfile,
                 child: const CircleAvatar(
                   radius: 14,
                   backgroundColor: Colors.white,
@@ -333,35 +391,85 @@ class FeedScreenState extends State<FeedScreen> {
   }
 
   Widget _buildDesktopLayout() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 32.0, vertical: 24.0),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          SizedBox(
-            width: 220,
-            child: SingleChildScrollView(
-              child: Column(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final bool showRightSidebar = constraints.maxWidth >= 1220;
+        final double horizontalPadding = (constraints.maxWidth * 0.022).clamp(
+          20.0,
+          42.0,
+        );
+        final double contentWidth = math.min(
+          constraints.maxWidth - horizontalPadding * 2,
+          1840.0,
+        );
+        // Ancho simétrico en ambos paneles laterales para mantener el Feed
+        // centrado debajo de la barra de navegación y con un ancho cómodo de
+        // lectura en pantallas 1080p.
+        final double sidebarWidth = showRightSidebar
+            ? (contentWidth * 0.19).clamp(250.0, 345.0)
+            : (contentWidth * 0.24).clamp(270.0, 360.0);
+        final double columnGap = showRightSidebar
+            ? (contentWidth * 0.022).clamp(22.0, 40.0)
+            : (contentWidth * 0.03).clamp(26.0, 48.0);
+
+        final noScrollbarBehavior = ScrollConfiguration.of(context)
+            .copyWith(scrollbars: false);
+
+        return Center(
+          child: SizedBox(
+            width: contentWidth,
+            child: Padding(
+              padding: const EdgeInsets.only(top: 34, bottom: 20),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _buildPolaroidProfile(),
-                  const SizedBox(height: 16),
-                  _buildListeningTo(),
-                  const SizedBox(height: 16),
-                  _buildLevelCard(),
-                  const SizedBox(height: 16),
-                  _buildSuggestions(),
+                  SizedBox(
+                    width: sidebarWidth,
+                    child: ScrollConfiguration(
+                      behavior: noScrollbarBehavior,
+                      child: SingleChildScrollView(
+                        clipBehavior: Clip.none,
+                        padding: const EdgeInsets.only(top: 14, bottom: 16),
+                        child: Column(
+                          children: [
+                            _buildPolaroidProfile(),
+                            const SizedBox(height: 22),
+                            _buildListeningTo(),
+                            const SizedBox(height: 22),
+                            _buildLevelCard(),
+                            const SizedBox(height: 22),
+                            _buildSuggestions(),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  SizedBox(width: columnGap),
+                  Expanded(child: _buildFeedPaper()),
+                  if (showRightSidebar) ...[
+                    SizedBox(width: columnGap),
+                    SizedBox(
+                      width: sidebarWidth,
+                      child: ScrollConfiguration(
+                        behavior: noScrollbarBehavior,
+                        child: SingleChildScrollView(
+                          clipBehavior: Clip.none,
+                          padding: const EdgeInsets.only(top: 2, bottom: 16),
+                          child: DesktopFriendsSidebar(
+                            onSeeMoreOnlineTap: _openFriendsSection,
+                            onSeeMoreRecommendedTap: _openFriendsSection,
+                            onProfileTap: _openUserProfile,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
           ),
-          const SizedBox(width: 24),
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 650),
-            child: _buildFeedPaper(),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -370,119 +478,211 @@ class FeedScreenState extends State<FeedScreen> {
       padding: const EdgeInsets.all(16.0),
       child: Column(
         children: [
-          _buildPolaroidProfile(),
+          const SizedBox(height: 12),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 320),
+            child: _buildPolaroidProfile(compactPhotoHeight: 160),
+          ),
           const SizedBox(height: 16),
           _buildListeningTo(),
-          const SizedBox(height: 24),
-          SizedBox(height: 700, child: _buildFeedPaper()),
+          const SizedBox(height: 20),
+          SizedBox(height: 700, child: _buildFeedPaper(isMobile: true)),
         ],
       ),
     );
   }
 
-  Widget _buildPolaroidProfile() {
-    return Stack(
-      alignment: Alignment.topCenter,
-      clipBehavior: Clip.none,
-      children: [
-        Transform.rotate(
-          angle: -0.02,
-          child: Container(
-            margin: const EdgeInsets.only(top: 10),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.1),
-                  blurRadius: 8,
-                ),
-              ],
-            ),
-            child: Column(
+  Widget _buildPolaroidProfile({double? compactPhotoHeight}) {
+    final username = AuthSession.shared.user?.username ?? 'Nombre.de.usuario';
+    final gamification = GamificationDemoController.instance;
+
+    return AnimatedBuilder(
+      animation: gamification,
+      builder: (context, _) {
+        return GestureDetector(
+          onTap: _openOwnProfile,
+          child: MouseRegion(
+            cursor: SystemMouseCursors.click,
+            child: Stack(
+              alignment: Alignment.topCenter,
+              clipBehavior: Clip.none,
               children: [
-                Container(
-                  height: 140,
-                  width: double.infinity,
-                  color: Colors.grey[200],
-                  child: const Icon(Icons.pets, size: 50, color: Colors.grey),
-                ),
-                const SizedBox(height: 16),
-                const Text(
-                  "Nombre de usuario",
-                  style: TextStyle(
-                    fontFamily: 'Comic Sans MS',
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
+                StackedPaperCard(
+                  textureAsset: 'assets/textures/photopaper.png',
+                  padding: const EdgeInsets.fromLTRB(20, 26, 20, 22),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (compactPhotoHeight != null)
+                        SizedBox(
+                          height: compactPhotoHeight,
+                          width: double.infinity,
+                          child: const MeloopImagePlaceholder(
+                            iconSize: 42,
+                            backgroundColor: Color(0xFFE7ECEB),
+                            iconColor: Color(0xFF7B8E8C),
+                            borderColor: Color(0xFFD0DADA),
+                          ),
+                        )
+                      else
+                        const AspectRatio(
+                          aspectRatio: 1.0,
+                          child: MeloopImagePlaceholder(
+                            iconSize: 48,
+                            backgroundColor: Color(0xFFE7ECEB),
+                            iconColor: Color(0xFF7B8E8C),
+                            borderColor: Color(0xFFD0DADA),
+                          ),
+                        ),
+                      const SizedBox(height: 18),
+                      Transform.rotate(
+                        angle: -2.0 * math.pi / 180.0,
+                        child: Text(
+                          username,
+                          textAlign: TextAlign.center,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: MeloopTypography.username(
+                            fontSize: 25,
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFF1E2525),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Me siento: Feliz',
+                        textAlign: TextAlign.center,
+                        style: MeloopTypography.lexend(
+                          fontSize: 15,
+                          color: const Color(0xFF6B7777),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 4),
-                const Text(
-                  "Me siento Feliz",
-                  style: TextStyle(fontSize: 11, color: Colors.black54),
+                Positioned(
+                  top: -22,
+                  child: Transform.translate(
+                    offset: const Offset(4, 0),
+                    child: CustomizablePin(
+                      color: gamification.activePinColor,
+                      size: 54,
+                    ),
+                  ),
                 ),
               ],
             ),
           ),
-        ),
-        Positioned(
-          top: 0,
-          child: Transform.rotate(
-            angle: -0.08,
-            child: Container(
-              width: 50,
-              height: 18,
-              color: Colors.white.withValues(alpha: 0.7),
-            ),
-          ),
-        ),
-        Positioned(
-          top: 8,
-          child: CircleAvatar(radius: 5, backgroundColor: Colors.red[700]),
-        ),
-      ],
+        );
+      },
     );
   }
 
   Widget _buildListeningTo() {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
+    return StackedPaperCard(
+      tintColor: const Color(0xFFF6F1D5),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: Colors.purple[800],
-              borderRadius: BorderRadius.circular(4),
+          Text(
+            'Escuchando',
+            textAlign: TextAlign.center,
+            style: MeloopTypography.lexend(
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: const Color(0xFF1A2020),
             ),
-            child: const Icon(Icons.music_note, color: Colors.white),
           ),
-          const SizedBox(width: 12),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: const [
-              Text(
-                "Escuchando:",
-                style: TextStyle(color: Colors.black54, fontSize: 10),
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Color(0xFF1D7E78), Color(0xFF135F5C)],
               ),
-              Text(
-                "Finding Urself",
-                style: TextStyle(
-                  color: Colors.black,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 12,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(
+              children: [
+                const MeloopImagePlaceholder(
+                  width: 48,
+                  height: 48,
+                  iconSize: 22,
+                  borderRadius: BorderRadius.all(Radius.circular(6)),
+                  backgroundColor: Color(0xFF215E5A),
+                  iconColor: Color(0xFFA7D9D4),
+                  borderColor: Color(0xFF2E7873),
                 ),
-              ),
-              Text(
-                "DJ GOUZ",
-                style: TextStyle(color: Colors.black54, fontSize: 10),
-              ),
-            ],
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Flashing Lights',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: MeloopTypography.musicPlayer(
+                          color: Colors.white,
+                          fontSize: 16,
+                          height: 1.1,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              'Graduation',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: MeloopTypography.musicPlayer(
+                                color: Colors.white.withValues(alpha: 0.9),
+                                fontSize: 13.5,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Flexible(
+                            child: Text(
+                              'Kanye West',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: MeloopTypography.musicPlayer(
+                                color: Colors.white.withValues(alpha: 0.68),
+                                fontSize: 13,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Align(
+                  alignment: Alignment.topRight,
+                  child: Container(
+                    width: 20,
+                    height: 20,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.2),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.graphic_eq_rounded,
+                      color: Colors.white,
+                      size: 13,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -490,237 +690,407 @@ class FeedScreenState extends State<FeedScreen> {
   }
 
   Widget _buildLevelCard() {
-    final progress = GamificationDemoController.instance;
-    return LevelProgress(
-      level: progress.level,
-      xp: progress.xp,
-      xpNeeded: progress.experienceNeeded,
-      compact: true,
-      demoController: progress,
+    final progressController = GamificationDemoController.instance;
+    return AnimatedBuilder(
+      animation: progressController,
+      builder: (context, _) {
+        final level = progressController.level;
+        final xp = progressController.xp;
+        final xpNeeded = progressController.experienceNeeded;
+        final fraction = xpNeeded == 0
+            ? 0.0
+            : (xp / xpNeeded).clamp(0.0, 1.0).toDouble();
+
+        return StackedPaperCard(
+          tintColor: const Color(0xFFDDF5F7),
+          padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(
+                    Icons.star_border_rounded,
+                    color: Color(0xFF158A82),
+                    size: 22,
+                  ),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      'Nivel $level • ${_levelRankLabel(level)}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: MeloopTypography.lexend(
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.w600,
+                        color: const Color(0xFF1B2B2B),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              TweenAnimationBuilder<double>(
+                tween: Tween<double>(end: fraction),
+                duration: const Duration(milliseconds: 420),
+                curve: Curves.easeOutCubic,
+                builder: (context, value, _) {
+                  return Container(
+                    height: 20,
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF3E8A85),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: FractionallySizedBox(
+                        widthFactor: value.clamp(0.06, 1.0),
+                        child: Container(
+                          height: 20,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF4BE3C8),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: const Color(0xFF0E6C66),
+                              width: 1.5,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '$xp / $xpNeeded EXP',
+                style: MeloopTypography.lexend(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: const Color(0xFF5FAEA8),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
+  }
+
+  static String _levelRankLabel(int level) {
+    if (level <= 3) return 'Aun empezando';
+    if (level <= 6) return 'En sintonía';
+    if (level <= 9) return 'Melómano activo';
+    return 'Leyenda musical';
   }
 
   Widget _buildSuggestions() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-      ),
+    return StackedPaperCard(
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          const Text(
-            "Artistas que te podrían gustar",
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.bold,
-              color: Colors.black87,
+          Text(
+            'Artistas que te podrían gustar',
+            textAlign: TextAlign.center,
+            style: MeloopTypography.lexend(
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+              color: const Color(0xFF1A2020),
             ),
           ),
-          const Divider(),
-          _artistListTile("Kidd Voodoo"),
-          _artistListTile("Tiago PZK"),
-          _artistListTile("Cris MJ"),
+          const SizedBox(height: 14),
+          for (final artist in _suggestedArtists)
+            _artistSuggestionTile(
+              name: artist.name,
+              genres: artist.genres,
+              stats: artist.stats,
+            ),
+          const SizedBox(height: 6),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF00B298),
+              foregroundColor: Colors.white,
+              elevation: 0,
+              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 10),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+            ),
+            onPressed: _openArtistsSection,
+            child: Text(
+              'Ver más',
+              style: MeloopTypography.lexend(
+                fontSize: 13.5,
+                fontWeight: FontWeight.w600,
+                color: Colors.white,
+              ),
+            ),
+          ),
         ],
       ),
     );
   }
 
-  Widget _artistListTile(String name) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10.0),
+  Widget _artistSuggestionTile({
+    required String name,
+    required String genres,
+    required String stats,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.72),
+        border: Border.all(color: const Color(0xFFE6ECEB)),
+      ),
       child: Row(
         children: [
-          const CircleAvatar(
-            radius: 10,
-            backgroundColor: Colors.black12,
-            child: Icon(Icons.person, size: 12, color: Colors.black54),
+          const MeloopImagePlaceholder(
+            width: 46,
+            height: 46,
+            iconSize: 20,
+            backgroundColor: Color(0xFFE7ECEB),
+            iconColor: Color(0xFF7B8E8C),
+            borderColor: Color(0xFFD0DADA),
           ),
-          const SizedBox(width: 8),
-          Text(
-            name,
-            style: const TextStyle(fontSize: 11, color: Colors.black87),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildFeedPaper() {
-    return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFFFDFDFD),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.15),
-            blurRadius: 20,
-          ),
-        ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 32.0, vertical: 24.0),
-        child: Column(
-          children: [
-            Wrap(
-              alignment: WrapAlignment.spaceBetween,
-              runSpacing: 12,
-              crossAxisAlignment: WrapCrossAlignment.center,
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Wrap(
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    const Text(
-                      "Ultimos Blogs:",
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    _filterChip("recientes", category: 'recent'),
-                    _filterChip("amigos", category: 'friends'),
-                    _filterChip("sugeridos", category: 'suggested'),
-                  ],
-                ),
-                OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(
-                    side: BorderSide(color: _tealAccent),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 12,
-                    ),
+                Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: MeloopTypography.lexend(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFF1C2323),
                   ),
-                  onPressed: _createPost,
-                  icon: Icon(Icons.edit, color: _tealAccent, size: 14),
-                  label: Text(
-                    "escribir blog",
-                    style: TextStyle(
-                      color: _tealAccent,
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                    ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  genres,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: MeloopTypography.lexend(
+                    fontSize: 10.5,
+                    color: const Color(0xFF7C8888),
+                  ),
+                ),
+                Text(
+                  stats,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: MeloopTypography.lexend(
+                    fontSize: 10,
+                    color: const Color(0xFF9AA5A5),
                   ),
                 ),
               ],
             ),
-            const Divider(height: 32, thickness: 1, color: Colors.black12),
-
-            // --- IMPLEMENTACIÓN DE LOS ESTADOS DE CARGA, ERROR Y VACÍO ---
-            Expanded(
-              child: _isInitialLoading
-                  ? const LoadingState() // Estado animado (Skeletons)
-                  : _hasError
-                  ? ErrorState(
-                      errorCode: _errorCode,
-                      onRetry:
-                          _fetchInitialPosts, // Botón para volver a intentar
-                      tealAccent: _tealAccent,
-                      message: _feedError,
-                    )
-                  : _posts.isEmpty
-                  ? const EmptyState(
-                      title: "Feed vacío",
-                      message: "Aún no hay publicaciones recientes. ¡Sé el primero en crear un blog!",
-                      icon: Icons.post_add,
-                    )
-                  : ListView.builder(
-                      controller: _scrollController,
-                      padding: const EdgeInsets.only(right: 16),
-                      itemCount: _posts.length + (_isLoadingMore ? 1 : 0),
-                      itemBuilder: (context, index) {
-                        if (index == _posts.length) {
-                          return Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 24.0),
-                            child: Center(
-                              child: CircularProgressIndicator(
-                                color: _tealAccent,
-                              ),
-                            ),
-                          );
-                        }
-                        // Uso de la tarjeta reutilizable
-                        return PostCard(
-                          postData: _posts[index],
-                          tealAccent: _tealAccent,
-                          apiClient: _apiClient,
-                          onDelete: () {
-                            setState(() {
-                              _posts.removeAt(index);
-                            });
-                          },
-                        );
-                      },
-                    ),
-            ),
-
-            if (!_isInitialLoading &&
-                !_hasError &&
-                _posts.isNotEmpty &&
-                _hasMore)
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _tealAccent,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  elevation: 0,
-                ),
-                onPressed: _isLoadingMore ? null : _fetchMorePosts,
-                child: _isLoadingMore
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(
-                          color: Colors.white,
-                          strokeWidth: 2,
-                        ),
-                      )
-                    : const Text(
-                        "Cargar más blogs",
-                        style: TextStyle(color: Colors.white, fontSize: 12),
-                      ),
-              ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _filterChip(String label, {required String category}) {
-    final isActive = _selectedCategory == category;
-    return Padding(
-      padding: const EdgeInsets.only(right: 8),
+  Widget _buildFeedPaper({bool isMobile = false}) {
+    final paper = StackedPaperCard(
+      padding: EdgeInsets.fromLTRB(
+        isMobile ? 16 : 44,
+        isMobile ? 24 : 34,
+        isMobile ? 16 : 44,
+        20,
+      ),
+      child: Column(
+        children: [
+          _buildFeedHeader(isMobile: isMobile),
+          SizedBox(height: isMobile ? 16 : 24),
+
+          // Estados de carga, error, vacío y feed con scroll infinito
+          Expanded(
+            child: _isInitialLoading
+                ? const LoadingState()
+                : _hasError
+                ? ErrorState(
+                    errorCode: _errorCode,
+                    onRetry: _fetchInitialPosts,
+                    tealAccent: _tealAccent,
+                    message: _feedError,
+                  )
+                : _posts.isEmpty
+                ? const EmptyState(
+                    title: "Feed vacío",
+                    message: "Aún no hay publicaciones recientes. ¡Sé el primero en crear un blog!",
+                    icon: Icons.post_add,
+                  )
+                : ListView.builder(
+                    controller: _scrollController,
+                    padding: EdgeInsets.only(
+                      right: isMobile ? 0 : 8,
+                      bottom: 24,
+                    ),
+                    itemCount: _posts.length + (_isLoadingMore ? 1 : 0),
+                    itemBuilder: (context, index) {
+                      if (index == _posts.length) {
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 24.0),
+                          child: Center(
+                            child: CircularProgressIndicator(
+                              color: _tealAccent,
+                            ),
+                          ),
+                        );
+                      }
+                      return PostCard(
+                        postData: _posts[index],
+                        tealAccent: _tealAccent,
+                        apiClient: _apiClient,
+                        onDelete: () {
+                          setState(() {
+                            _posts.removeAt(index);
+                          });
+                        },
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+
+    if (isMobile) {
+      return TapeCornerOverlay(leftWidth: 112, rightWidth: 96, child: paper);
+    }
+    return TapeCornerOverlay(leftWidth: 175, rightWidth: 152, child: paper);
+  }
+
+  Widget _buildFeedHeader({required bool isMobile}) {
+    final showCategoryFilters =
+        ApiConfig.environment == Environment.development;
+    final titleWidget = Transform.rotate(
+      // En Figma +2.66° inclina hacia arriba a la derecha (CCW = negativo en Flutter)
+      angle: -2.66 * math.pi / 180.0,
+      child: Text(
+        'Feed',
+        style: MeloopTypography.momoDisplay(
+          fontSize: isMobile ? 24 : 34,
+          color: const Color(0xFF141919),
+        ),
+      ),
+    );
+
+    final filterBar = MeloopPillTabs<String>(
+      items: const [
+        MeloopPillItem(value: 'recent', label: 'Recientes'),
+        MeloopPillItem(value: 'suggested', label: 'Tendencia'),
+        MeloopPillItem(value: 'friends', label: 'Amigos'),
+      ],
+      selectedValue: _selectedCategory,
+      disabled: _isInitialLoading,
+      onSelected: (category) {
+        if (category == _selectedCategory) return;
+        _fetchInitialPosts(category: category);
+      },
+      height: isMobile ? 38 : 44,
+      padding: 4,
+      fontSize: isMobile ? 12.5 : 14,
+      horizontalItemPadding: isMobile ? 14 : 20,
+      fixedButtonWidth: isMobile ? 96 : 120,
+      pillColor: const Color(0xFF288B83),
+      equalWidths: true,
+    );
+
+    final writeButton = DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xFF42D6BE), Color(0xFF0FB39A)],
+        ),
+        borderRadius: BorderRadius.circular(24),
+      ),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          borderRadius: BorderRadius.circular(12),
-          onTap: isActive || _isInitialLoading
-              ? null
-              : () => _fetchInitialPosts(category: category),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: isActive ? Colors.white : Colors.grey[200],
-              border: isActive
-                  ? Border.all(color: _tealAccent, width: 1)
-                  : Border.all(color: Colors.transparent),
-              borderRadius: BorderRadius.circular(12),
+          onTap: _createPost,
+          borderRadius: BorderRadius.circular(24),
+          child: Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: isMobile ? 16 : 24,
+              vertical: isMobile ? 9 : 11,
             ),
-            child: Text(
-              label,
-              style: TextStyle(
-                color: isActive ? _tealAccent : Colors.grey[600],
-                fontSize: 10,
-                fontWeight: FontWeight.bold,
-              ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Escribir blog',
+                  style: MeloopTypography.lexend(
+                    color: Colors.white,
+                    fontSize: isMobile ? 13 : 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                const Icon(
+                  Icons.edit_note_rounded,
+                  color: Colors.white,
+                  size: 20,
+                ),
+              ],
             ),
           ),
         ),
       ),
+    );
+
+    if (isMobile) {
+      return Wrap(
+        spacing: 12,
+        runSpacing: 12,
+        alignment: WrapAlignment.center,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          titleWidget,
+          if (showCategoryFilters) filterBar,
+          writeButton,
+        ],
+      );
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 700) {
+          return Wrap(
+            spacing: 16,
+            runSpacing: 14,
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              titleWidget,
+              if (showCategoryFilters) filterBar,
+              writeButton,
+            ],
+          );
+        }
+
+        return SizedBox(
+          height: 52,
+          width: double.infinity,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Align(alignment: Alignment.centerLeft, child: titleWidget),
+              if (showCategoryFilters) Center(child: filterBar),
+              Align(alignment: Alignment.centerRight, child: writeButton),
+            ],
+          ),
+        );
+      },
     );
   }
 }

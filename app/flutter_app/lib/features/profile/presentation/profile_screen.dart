@@ -4,10 +4,12 @@ import 'package:flutter/foundation.dart';
 import 'dart:async';
 
 import '../../../core/navigation/artists_and_songs_screen.dart';
+import '../../../core/navigation/desktop_navigation_shell.dart';
 import '../../social/presentation/mutual_friends_row.dart';
 import '../../../screens/friends_screen.dart';
 import '../../../widgets/desktop_app_header.dart';
 import '../../../widgets/mobile_app_header.dart';
+import '../../../widgets/paper/stacked_paper_card.dart';
 import '../../../widgets/post_card.dart';
 import '../../../widgets/level_progress/level_progress.dart';
 import '../../../services/api_client.dart';
@@ -20,6 +22,7 @@ class ProfileScreen extends StatefulWidget {
   final String? userId;
   final ApiClient? apiClient;
   final bool openInventory;
+  final bool insideDesktopShell;
 
   const ProfileScreen({
     super.key,
@@ -27,6 +30,7 @@ class ProfileScreen extends StatefulWidget {
     this.userId,
     this.apiClient,
     this.openInventory = false,
+    this.insideDesktopShell = false,
   });
 
   @override
@@ -196,7 +200,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
         item['isEquipped'] = true;
 
         if (item['type'] == 'frame') _activeFrameColor = item['color'] as Color;
-        if (item['type'] == 'pin') _activePinColor = item['color'] as Color;
+        if (item['type'] == 'pin') {
+          _activePinColor = item['color'] as Color;
+          GamificationDemoController.instance.setActivePinColor(
+            _activePinColor,
+          );
+        }
         if (item['type'] == 'bg') {
           _paperColor = item['color'] as Color;
           _paperTextColor = Colors.white;
@@ -205,7 +214,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
         item['isEquipped'] = false;
 
         if (item['type'] == 'frame') _activeFrameColor = null;
-        if (item['type'] == 'pin') _activePinColor = Colors.red[700]!;
+        if (item['type'] == 'pin') {
+          _activePinColor = Colors.red[700]!;
+          GamificationDemoController.instance.setActivePinColor(null);
+        }
         if (item['type'] == 'bg') {
           _paperColor = const Color(0xFFFDFDFD);
           _paperTextColor = Colors.black87;
@@ -298,12 +310,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget build(BuildContext context) {
     final double screenWidth = MediaQuery.of(context).size.width;
     final bool isDesktop = screenWidth > 900;
+    final bool insideDesktopShell =
+        widget.insideDesktopShell || DesktopShellScope.maybeOf(context) != null;
 
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: Column(
         children: [
-          _buildTopBar(isDesktop, context),
+          if (!insideDesktopShell) _buildTopBar(isDesktop, context),
           Expanded(
             child: isDesktop ? _buildDesktopLayout() : _buildMobileLayout(),
           ),
@@ -600,13 +614,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
         ),
         Positioned(
-          top: 8,
-          child: CircleAvatar(
-            radius: 6,
-            backgroundColor: _activePinColor,
-            child: _activePinColor != Colors.red[700]
-                ? const Icon(Icons.star, size: 8, color: Colors.white)
-                : null,
+          top: -12,
+          child: CustomizablePin(
+            color: _activePinColor == Colors.red[700] ? null : _activePinColor,
+            size: 40,
           ),
         ),
       ],
@@ -628,18 +639,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final int equippedCount = _inventory
         .where((i) => i['isEquipped'] as bool)
         .length;
-    final statsRow = Row(
-      mainAxisAlignment: isMobile
-          ? MainAxisAlignment.spaceEvenly
-          : MainAxisAlignment.start,
+    final statsRow = Wrap(
+      spacing: 10,
+      runSpacing: 8,
+      alignment: isMobile ? WrapAlignment.center : WrapAlignment.start,
       children: [
         _pillStat("Amigos 5"),
-        if (!isMobile) const SizedBox(width: 12),
         _pillStat("Artistas 13"),
-        if (_profileStatus == 'own') ...[
-          if (!isMobile) const SizedBox(width: 12),
-          _pillStat("Decoraciones $equippedCount"),
-        ],
+        if (_profileStatus == 'own') _pillStat("Decoraciones $equippedCount"),
       ],
     );
 

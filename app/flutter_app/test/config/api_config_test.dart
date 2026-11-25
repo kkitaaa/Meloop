@@ -38,7 +38,13 @@ void main() {
       expect(ApiConfig.authLoginEndpoint, '/auth/login');
       expect(ApiConfig.authRefreshEndpoint, '/auth/refresh');
       expect(ApiConfig.demoEndpoint, '/api/demo');
-      expect(ApiConfig.feedEndpoint, '/api/feed');
+      expect(
+        ApiConfig.feedEndpoint,
+        ApiConfig.feedEndpointFor(ApiConfig.environment),
+      );
+      expect(ApiConfig.feedEndpointFor(Environment.development), '/api/feed');
+      expect(ApiConfig.feedEndpointFor(Environment.staging), '/v1/feed');
+      expect(ApiConfig.feedEndpointFor(Environment.production), '/v1/feed');
       expect(ApiConfig.usersEndpoint, '/users');
       expect(ApiConfig.recommendationsEndpoint, '/recommendations');
     });

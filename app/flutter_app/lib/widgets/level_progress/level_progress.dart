@@ -98,12 +98,17 @@ class LevelProgress extends StatelessWidget {
                             fontWeight: FontWeight.bold,
                           ),
                         ),
-                        const Spacer(),
-                        Text(
-                          '$xp / $xpNeeded XP',
-                          style: TextStyle(
-                            color: Colors.black54,
-                            fontSize: small ? 10 : 12,
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: Text(
+                            '$xp / $xpNeeded XP',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.end,
+                            style: TextStyle(
+                              color: Colors.black54,
+                              fontSize: small ? 10 : 12,
+                            ),
                           ),
                         ),
                       ],

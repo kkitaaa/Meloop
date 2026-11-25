@@ -1,4 +1,5 @@
 import 'package:flutter_app/services/api_client.dart';
+import 'package:flutter_app/services/auth_session.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_app/core/navigation/responsive_navigation_shell.dart';
@@ -6,6 +7,8 @@ import 'package:flutter_app/features/search/presentation/global_search_screen.da
 import 'package:flutter_app/features/notifications/presentation/notification_scope.dart';
 import 'package:flutter_app/features/notifications/state/notification_controller.dart';
 import 'package:flutter_app/features/notifications/state/notification_repository.dart';
+import 'package:flutter_app/features/settings/presentation/account_settings_screen.dart';
+import 'package:flutter_app/screens/auth_screen.dart';
 import 'package:flutter_app/widgets/mobile_app_header.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -28,8 +31,29 @@ void main() {
         playSound: false,
       )..start();
       addTearDown(controller.dispose);
+      final session = AuthSession(persistent: false);
+      await session.establish(
+        sessionToken: 'test-session-token',
+        expiresInSeconds: 3600,
+        sessionUser: const AuthUser(
+          id: 'user-1',
+          username: 'test-user',
+          email: 'test@example.com',
+        ),
+      );
+      var logoutRequested = false;
       final apiClient = ApiClient(
-        httpClient: MockClient((_) async => http.Response('{}', 500)),
+        httpClient: MockClient((request) async {
+          if (request.url.path.endsWith('/auth/logout')) {
+            logoutRequested = true;
+            return http.Response(
+              '{"success":true,"data":null,"error":null}',
+              200,
+            );
+          }
+          return http.Response('{}', 500);
+        }),
+        session: session,
       );
       addTearDown(apiClient.close);
 
@@ -73,6 +97,24 @@ void main() {
       await tester.tap(find.byTooltip('Volver'));
       await tester.pumpAndSettle();
       expect(find.bySemanticsLabel('Inicio'), findsOneWidget);
+
+      await tester.tap(find.byTooltip('Ajustes'));
+      await tester.pumpAndSettle();
+      expect(find.text('Configuración de cuenta'), findsOneWidget);
+      await tester.tap(find.text('Configuración de cuenta'));
+      await tester.pumpAndSettle();
+      expect(find.byType(AccountSettingsScreen), findsOneWidget);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('Ajustes'));
+      await tester.pumpAndSettle();
+      expect(find.text('Cerrar sesión'), findsOneWidget);
+      await tester.tap(find.text('Cerrar sesión'));
+      await tester.pumpAndSettle();
+      expect(find.byType(AuthScreen), findsOneWidget);
+      expect(logoutRequested, isTrue);
+      expect(session.token, isNull);
       debugDefaultTargetPlatformOverride = null;
     },
   );

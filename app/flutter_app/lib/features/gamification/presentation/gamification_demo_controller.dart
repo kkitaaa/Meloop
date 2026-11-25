@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 
 /// Estado temporal de gamificación. Será sustituido por el progreso entregado
 /// por el backend cuando esté disponible.
@@ -10,6 +10,7 @@ class GamificationDemoController extends ChangeNotifier {
   int level = 3;
   int xp = 70;
   static const xpNeeded = 100;
+  Color? activePinColor;
   bool rgbFrameUnlocked = false;
   bool rgbFrameEquipped = false;
   LevelUpReward? _pendingLevelUp;
@@ -18,6 +19,12 @@ class GamificationDemoController extends ChangeNotifier {
   /// values with API progress when endpoints are ready, without removing the
   /// level/XP animations or level-up reward presentation.
   int get experienceNeeded => xpNeeded;
+
+  void setActivePinColor(Color? color) {
+    if (activePinColor == color) return;
+    activePinColor = color;
+    notifyListeners();
+  }
 
   LevelUpReward? takePendingLevelUp() {
     final reward = _pendingLevelUp;

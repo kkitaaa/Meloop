@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_app/config/api_config.dart';
+import 'package:flutter_app/models/account_settings.dart';
 import 'package:flutter_app/models/api_response.dart';
 import 'package:flutter_app/models/demo_data.dart';
 import 'package:flutter_app/models/feed_data.dart';
@@ -51,10 +52,28 @@ class ApiClient implements PostPublisher {
       ..connectTimeout = _timeout
       ..receiveTimeout = _timeout
       ..headers['Accept'] = 'application/json';
-    final userId = ApiConfig.currentUserId.trim();
-    if (userId.isNotEmpty) {
-      _dio.options.headers['X-User-ID'] = userId;
-    }
+    _dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) async {
+          try {
+            await _refreshSessionIfNeeded();
+          } on Exception catch (error) {
+            handler.reject(DioException(requestOptions: options, error: error));
+            return;
+          }
+
+          final token = _session.token;
+          if (token != null && token.isNotEmpty) {
+            options.headers['Authorization'] = 'Bearer $token';
+          }
+          final userId = _session.user?.id ?? ApiConfig.currentUserId.trim();
+          if (userId.isNotEmpty) {
+            options.headers['X-User-ID'] = userId;
+          }
+          handler.next(options);
+        },
+      ),
+    );
   }
 
   Future<ApiResponse<T>> get<T>(
@@ -97,11 +116,6 @@ class ApiClient implements PostPublisher {
     );
   }
 
-  Future<Map<String, dynamic>> getPrivacySettings() async {
-    final response = await get('/users/me/privacy', _settingsObject);
-    return response.data!;
-  }
-
   Future<Map<String, dynamic>> updatePrivacySetting(
     String field,
     String value,
@@ -129,16 +143,6 @@ class ApiClient implements PostPublisher {
       {'habilitada': enabled},
       _settingsObject,
     );
-  }
-
-  Future<void> changePassword({
-    required String currentPassword,
-    required String newPassword,
-  }) async {
-    await post('/auth/change-password', {
-      'current_password': currentPassword,
-      'new_password': newPassword,
-    }, _settingsObject);
   }
 
   Future<AuthUser> login({
@@ -193,6 +197,68 @@ class ApiClient implements PostPublisher {
     return response.data!;
   }
 
+  Future<ApiResponse<Object?>> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) {
+    return _send(
+      () => _httpClient.post(
+        _uriFor(ApiConfig.authChangePasswordEndpoint),
+        headers: _headers,
+        body: jsonEncode({
+          'current_password': currentPassword,
+          'new_password': newPassword,
+        }),
+      ),
+      (json) => json,
+    );
+  }
+
+  Future<ApiResponse<AccountDetails>> getAccountDetails() =>
+      get(ApiConfig.currentAccountEndpoint, AccountDetails.fromJson);
+
+  Future<ApiResponse<PrivacySettings>> getPrivacySettings() =>
+      get(ApiConfig.currentPrivacyEndpoint, PrivacySettings.fromJson);
+
+  Future<ApiResponse<PrivacySettings>> updatePrivacySettings(
+    PrivacySettingsPatch changes,
+  ) {
+    final payload = changes.toJson();
+    if (payload.isEmpty) {
+      throw ArgumentError.value(changes, 'changes', 'No privacy fields given');
+    }
+    return _send(
+      () => _httpClient.patch(
+        _uriFor(ApiConfig.currentPrivacyEndpoint),
+        headers: _headers,
+        body: jsonEncode(payload),
+      ),
+      PrivacySettings.fromJson,
+    );
+  }
+
+  Future<ApiResponse<List<NotificationPreference>>>
+  getNotificationPreferences() => get(
+    ApiConfig.notificationSettingsEndpoint,
+    NotificationPreference.listFromJson,
+  );
+
+  Future<ApiResponse<NotificationPreference>> updateNotificationPreference({
+    required String type,
+    required bool enabled,
+  }) {
+    final endpoint =
+        '${ApiConfig.notificationSettingsEndpoint}/${Uri.encodeComponent(type)}';
+    return _send(
+      () => _httpClient.patch(
+        _uriFor(endpoint),
+        headers: _headers,
+        body: jsonEncode({'habilitada': enabled}),
+      ),
+      NotificationPreference.fromJson,
+    );
+  }
+
   Future<void> logout() async {
     try {
       if (_session.isAuthenticated) {
@@ -222,14 +288,23 @@ class ApiClient implements PostPublisher {
     required int page,
     int pageSize = 5,
   }) {
-    final query = Uri(
-      queryParameters: {
-        'category': category,
-        'page': '$page',
-        'pageSize': '$pageSize',
-      },
-    ).query;
-    return get('/api/feed?$query', FeedPage.fromJson);
+    final isDevelopment = ApiConfig.environment == Environment.development;
+    final queryParameters = <String, String>{
+      'page': '$page',
+      if (isDevelopment) 'category': category,
+      if (isDevelopment) 'pageSize': '$pageSize',
+      if (!isDevelopment) 'limit': '$pageSize',
+    };
+
+    return _send(
+      () => _httpClient.get(
+        _uriFor(ApiConfig.feedEndpoint)
+            .replace(queryParameters: queryParameters),
+        headers: _headers,
+      ),
+      FeedPage.fromJson,
+      allowUnwrappedResponse: !isDevelopment,
+    );
   }
 
   Future<ApiResponse<MutualFriendsPage>> getMutualFriends(
@@ -823,17 +898,39 @@ class ApiClient implements PostPublisher {
 
   ApiResponse<T> _decodeResponse<T>(
     http.Response response,
-    T Function(Object? json) parseData,
-  ) {
-    final decoded = jsonDecode(response.body);
+    T Function(Object? json) parseData, {
+    bool allowUnwrappedResponse = false,
+  }) {
+    Object? decoded;
+    try {
+      decoded = jsonDecode(response.body);
+    } on FormatException {
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw ApiException(
+          statusCode: response.statusCode,
+          message:
+              'El Gateway respondió con HTTP ${response.statusCode} y una respuesta no JSON.',
+        );
+      }
+      rethrow;
+    }
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException(
         'La respuesta del servidor no es un JSON válido.',
       );
     }
 
-    final result = ApiResponse<T>.fromJson(decoded, parseData);
     if (response.statusCode < 200 || response.statusCode >= 300) {
+      if (decoded['success'] is! bool) {
+        final error = decoded['error'];
+        final message = error is String
+            ? error
+            : decoded['message'] is String
+            ? decoded['message'] as String
+            : 'El servidor respondió con el estado ${response.statusCode}.';
+        throw ApiException(statusCode: response.statusCode, message: message);
+      }
+      final result = ApiResponse<T>.fromJson(decoded, parseData);
       throw ApiException(
         statusCode: response.statusCode,
         errorCode: result.error?.code,
@@ -842,6 +939,12 @@ class ApiClient implements PostPublisher {
             'El servidor respondió con el estado ${response.statusCode}.',
       );
     }
+
+    if (allowUnwrappedResponse && decoded['success'] is! bool) {
+      return ApiResponse<T>(success: true, data: parseData(decoded));
+    }
+
+    final result = ApiResponse<T>.fromJson(decoded, parseData);
     if (!result.success) {
       throw ApiException(
         statusCode: response.statusCode,
@@ -878,6 +981,7 @@ class ApiClient implements PostPublisher {
     T Function(Object? json) parseData, {
     bool refreshSession = true,
     bool retryUnauthorized = true,
+    bool allowUnwrappedResponse = false,
   }) async {
     try {
       if (refreshSession) await _refreshSessionIfNeeded();
@@ -889,7 +993,11 @@ class ApiClient implements PostPublisher {
         await _refreshSession(force: true);
         response = await send().timeout(_timeout);
       }
-      return _decodeResponse(response, parseData);
+      return _decodeResponse(
+        response,
+        parseData,
+        allowUnwrappedResponse: allowUnwrappedResponse,
+      );
     } on ApiException {
       rethrow;
     } on TimeoutException {

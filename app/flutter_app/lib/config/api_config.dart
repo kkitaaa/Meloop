@@ -25,6 +25,13 @@ class ApiConfig {
     };
   }
 
+  static String get gatewayRouteSummary => switch (environment) {
+    Environment.development =>
+      '/auth, /users, /friends, /api/v1/gamification, /api/demo, /api/feed',
+    Environment.staging || Environment.production =>
+      '/auth, /users, /friends, /api/v1/gamification, /v1/feed',
+  };
+
   static String get baseUrl {
     final configuredUrl = _configuredBaseUrl.trim();
     final gatewayUrl = _k8sApiGatewayUrl.trim();
@@ -96,9 +103,24 @@ class ApiConfig {
   static const String authRefreshEndpoint = '$authEndpoint/refresh';
   static const String authLogoutEndpoint = '$authEndpoint/logout';
   static const String authValidateEndpoint = '$authEndpoint/validate';
+  static const String authChangePasswordEndpoint =
+      '$authEndpoint/change-password';
   static const String demoEndpoint = '$apiPrefix/demo';
-  static const String feedEndpoint = '$apiPrefix/feed';
+  static String get feedEndpoint => feedEndpointFor(environment);
+
+  static String feedEndpointFor(Environment environment) =>
+      environment == Environment.development ? '$apiPrefix/feed' : '/v1/feed';
+
   static const String usersEndpoint = '/users';
+  static const String currentAccountEndpoint = '$usersEndpoint/me';
+  static const String currentPrivacyEndpoint =
+      '$currentAccountEndpoint/privacy';
+  static const String notificationSettingsEndpoint =
+      '$currentAccountEndpoint/notifications/settings';
+  static const String friendsEndpoint = '/friends';
+  static const String gamificationEndpoint = '/api/v1/gamification';
+  static const String gamificationProgressEndpoint =
+      '$gamificationEndpoint/me/progress';
   static const String recommendationsEndpoint = '/recommendations';
 
   static const Duration connectTimeout = Duration(seconds: 10);

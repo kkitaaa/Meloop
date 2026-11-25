@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_app/core/navigation/artists_and_songs_screen.dart';
+import 'package:flutter_app/core/navigation/desktop_navigation_shell.dart';
 import 'package:flutter_app/screens/friends_screen.dart';
 import 'package:flutter_app/features/music/presentation/music_track_detail_screen.dart';
 import 'package:flutter_app/features/music/presentation/music_track_tile.dart';
@@ -17,8 +18,13 @@ enum _SearchSource { users, posts, music }
 
 class GlobalSearchScreen extends StatefulWidget {
   final ApiClient? apiClient;
+  final TextEditingController? externalQueryController;
 
-  const GlobalSearchScreen({super.key, this.apiClient});
+  const GlobalSearchScreen({
+    super.key,
+    this.apiClient,
+    this.externalQueryController,
+  });
 
   @override
   State<GlobalSearchScreen> createState() => _GlobalSearchScreenState();
@@ -33,7 +39,8 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen>
     'Género': 'genre',
   };
 
-  final TextEditingController _queryController = TextEditingController();
+  late final TextEditingController _queryController;
+  late final bool _ownsQueryController;
   final List<String> _recentSearches = [];
   final Map<_SearchSource, CancelToken> _cancelTokens = {};
   late final TabController _tabController;
@@ -62,6 +69,9 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen>
     super.initState();
     _apiClient = widget.apiClient ?? ApiClient();
     _ownsApiClient = widget.apiClient == null;
+    _ownsQueryController = widget.externalQueryController == null;
+    _queryController =
+        widget.externalQueryController ?? TextEditingController();
     _tabController = TabController(length: 3, vsync: this);
     _tabController.addListener(_onTabChanged);
     _queryController.addListener(_onQueryChanged);
@@ -77,9 +87,8 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen>
     for (final token in _cancelTokens.values) {
       token.cancel('La búsqueda cambió.');
     }
-    _queryController
-      ..removeListener(_onQueryChanged)
-      ..dispose();
+    _queryController.removeListener(_onQueryChanged);
+    if (_ownsQueryController) _queryController.dispose();
     _tabController.removeListener(_onTabChanged);
     _tabController.dispose();
     if (_ownsApiClient) _apiClient.close();
@@ -799,9 +808,10 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen>
   Widget build(BuildContext context) {
     final queryTooShort = _queryController.text.trim().length < 2;
     final isDesktop = MediaQuery.sizeOf(context).width > 900;
+    final insideDesktopShell = DesktopShellScope.maybeOf(context) != null;
     return Scaffold(
       backgroundColor: Colors.transparent,
-      appBar: _buildBrandedAppBar(),
+      appBar: insideDesktopShell ? null : _buildBrandedAppBar(),
       body: SafeArea(
         top: false,
         child: Center(
