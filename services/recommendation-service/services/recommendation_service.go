@@ -121,6 +121,7 @@ func (service *RecommendationService) GetByType(ctx context.Context, userID int,
 		Interactions: filteredInteractions,
 	})
 	if err != nil {
+		slog.Warn("recommendation_ml_failed", "user_id", userID, "type", recommendationType, "error", err)
 		if service.store != nil {
 			storedResponse, found, storeErr := service.store.Get(ctx, recommendationStoreKey(userID, recommendationType))
 			if storeErr != nil {

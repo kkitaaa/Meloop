@@ -95,6 +95,7 @@ type mockSessionRepository struct {
 	sessions           map[string]*models.SessionUser
 	createFunc         func(ctx context.Context, token string, user *models.SessionUser, ttl time.Duration) error
 	getFunc            func(ctx context.Context, token string) (*models.SessionUser, error)
+	renewFunc          func(ctx context.Context, token, userID string, ttl time.Duration) (bool, error)
 	deleteFunc         func(ctx context.Context, token string) error
 	deleteByUserIDFunc func(ctx context.Context, userID string) error
 }
@@ -112,6 +113,19 @@ func (m *mockSessionRepository) Get(ctx context.Context, token string) (*models.
 		return m.getFunc(ctx, token)
 	}
 	return m.sessions[token], nil
+}
+
+func (m *mockSessionRepository) Renew(
+	ctx context.Context,
+	token string,
+	userID string,
+	ttl time.Duration,
+) (bool, error) {
+	if m.renewFunc != nil {
+		return m.renewFunc(ctx, token, userID, ttl)
+	}
+	user, exists := m.sessions[token]
+	return exists && user != nil && user.ID == userID, nil
 }
 
 func (m *mockSessionRepository) Delete(ctx context.Context, token string) error {
@@ -683,6 +697,40 @@ func TestValidateSession(t *testing.T) {
 	_, err = srv.ValidateSession(context.Background(), "never-existed-token")
 	if err == nil {
 		t.Error("expected error for non-existent session token, got nil")
+	}
+}
+
+func TestRefreshSession_ExtendsOnlyAnActiveSession(t *testing.T) {
+	cfg := &config.Config{
+		PasswordMinLength: 8,
+		SessionTTL:        time.Hour,
+	}
+	user := &models.SessionUser{
+		ID:       "user-uuid-1",
+		Username: "alan",
+		Email:    "alan@meloop.com",
+	}
+	sessionRepo := &mockSessionRepository{
+		sessions: map[string]*models.SessionUser{"valid-token": user},
+	}
+	srv := createTestAuthService(
+		cfg,
+		&mockUserRepository{users: make(map[string]*models.Usuario)},
+		sessionRepo,
+		nil,
+		nil,
+	)
+
+	refreshed, err := srv.RefreshSession(context.Background(), "valid-token")
+	if err != nil {
+		t.Fatalf("expected active session to refresh, got %v", err)
+	}
+	if refreshed.SessionToken != "valid-token" || refreshed.ExpiresIn != 3600 {
+		t.Fatalf("unexpected refreshed session: %+v", refreshed)
+	}
+
+	if _, err := srv.RefreshSession(context.Background(), "expired-token"); !errors.Is(err, services.ErrInvalidSession) {
+		t.Fatalf("expected expired session to be rejected, got %v", err)
 	}
 }
 

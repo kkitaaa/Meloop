@@ -7,6 +7,9 @@ import (
 
 func SetupRoutes(router *gin.Engine) {
 	router.GET("/health", controllers.Health)
+	router.GET("/api/demo", controllers.DemoGet)
+	router.POST("/api/demo", controllers.DemoPost)
+	router.GET("/api/feed", controllers.Feed)
 
 	// Enrutar dinámicamente peticiones bajo /test/* al microservicio de pruebas (recortando prefijo /test)
 	router.Any("/test", controllers.ProxyToService("TEST_SERVICE_URL", "http://localhost:8081", "/test"))
@@ -40,6 +43,7 @@ func SetupRoutes(router *gin.Engine) {
 	router.Any("/v1/users", controllers.ProxyToService("USER_SERVICE_URL", "http://localhost:8082", ""))
 	router.Any("/v1/users/*any", controllers.ProxyToService("USER_SERVICE_URL", "http://localhost:8082", ""))
 	router.Any("/v1/social/*any", controllers.ProxyToService("SOCIAL_SERVICE_URL", "http://localhost:8086", ""))
+	router.Any("/v1/social", controllers.ProxyToService("SOCIAL_SERVICE_URL", "http://localhost:8086", "/v1/social"))
 	router.Any("/v1/media", controllers.ProxyToService("MEDIA_SERVICE_URL", "http://localhost:8085", ""))
 	router.Any("/v1/media/*any", controllers.ProxyToService("MEDIA_SERVICE_URL", "http://localhost:8085", ""))
 
@@ -64,7 +68,7 @@ func SetupRoutes(router *gin.Engine) {
 	router.Any("/api/v1/gamification",
 		controllers.ProxyToService(
 			"GAMIFICATION_SERVICE_URL",
-			"http://gamification-service.student-amanda-garcia-4679dc667f08.svc.cluster.local:8089",
+			"http://gamification-service:8089",
 			"",
 		),
 	)
@@ -72,7 +76,7 @@ func SetupRoutes(router *gin.Engine) {
 	router.Any("/api/v1/gamification/*any",
 		controllers.ProxyToService(
 			"GAMIFICATION_SERVICE_URL",
-			"http://gamification-service.student-amanda-garcia-4679dc667f08.svc.cluster.local:8089",
+			"http://gamification-service:8089",
 			"",
 		),
 	)
