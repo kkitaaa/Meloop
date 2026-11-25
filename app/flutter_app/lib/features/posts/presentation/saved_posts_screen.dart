@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/navigation/desktop_navigation_shell.dart';
+
 import '../../../models/saved_posts.dart';
 import '../../../services/api_client.dart';
 import '../../../widgets/post_card.dart';
@@ -116,15 +118,36 @@ class _SavedPostsScreenState extends State<SavedPostsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final insideDesktopShell = DesktopShellScope.maybeOf(context) != null;
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F8F7),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF1ABC9C),
-        foregroundColor: Colors.white,
-        title: const Text('Guardados'),
-        elevation: 0,
-      ),
-      body: _buildBody(),
+      backgroundColor: insideDesktopShell
+          ? Colors.transparent
+          : const Color(0xFFF5F8F7),
+      appBar: insideDesktopShell
+          ? null
+          : AppBar(
+              backgroundColor: const Color(0xFF1ABC9C),
+              foregroundColor: Colors.white,
+              title: const Text('Guardados'),
+              elevation: 0,
+            ),
+      body: insideDesktopShell
+          ? Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 920),
+                child: Container(
+                  margin: const EdgeInsets.symmetric(vertical: 20),
+                  color: const Color(0xFFF5F8F7),
+                  child: Column(
+                    children: [
+                      const DesktopSubPageBar(title: 'Guardados'),
+                      Expanded(child: _buildBody()),
+                    ],
+                  ),
+                ),
+              ),
+            )
+          : _buildBody(),
     );
   }
 

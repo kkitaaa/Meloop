@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'dart:async';
 
+import '../../../core/navigation/desktop_navigation_shell.dart';
 import '../../../widgets/post_card.dart';
 
 class PostDetailScreen extends StatefulWidget {
@@ -70,28 +71,40 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   Widget build(BuildContext context) {
     final double screenWidth = MediaQuery.of(context).size.width;
     final bool isDesktop = screenWidth > 900;
+    final bool insideDesktopShell = DesktopShellScope.maybeOf(context) != null;
 
     return Scaffold(
-      backgroundColor: _bgColor,
-      appBar: AppBar(
-        backgroundColor: _tealAccent,
-        title: const Text(
-          "Detalle de Publicación",
-          style: TextStyle(color: Colors.white, fontSize: 16),
-        ),
-        iconTheme: const IconThemeData(color: Colors.white),
-        elevation: 0,
-        centerTitle: true,
-      ),
+      backgroundColor: insideDesktopShell ? Colors.transparent : _bgColor,
+      appBar: insideDesktopShell
+          ? null
+          : AppBar(
+              backgroundColor: _tealAccent,
+              title: const Text(
+                "Detalle de Publicación",
+                style: TextStyle(color: Colors.white, fontSize: 16),
+              ),
+              iconTheme: const IconThemeData(color: Colors.white),
+              elevation: 0,
+              centerTitle: true,
+            ),
       body: Center(
         child: ConstrainedBox(
           constraints: BoxConstraints(
-            maxWidth: isDesktop ? 650 : double.infinity,
+            maxWidth: isDesktop ? 820 : double.infinity,
           ),
           child: Container(
+            margin: insideDesktopShell
+                ? const EdgeInsets.symmetric(vertical: 20)
+                : EdgeInsets.zero,
             height: double.infinity,
             color: const Color(0xFFFDFDFD),
-            child: _buildBodyContent(),
+            child: Column(
+              children: [
+                if (insideDesktopShell)
+                  const DesktopSubPageBar(title: 'Detalle de Publicación'),
+                Expanded(child: _buildBodyContent()),
+              ],
+            ),
           ),
         ),
       ),

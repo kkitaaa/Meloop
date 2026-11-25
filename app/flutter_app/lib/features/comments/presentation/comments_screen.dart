@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/navigation/desktop_navigation_shell.dart';
+
 import '../../moderation/data/moderation_models.dart';
 import '../../moderation/presentation/report_sheet.dart';
 
@@ -100,27 +102,35 @@ class _CommentsScreenState extends State<CommentsScreen> {
   Widget build(BuildContext context) {
     final double screenWidth = MediaQuery.of(context).size.width;
     final bool isDesktop = screenWidth > 900;
+    final bool insideDesktopShell = DesktopShellScope.maybeOf(context) != null;
 
     return Scaffold(
       backgroundColor: Colors.transparent,
-      appBar: AppBar(
-        backgroundColor: _tealAccent,
-        title: const Text(
-          "Comentarios",
-          style: TextStyle(color: Colors.white, fontSize: 16),
-        ),
-        iconTheme: const IconThemeData(color: Colors.white),
-        elevation: 0,
-      ),
+      appBar: insideDesktopShell
+          ? null
+          : AppBar(
+              backgroundColor: _tealAccent,
+              title: const Text(
+                "Comentarios",
+                style: TextStyle(color: Colors.white, fontSize: 16),
+              ),
+              iconTheme: const IconThemeData(color: Colors.white),
+              elevation: 0,
+            ),
       body: Center(
         child: ConstrainedBox(
           constraints: BoxConstraints(
-            maxWidth: isDesktop ? 650 : double.infinity,
+            maxWidth: isDesktop ? 760 : double.infinity,
           ),
           child: Container(
+            margin: insideDesktopShell
+                ? const EdgeInsets.symmetric(vertical: 20)
+                : EdgeInsets.zero,
             color: const Color(0xFFFDFDFD),
             child: Column(
               children: [
+                if (insideDesktopShell)
+                  const DesktopSubPageBar(title: 'Comentarios'),
                 _buildOriginalPost(),
                 const Divider(height: 1, thickness: 4, color: Colors.black12),
                 Expanded(
