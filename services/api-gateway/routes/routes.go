@@ -44,6 +44,7 @@ func SetupRoutes(router *gin.Engine) {
 	router.Any("/v1/media/*any", controllers.ProxyToService("MEDIA_SERVICE_URL", "http://localhost:8085", ""))
 
 	// Enrutar peticiones de Post Service
+	postServiceDefault := "http://post-service.student-mcrisosto.svc.cluster.local:8084"
 	for _, prefix := range []string{
 		"/api/v1/posts",
 		"/v1/posts",
@@ -52,11 +53,11 @@ func SetupRoutes(router *gin.Engine) {
 	} {
 		router.Any(prefix,
 			controllers.SessionAuth(),
-			controllers.ProxyToService("POST_SERVICE_URL", "http://localhost:8084", ""),
+			controllers.ProxyToService("POST_SERVICE_URL", postServiceDefault, ""),
 		)
 		router.Any(prefix+"/*any",
 			controllers.SessionAuth(),
-			controllers.ProxyToService("POST_SERVICE_URL", "http://localhost:8084", ""),
+			controllers.ProxyToService("POST_SERVICE_URL", postServiceDefault, ""),
 		)
 	}
 
@@ -76,15 +77,4 @@ func SetupRoutes(router *gin.Engine) {
 			"",
 		),
 	)
-
-	// Enrutar peticiones de publicaciones, comentarios, respuestas, likes y feed principal
-	postServiceDefault := "http://post-service.student-mcrisosto.svc.cluster.local:8084"
-	router.Any("/api/v1/posts", controllers.SessionAuth(), controllers.ProxyToService("POST_SERVICE_URL", postServiceDefault, ""))
-	router.Any("/api/v1/posts/*any", controllers.SessionAuth(), controllers.ProxyToService("POST_SERVICE_URL", postServiceDefault, ""))
-	router.Any("/v1/feed", controllers.SessionAuth(), controllers.ProxyToService("POST_SERVICE_URL", postServiceDefault, ""))
-	router.Any("/v1/feed/*any", controllers.SessionAuth(), controllers.ProxyToService("POST_SERVICE_URL", postServiceDefault, ""))
-	router.Any("/v1/posts", controllers.SessionAuth(), controllers.ProxyToService("POST_SERVICE_URL", postServiceDefault, ""))
-	router.Any("/v1/posts/*any", controllers.SessionAuth(), controllers.ProxyToService("POST_SERVICE_URL", postServiceDefault, ""))
-	router.Any("/posts", controllers.SessionAuth(), controllers.ProxyToService("POST_SERVICE_URL", postServiceDefault, ""))
-	router.Any("/posts/*any", controllers.SessionAuth(), controllers.ProxyToService("POST_SERVICE_URL", postServiceDefault, ""))
 }
