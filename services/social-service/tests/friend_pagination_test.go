@@ -53,7 +53,7 @@ func TestListFriendsCursorPaginationIntegration(t *testing.T) {
 	require.NoError(t, err)
 
 	router := gin.New()
-	routes.SetupRoutes(router, controllers.NewFriendshipController(service))
+	routes.SetupRoutes(router, controllers.NewFriendshipController(service), testSessionValidator{})
 	var allFriends []models.Friend
 	cursor := ""
 	for pageNumber := 0; pageNumber < 10; pageNumber++ {
@@ -65,7 +65,7 @@ func TestListFriendsCursorPaginationIntegration(t *testing.T) {
 			params.Set("cursor", cursor)
 		}
 		request := httptest.NewRequest(http.MethodGet, "/friends?"+params.Encode(), nil)
-		request.Header.Set("X-User-ID", f.userIDs[owner])
+		setAuthenticatedUser(request, f.userIDs[owner])
 		recorder := httptest.NewRecorder()
 		router.ServeHTTP(recorder, request)
 		require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
@@ -96,7 +96,7 @@ func TestListFriendsCursorPaginationIntegration(t *testing.T) {
 
 	emptyParams := url.Values{"limit": []string{"2"}, "q": []string{"no-such-friend"}}
 	emptyRequest := httptest.NewRequest(http.MethodGet, "/friends?"+emptyParams.Encode(), nil)
-	emptyRequest.Header.Set("X-User-ID", f.userIDs[owner])
+	setAuthenticatedUser(emptyRequest, f.userIDs[owner])
 	emptyResponse := httptest.NewRecorder()
 	router.ServeHTTP(emptyResponse, emptyRequest)
 	require.Equal(t, http.StatusOK, emptyResponse.Code)
@@ -109,7 +109,7 @@ func TestListFriendsCursorPaginationIntegration(t *testing.T) {
 	require.Empty(t, emptyPage.NextCursor)
 
 	noFriendsRequest := httptest.NewRequest(http.MethodGet, "/friends", nil)
-	noFriendsRequest.Header.Set("X-User-ID", f.userIDs[3])
+	setAuthenticatedUser(noFriendsRequest, f.userIDs[3])
 	noFriendsResponse := httptest.NewRecorder()
 	router.ServeHTTP(noFriendsResponse, noFriendsRequest)
 	require.Equal(t, http.StatusOK, noFriendsResponse.Code)

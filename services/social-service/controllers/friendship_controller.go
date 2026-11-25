@@ -167,6 +167,36 @@ func (ctrl *FriendshipController) GetFriendProfile(c *gin.Context) {
 	httpresponse.SuccessGin(c, http.StatusOK, result)
 }
 
+func (ctrl *FriendshipController) GetMutualFriends(c *gin.Context) {
+	userID := strings.TrimSpace(c.GetString(ContextUserIDKey))
+	targetID := strings.TrimSpace(c.Param("id"))
+	limit := 20
+	if rawLimit := strings.TrimSpace(c.Query("limit")); rawLimit != "" {
+		parsedLimit, err := strconv.Atoi(rawLimit)
+		if err != nil || parsedLimit <= 0 || parsedLimit > services.MaxMutualFriendsLimit {
+			httpresponse.BadRequestGin(c, "El parámetro limit debe ser un entero entre 1 y 100")
+			return
+		}
+		limit = parsedLimit
+	}
+
+	result, err := ctrl.service.GetMutualFriends(c.Request.Context(), userID, targetID, limit, c.Query("cursor"))
+	if err != nil {
+		switch {
+		case errors.Is(err, services.ErrSelfMutualFriends):
+			httpresponse.ErrorGin(c, http.StatusBadRequest, "SELF_QUERY", "No puedes consultar amigos en común contigo mismo")
+		case errors.Is(err, services.ErrUserNotFound), errors.Is(err, services.ErrBlocked):
+			httpresponse.NotFoundGin(c, "Usuario no encontrado")
+		case errors.Is(err, services.ErrInvalidPagination):
+			httpresponse.BadRequestGin(c, "El cursor no es válido")
+		default:
+			ctrl.handleError(c, err)
+		}
+		return
+	}
+	httpresponse.SuccessGin(c, http.StatusOK, result)
+}
+
 func (ctrl *FriendshipController) BlockUser(c *gin.Context) {
 	var request models.BlockUserRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
@@ -179,6 +209,33 @@ func (ctrl *FriendshipController) BlockUser(c *gin.Context) {
 		return
 	}
 	httpresponse.SuccessGin(c, http.StatusOK, gin.H{"mensaje": "Usuario bloqueado correctamente"})
+}
+
+func (ctrl *FriendshipController) UnblockUser(c *gin.Context) {
+	blockedID := strings.TrimSpace(c.Param("id"))
+	if blockedID == "" {
+		httpresponse.BadRequestGin(c, "El identificador del usuario es requerido")
+		return
+	}
+	if err := ctrl.service.UnblockUser(c, c.GetString(ContextUserIDKey), blockedID); err != nil {
+		ctrl.handleError(c, err)
+		return
+	}
+	httpresponse.SuccessGin(c, http.StatusOK, gin.H{"mensaje": "Usuario desbloqueado correctamente"})
+}
+
+func (ctrl *FriendshipController) GetFriendsCount(c *gin.Context) {
+	userID := strings.TrimSpace(c.Param("id"))
+	if userID == "" {
+		httpresponse.BadRequestGin(c, "El identificador del usuario es requerido")
+		return
+	}
+	count, err := ctrl.service.GetFriendsCount(c.Request.Context(), userID)
+	if err != nil {
+		ctrl.handleError(c, err)
+		return
+	}
+	httpresponse.SuccessGin(c, http.StatusOK, gin.H{"count": count})
 }
 
 func (ctrl *FriendshipController) ValidateInteraction(c *gin.Context) {
@@ -326,8 +383,6 @@ func (ctrl *FriendshipController) handleError(c *gin.Context, err error) {
 		httpresponse.NotFoundGin(c, "No se encontraron candidatos disponibles para sugerencias de amistad")
 	case errors.Is(err, services.ErrRequestConflict):
 		httpresponse.ConflictGin(c, "Ya existe una solicitud o amistad entre estos usuarios")
-	case errors.Is(err, services.ErrAlreadyBlocked):
-		httpresponse.ConflictGin(c, "El usuario ya se encuentra bloqueado")
 	case errors.Is(err, services.ErrBlocked):
 		httpresponse.ForbiddenGin(c, "No se permiten interacciones entre estos usuarios debido a un bloqueo")
 	case errors.Is(err, services.ErrRequestNotFound):

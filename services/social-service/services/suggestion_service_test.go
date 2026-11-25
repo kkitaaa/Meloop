@@ -43,11 +43,20 @@ func (m *mockFriendshipRepoForSuggestions) RemoveFriend(ctx context.Context, use
 func (m *mockFriendshipRepoForSuggestions) GetFriendProfile(ctx context.Context, userID, friendID string) (*models.FriendProfile, error) {
 	return nil, nil
 }
-func (m *mockFriendshipRepoForSuggestions) BlockUser(ctx context.Context, blockerID, blockedID string) error {
-	return nil
+func (m *mockFriendshipRepoForSuggestions) BlockUser(ctx context.Context, blockerID, blockedID string) ([]models.FriendRequest, error) {
+	return nil, nil
 }
 func (m *mockFriendshipRepoForSuggestions) IsBlocked(ctx context.Context, user1ID, user2ID string) (bool, error) {
 	return false, nil
+}
+func (m *mockFriendshipRepoForSuggestions) GetMutualFriendsQuery(ctx context.Context, userID, targetID string) (models.MutualFriendsQuery, error) {
+	return models.MutualFriendsQuery{}, nil
+}
+func (m *mockFriendshipRepoForSuggestions) GetMutualFriendsPage(context.Context, string, string, string, int) ([]string, bool, error) {
+	return []string{}, false, nil
+}
+func (m *mockFriendshipRepoForSuggestions) ListMutualFriendProfiles(ctx context.Context, userIDs []string) ([]models.MutualFriend, error) {
+	return []models.MutualFriend{}, nil
 }
 func (m *mockFriendshipRepoForSuggestions) ValidateInteraction(ctx context.Context, user1ID, user2ID string) error {
 	return nil
@@ -72,6 +81,26 @@ func (m *mockFriendshipRepoForSuggestions) ExcludeBlocked(ctx context.Context, u
 }
 func (m *mockFriendshipRepoForSuggestions) GetBlockedCandidateIDs(ctx context.Context, userID string, candidateIDs []string) ([]string, error) {
 	return []string{}, nil
+}
+
+func (m *mockFriendshipRepoForSuggestions) UnblockUser(ctx context.Context, blockerID, blockedID string) error {
+	return nil
+}
+
+func (m *mockFriendshipRepoForSuggestions) GetAcceptedFriendsCount(ctx context.Context, userID string) (int, error) {
+	return 0, nil
+}
+
+func (m *mockFriendshipRepoForSuggestions) GetFriendsCount(ctx context.Context, userID string) (int, error) {
+	return 0, nil
+}
+
+func (m *mockFriendshipRepoForSuggestions) GetBlockedUsersCount(ctx context.Context, userID string) (int, error) {
+	return 0, nil
+}
+
+func (m *mockFriendshipRepoForSuggestions) GetBlockedCount(ctx context.Context, userID string) (int, error) {
+	return 0, nil
 }
 
 type mockCompatibilityRepoForSuggestions struct {
