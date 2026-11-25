@@ -13,6 +13,8 @@ import '../../../widgets/paper/stacked_paper_card.dart';
 import '../../../widgets/post_card.dart';
 import '../../../widgets/level_progress/level_progress.dart';
 import '../../../services/api_client.dart';
+import '../../../services/auth_session.dart';
+import '../../../models/feed_data.dart';
 import '../../posts/presentation/saved_posts_screen.dart';
 import '../../search/presentation/global_search_route.dart';
 import '../../gamification/presentation/gamification_demo_controller.dart';
@@ -41,11 +43,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final Color _tealAccent = const Color(0xFF1ABC9C);
 
   final ScrollController _scrollController = ScrollController();
+  final ScrollController _blogsScrollController = ScrollController();
   final List<Map<String, dynamic>> _posts = [];
+  late final ApiClient _apiClient;
+  late final bool _ownsApiClient;
 
   bool _isInitialLoading = true;
   bool _isLoadingMore = false;
-  int _currentPage = 1;
+  bool _hasMorePosts = true;
+  String? _postsError;
+  static const int _postsPageSize = 10;
 
   // Estados del perfil: own, public, private, blocked
   late String _profileStatus;
@@ -101,7 +108,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   void initState() {
     super.initState();
-    _displayUsername = widget.username ?? "Nombre de usuario";
+    _ownsApiClient = widget.apiClient == null;
+    _apiClient = widget.apiClient ?? ApiClient();
+    _displayUsername =
+        widget.username ??
+        AuthSession.shared.user?.username ??
+        "Nombre de usuario";
     _usernameController.text = _displayUsername;
     _bioController.text = _biography;
 
@@ -113,18 +125,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
       _isInitialLoading = false;
     }
 
-    _scrollController.addListener(() {
-      if (_scrollController.position.pixels >=
-          _scrollController.position.maxScrollExtent - 200) {
-        if (!_isLoadingMore && _posts.isNotEmpty) {
-          _fetchMorePosts();
-        }
-      }
-    });
+    _blogsScrollController.addListener(_handleBlogsScroll);
   }
 
   void _determineProfileStatus() {
-    if (widget.username == "UsuarioPrivado") {
+    if (widget.userId != null && widget.userId == AuthSession.shared.user?.id) {
+      _profileStatus = 'own';
+    } else if (widget.username == "UsuarioPrivado") {
       _profileStatus = 'private';
     } else if (widget.username == "UsuarioBloqueado") {
       _profileStatus = 'blocked';
@@ -135,57 +142,177 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  String? get _profileAuthorId {
+    final authorId =
+        widget.userId ??
+        (_profileStatus == 'own' ? AuthSession.shared.user?.id : null);
+    return authorId?.trim().isNotEmpty == true ? authorId : null;
+  }
+
   @override
   void dispose() {
     _scrollController.dispose();
+    _blogsScrollController
+      ..removeListener(_handleBlogsScroll)
+      ..dispose();
+    if (_ownsApiClient) _apiClient.close();
     _usernameController.dispose();
     _bioController.dispose();
     super.dispose();
   }
 
   Future<void> _fetchInitialPosts() async {
-    setState(() => _isInitialLoading = true);
-    await Future.delayed(const Duration(seconds: 1));
-
-    if (!mounted) return;
-
     setState(() {
-      _posts.addAll(_generateMockPosts(1, 3));
-      _isInitialLoading = false;
+      _isInitialLoading = true;
+      _isLoadingMore = false;
+      _hasMorePosts = true;
+      _postsError = null;
+      _posts.clear();
     });
+
+    final authorId = _profileAuthorId;
+    if (authorId == null) {
+      setState(() {
+        _isInitialLoading = false;
+        _postsError = 'No se pudo identificar el perfil para cargar sus blogs.';
+      });
+      return;
+    }
+
+    try {
+      final posts = await _apiClient.getAuthorPosts(
+        authorId,
+        limit: _postsPageSize,
+      );
+      final postCards = posts.map(_toPostCardData).toList();
+      if (!mounted) return;
+      setState(() {
+        _posts.addAll(postCards);
+        _hasMorePosts = posts.length == _postsPageSize;
+        _isInitialLoading = false;
+      });
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _isInitialLoading = false;
+        _postsError = error.statusCode == null
+            ? error.message
+            : 'HTTP ${error.statusCode}: ${error.message}';
+      });
+    } on FormatException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _isInitialLoading = false;
+        _postsError = error.message;
+      });
+    }
   }
 
   Future<void> _fetchMorePosts() async {
+    final authorId = _profileAuthorId;
+    if (_isInitialLoading ||
+        _isLoadingMore ||
+        !_hasMorePosts ||
+        authorId == null) {
+      return;
+    }
+
     setState(() => _isLoadingMore = true);
-    await Future.delayed(const Duration(seconds: 1));
-
-    if (!mounted) return;
-
-    setState(() {
-      _currentPage++;
-      _posts.addAll(_generateMockPosts(_currentPage, 2));
-      _isLoadingMore = false;
-    });
+    try {
+      final posts = await _apiClient.getAuthorPosts(
+        authorId,
+        limit: _postsPageSize,
+        offset: _posts.length,
+      );
+      final postCards = posts.map(_toPostCardData).toList();
+      if (!mounted) return;
+      setState(() {
+        _posts.addAll(postCards);
+        _hasMorePosts = posts.length == _postsPageSize;
+        _isLoadingMore = false;
+      });
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      setState(() => _isLoadingMore = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No se pudieron cargar más blogs: ${error.message}'),
+        ),
+      );
+    } on FormatException catch (error) {
+      if (!mounted) return;
+      setState(() => _isLoadingMore = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No se pudieron mostrar los blogs: ${error.message}'),
+        ),
+      );
+    }
   }
 
-  List<Map<String, dynamic>> _generateMockPosts(int page, int count) {
-    return List.generate(count, (index) {
-      final id = (page - 1) * count + index + 1;
-      return {
-        "id": id,
-        "user": _displayUsername,
-        "time": "Hace ${id * 2} horas",
-        "content":
-            "Publicación número $id del perfil de $_displayUsername. Consumiendo ruta paginada del post-service.",
-        "song": "Track del Perfil $id",
-        "artist": "Artista Afín",
-        "likes": 15 * id,
-        "comments": id * 2,
-        "isAuthor": _profileStatus == 'own', // Si es tu perfil, eres autor
-        "isEdited": false,
-        "within24Hours": true,
-      };
+  void _handleBlogsScroll() {
+    if (!_blogsScrollController.hasClients) return;
+    if (_blogsScrollController.position.pixels >=
+        _blogsScrollController.position.maxScrollExtent - 200) {
+      _fetchMorePosts();
+    }
+  }
+
+  Map<String, dynamic> _toPostCardData(Map<String, dynamic> post) {
+    final authorId = post['author_id'] ?? post['user_id'];
+    final username =
+        post['author_username'] ?? post['user'] ?? _displayUsername;
+    final content = post['content'];
+    final postId = post['id'];
+    final createdAt = post['created_at'] ?? post['time'];
+    if ((authorId is! String) ||
+        (username is! String) ||
+        (content is! String) ||
+        postId == null) {
+      throw const FormatException(
+        'El servicio devolvió datos incompletos para un blog.',
+      );
+    }
+
+    final feedPost = FeedPost.fromJson({
+      ...post,
+      'user': username,
+      'user_id': authorId,
+      'time': _formatPostTime(createdAt),
+      'image_url':
+          post['image_url'] ?? post['url_multimedia'] ?? post['media_url'],
+      'song_id': post['song_id'] ?? post['music_id'],
+      'likes': post['likes'] ?? post['likes_count'] ?? 0,
+      'comments': post['comments'] ?? post['comments_count'] ?? 0,
+      'isAuthor': authorId == AuthSession.shared.user?.id,
+      'isEdited': post['isEdited'] ?? false,
+      'within24Hours': post['within24Hours'] ?? _isWithinLastDay(createdAt),
     });
+    return feedPost.toPostCardData();
+  }
+
+  String _formatPostTime(Object? value) {
+    if (value is! String) {
+      throw const FormatException('Un blog no contiene una fecha válida.');
+    }
+    final createdAt = DateTime.tryParse(value);
+    if (createdAt == null) {
+      throw const FormatException('Un blog contiene una fecha inválida.');
+    }
+
+    final elapsed = DateTime.now().difference(createdAt.toLocal());
+    if (elapsed.isNegative || elapsed.inMinutes < 1) return 'Ahora';
+    if (elapsed.inHours < 1) return 'Hace ${elapsed.inMinutes} min';
+    if (elapsed.inDays < 1) return 'Hace ${elapsed.inHours} h';
+    return 'Hace ${elapsed.inDays} días';
+  }
+
+  bool _isWithinLastDay(Object? value) {
+    if (value is! String) return false;
+    final createdAt = DateTime.tryParse(value);
+    return createdAt != null &&
+        DateTime.now().difference(createdAt.toLocal()) <=
+            const Duration(hours: 24);
   }
 
   void _toggleEquipItem(int index) {
@@ -504,7 +631,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         const SizedBox(height: 24),
                         _profileStatus == 'private'
                             ? _buildPrivateState()
-                            : _buildProfilePaperTabs(isMobile: false),
+                            : _buildProfilePaperTabs(),
                       ],
                     ),
                   ),
@@ -542,7 +669,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               const SizedBox(height: 16),
               _buildFavoriteArtists(),
               const SizedBox(height: 24),
-              _buildProfilePaperTabs(isMobile: true),
+              _buildProfilePaperTabs(),
             ],
           ],
         ],
@@ -1001,7 +1128,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   // --- SECCIÓN DE TABS (BLOGS E INVENTARIO) ---
-  Widget _buildProfilePaperTabs({required bool isMobile}) {
+  Widget _buildProfilePaperTabs() {
     final bool isOwn = _profileStatus == 'own';
 
     return Container(
@@ -1033,10 +1160,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             const Divider(height: 1, thickness: 1, color: Colors.black12),
             Expanded(
               child: TabBarView(
-                children: [
-                  _buildBlogsTab(isMobile: isMobile),
-                  if (isOwn) _buildInventoryTab(),
-                ],
+                children: [_buildBlogsTab(), if (isOwn) _buildInventoryTab()],
               ),
             ),
           ],
@@ -1045,7 +1169,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildBlogsTab({required bool isMobile}) {
+  Widget _buildBlogsTab() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 32.0, vertical: 24.0),
       child: Column(
@@ -1085,6 +1209,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
           Expanded(
             child: _isInitialLoading
                 ? Center(child: CircularProgressIndicator(color: _tealAccent))
+                : _postsError != null
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          _postsError!,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: _paperTextColor.withValues(alpha: 0.7),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        OutlinedButton(
+                          onPressed: _fetchInitialPosts,
+                          child: const Text('Reintentar'),
+                        ),
+                      ],
+                    ),
+                  )
                 : _posts.isEmpty
                 ? Center(
                     child: Column(
@@ -1104,7 +1248,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                   )
                 : ListView.builder(
-                    controller: isMobile ? null : ScrollController(),
+                    controller: _blogsScrollController,
                     itemCount: _posts.length + (_isLoadingMore ? 1 : 0),
                     itemBuilder: (context, index) {
                       if (index == _posts.length) {
@@ -1122,7 +1266,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         postData: _posts[index],
                         tealAccent: _tealAccent,
                         textColor: _paperTextColor,
-                        apiClient: widget.apiClient,
+                        apiClient: _apiClient,
                         onDelete: () {
                           setState(() {
                             _posts.removeAt(index);

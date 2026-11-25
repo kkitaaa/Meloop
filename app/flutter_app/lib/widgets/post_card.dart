@@ -11,7 +11,7 @@ import '../features/posts/presentation/post_editor_dialog.dart';
 import '../features/posts/presentation/share_post_sheet.dart';
 import '../services/api_client.dart';
 import 'post_audio_controls.dart';
-import 'post_interactions/post_interaction_demo.dart';
+import 'post_interactions/post_interaction.dart';
 import '../services/post_audio_playback.dart';
 
 class PostCard extends StatefulWidget {
@@ -21,6 +21,7 @@ class PostCard extends StatefulWidget {
   final bool compact;
   final PostAudioPlaybackController? audioPlaybackController;
   final ApiClient? apiClient;
+  final PostInteractionService? interactionService;
   final VoidCallback? onUnsave;
   final VoidCallback?
   onDelete; // Callback para eliminar de la vista sin recargar
@@ -31,6 +32,7 @@ class PostCard extends StatefulWidget {
     required this.tealAccent,
     this.audioPlaybackController,
     this.apiClient,
+    this.interactionService,
     this.onUnsave,
     this.compact = false,
     this.textColor = Colors.black87,
@@ -44,6 +46,7 @@ class PostCard extends StatefulWidget {
 class _PostCardState extends State<PostCard> {
   late final ApiClient _apiClient;
   late final bool _ownsApiClient;
+  late final PostInteractionService _interactionService;
   bool _isSaved = false;
   bool _isSaving = false;
 
@@ -52,6 +55,8 @@ class _PostCardState extends State<PostCard> {
     super.initState();
     _ownsApiClient = widget.apiClient == null;
     _apiClient = widget.apiClient ?? ApiClient();
+    _interactionService =
+        widget.interactionService ?? ApiPostInteractionService(_apiClient);
     _isSaved = widget.postData['is_saved'] == true;
   }
 
@@ -494,10 +499,11 @@ class _PostCardState extends State<PostCard> {
 
           Row(
             children: [
-              DemoLikeButton(
+              PostLikeButton(
                 postId: postId,
                 likes: likes,
                 initiallyLiked: widget.postData['is_liked'] == true,
+                service: _interactionService,
                 onLikesChanged: (count) {
                   widget.postData['likes'] = count;
                 },

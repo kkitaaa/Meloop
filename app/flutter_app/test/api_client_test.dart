@@ -47,7 +47,7 @@ void main() {
       },
     );
 
-    test('attaches the authenticated session to Dio post uploads', () async {
+    test('attaches the authenticated session to text post requests', () async {
       final session = AuthSession(persistent: false);
       await session.establish(
         sessionToken: 'post-token',
@@ -61,10 +61,15 @@ void main() {
       final dio = Dio();
       dio.httpClientAdapter = _DioMockAdapter((options) {
         expect(options.method, 'POST');
-        expect(options.uri.path, '/v1/posts');
+        expect(options.uri.path, '/api/v1/posts');
         expect(options.headers['Authorization'], 'Bearer post-token');
         expect(options.headers['X-User-ID'], 'post-user');
-        expect(options.data, isA<FormData>());
+        expect(options.contentType, Headers.jsonContentType);
+        expect(options.data, {
+          'content': 'Publicación de prueba',
+          'media_urls': <String>[],
+          'music_id': '',
+        });
         return ResponseBody.fromString(
           jsonEncode({
             'success': true,
@@ -92,6 +97,87 @@ void main() {
       dio.close(force: true);
       await session.clear();
     });
+
+    test('loads raw author posts from the post service', () async {
+      final session = AuthSession(persistent: false);
+      await session.establish(
+        sessionToken: 'profile-token',
+        expiresInSeconds: 3600,
+        sessionUser: const AuthUser(
+          id: 'viewer-1',
+          username: 'Ana',
+          email: 'ana@example.test',
+        ),
+      );
+      final dio = Dio();
+      dio.httpClientAdapter = _DioMockAdapter((options) {
+        expect(options.method, 'GET');
+        expect(options.uri.path, '/api/v1/posts/author/author-1');
+        expect(options.uri.queryParameters, {'limit': '10', 'offset': '0'});
+        expect(options.headers['Authorization'], 'Bearer profile-token');
+        expect(options.headers['X-User-ID'], 'viewer-1');
+        return ResponseBody.fromString(
+          jsonEncode([
+            {
+              'id': 'post-1',
+              'author_id': 'author-1',
+              'content': 'Publicación real',
+              'created_at': '2026-11-24T20:00:00Z',
+            },
+          ]),
+          200,
+          headers: {
+            Headers.contentTypeHeader: ['application/json'],
+          },
+        );
+      });
+      final client = ApiClient(dio: dio, session: session);
+
+      final posts = await client.getAuthorPosts('author-1');
+
+      expect(posts.single['content'], 'Publicación real');
+      client.close();
+      await session.clear();
+    });
+
+    test(
+      'persists like and unlike requests with the authenticated session',
+      () async {
+        final session = AuthSession(persistent: false);
+        await session.establish(
+          sessionToken: 'likes-token',
+          expiresInSeconds: 3600,
+          sessionUser: const AuthUser(
+            id: 'viewer-1',
+            username: 'Ana',
+            email: 'ana@example.test',
+          ),
+        );
+        final dio = Dio();
+        var requestCount = 0;
+        dio.httpClientAdapter = _DioMockAdapter((options) {
+          expect(options.uri.path, '/v1/posts/post-1/like');
+          expect(options.headers['Authorization'], 'Bearer likes-token');
+          expect(options.headers['X-User-ID'], 'viewer-1');
+          expect(options.method, requestCount++ == 0 ? 'POST' : 'DELETE');
+          return ResponseBody.fromString(
+            jsonEncode({'message': 'ok'}),
+            200,
+            headers: {
+              Headers.contentTypeHeader: ['application/json'],
+            },
+          );
+        });
+        final client = ApiClient(dio: dio, session: session);
+
+        await client.setPostLike(postId: 'post-1', liked: true);
+        await client.setPostLike(postId: 'post-1', liked: false);
+
+        client.close();
+        dio.close(force: true);
+        await session.clear();
+      },
+    );
 
     test('accepts a login response without an optional role', () async {
       final client = ApiClient(

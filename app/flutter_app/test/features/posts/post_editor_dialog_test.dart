@@ -211,7 +211,7 @@ void main() {
       expect(publisher.calls, 1);
       expect(find.text('Texto que debe conservarse'), findsOneWidget);
       expect(
-        find.text('No encontramos esa canción en Spotify.'),
+        find.text('HTTP 422: No encontramos esa canción en Spotify.'),
         findsOneWidget,
       );
       expect(find.text('Crear nueva publicación'), findsOneWidget);

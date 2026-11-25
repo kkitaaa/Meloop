@@ -363,7 +363,14 @@ class _PostEditorDialogState extends State<PostEditorDialog> {
         },
       );
     } on ApiException catch (error) {
-      if (mounted) setState(() => _submissionError = error.message);
+      if (mounted) {
+        final statusCode = error.statusCode;
+        setState(() {
+          _submissionError = statusCode == null
+              ? error.message
+              : 'HTTP $statusCode: ${error.message}';
+        });
+      }
     } catch (error) {
       if (mounted) {
         setState(() => _submissionError = 'No se pudo publicar: $error');
@@ -446,31 +453,36 @@ class _PostEditorDialogState extends State<PostEditorDialog> {
                 spacing: 8,
                 children: [
                   OutlinedButton.icon(
-                    onPressed: _isSubmitting || _images.length >= maxPostImages
+                    onPressed:
+                        _isSubmitting ||
+                            !isEdit ||
+                            _images.length >= maxPostImages
                         ? null
                         : _pickImage,
                     icon: const Icon(Icons.image_outlined),
                     label: Text('Imágenes (${_images.length}/$maxPostImages)'),
                   ),
                   OutlinedButton.icon(
-                    onPressed: _isSubmitting || _audioBytes != null
+                    onPressed: _isSubmitting || !isEdit || _audioBytes != null
                         ? null
                         : _pickAudio,
                     icon: const Icon(Icons.audiotrack),
                     label: const Text('Adjuntar audio'),
                   ),
                   OutlinedButton.icon(
-                    onPressed: _isSubmitting ? null : _chooseSong,
+                    onPressed: _isSubmitting || !isEdit ? null : _chooseSong,
                     icon: const Icon(Icons.search),
                     label: const Text('Elegir canción'),
                   ),
                 ],
               ),
               const SizedBox(height: 8),
-              const Text(
-                'Hasta 4 imágenes JPG, PNG o WEBP (5 MB c/u). '
-                'Audio: MP3, M4A, AAC, WAV u OGG (máx. 15 MB).',
-                style: TextStyle(fontSize: 11, color: Colors.grey),
+              Text(
+                isEdit
+                    ? 'Hasta 4 imágenes JPG, PNG o WEBP (5 MB c/u). '
+                          'Audio: MP3, M4A, AAC, WAV u OGG (máx. 15 MB).'
+                    : 'Por ahora solo puedes publicar texto. Imágenes, audio y canciones aún no están disponibles.',
+                style: const TextStyle(fontSize: 11, color: Colors.grey),
               ),
               if (_images.isNotEmpty || _imageUrl != null) ...[
                 const SizedBox(height: 16),

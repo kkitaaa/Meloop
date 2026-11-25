@@ -4,10 +4,16 @@ import 'package:flutter_app/features/gamification/presentation/gamification_demo
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:flutter_app/widgets/post_card.dart';
+import 'package:flutter_app/widgets/post_interactions/post_interaction.dart';
 
 // Mock para simular la función onDelete
 class MockDeleteCallback extends Mock {
   void call();
+}
+
+class _SuccessfulPostInteractionService implements PostInteractionService {
+  @override
+  Future<void> setLike({required String postId, required bool liked}) async {}
 }
 
 void main() {
@@ -16,6 +22,7 @@ void main() {
   Widget createWidgetUnderTest(
     Map<String, dynamic> postData, {
     VoidCallback? onDelete,
+    PostInteractionService? interactionService,
   }) {
     return MaterialApp(
       builder: (context, child) =>
@@ -26,6 +33,7 @@ void main() {
             postData: postData,
             tealAccent: tealAccent,
             onDelete: onDelete,
+            interactionService: interactionService,
           ),
         ),
       ),
@@ -79,7 +87,7 @@ void main() {
       expect(find.byType(Image), findsOneWidget);
     });
 
-    testWidgets('like demo actualiza el contador y muestra la XP animada', (
+    testWidgets('like actualiza el contador y muestra la XP animada', (
       tester,
     ) async {
       final postData = {
@@ -91,7 +99,12 @@ void main() {
       };
       final xpBefore = GamificationDemoController.instance.xp;
 
-      await tester.pumpWidget(createWidgetUnderTest(postData));
+      await tester.pumpWidget(
+        createWidgetUnderTest(
+          postData,
+          interactionService: _SuccessfulPostInteractionService(),
+        ),
+      );
       await tester.tap(find.byTooltip('Dar like'));
       await tester.pump(const Duration(milliseconds: 200));
 
@@ -114,7 +127,12 @@ void main() {
       final progress = GamificationDemoController.instance;
       final startingLevel = progress.level;
 
-      await tester.pumpWidget(createWidgetUnderTest(postData));
+      await tester.pumpWidget(
+        createWidgetUnderTest(
+          postData,
+          interactionService: _SuccessfulPostInteractionService(),
+        ),
+      );
       for (
         var attempt = 0;
         attempt < 12 && progress.level == startingLevel;

@@ -42,13 +42,12 @@ publicaciones, por lo que estos datos no representan publicaciones reales.
 
 ### Crear publicaciones
 
-El editor valida hasta cuatro imágenes JPG/PNG/WEBP de 5 MB cada una, un audio
-de hasta 15 MB y un texto de hasta 2000 caracteres. Envía `POST /v1/posts` como
-`multipart/form-data`: `content`, campos repetidos `images`, `audio` opcional y
-`song_id`/`song_title`/`artist_name` cuando se eligió una canción. Muestra el
-progreso de subida, permite cancelarla y mantiene el borrador ante errores.
-`MUSIC_NOT_FOUND`, `MUSIC_UNAVAILABLE` y `POSTING_RESTRICTED` se traducen a
-mensajes para el usuario.
+Por ahora, el editor permite publicar solo texto de hasta 2000 caracteres.
+Envía `POST /api/v1/posts` como `application/json`, con `content`,
+`media_urls: []` y `music_id: ""`. Imágenes, audio y canciones permanecen
+deshabilitados hasta integrar el flujo de subida multimedia; las imágenes se
+deberán subir primero mediante `POST /api/v1/posts/media` y luego enviar sus URL
+en `media_urls`.
 
 `features/music/presentation/music_search_screen.dart` contiene
 `MusicSearchScreen(mode)`, reutilizable en los modos `pickForPost`,
@@ -58,16 +57,15 @@ las pestañas Canciones, Artistas, Álbumes y Géneros consultan
 La respuesta estándar usa `data.items` (o una colección específica por tipo),
 con elementos identificados por `id` y `name`/`title`; artista e imagen son
 opcionales. Los modos de selección devuelven el resultado a la pantalla previa,
-mientras `browse` abre la ficha musical. La publicación exitosa espera
-`data.post` (o el objeto de publicación en `data`) y opcionalmente
-`data.xp_awarded`.
+mientras `browse` abre la ficha musical. El cliente acepta la respuesta de
+creación directa del `post-service` (HTTP 201) y el envelope existente del
+Gateway.
 
-**Dependencia del backend:** en este repositorio el API Gateway todavía no
-enruta `/v1/posts` ni `/v1/music`; el `post-service` no implementa HTTP ni
-persistencia y el `music-service` tampoco expone búsqueda. Por eso el cliente
-está cableado al contrato esperado, pero publicar y buscar canciones requieren
-que P-01, MU-07 y VS-03 expongan esos endpoints. La aplicación mostrará el error
-de conexión del Gateway y conservará el borrador mientras no estén disponibles.
+**Dependencia del backend:** `post-service` expone `POST /api/v1/posts`; el
+Gateway debe reenviar esa ruta al servicio conservando el prefijo. La
+configuración versionada del Gateway aún no incluye ese proxy. La búsqueda
+`/v1/music` tampoco está disponible en este repositorio, por lo que requiere que
+MU-07 y VS-03 expongan ese endpoint.
 
 ### Búsqueda global
 

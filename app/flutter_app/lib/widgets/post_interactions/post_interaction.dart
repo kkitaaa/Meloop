@@ -1,29 +1,32 @@
 import 'package:flutter/material.dart';
 
 import '../../features/gamification/presentation/gamification_demo_controller.dart';
+import '../../services/api_client.dart';
 
-/// Demo boundary for post likes.
-///
-/// Vicente: keep this demo boundary and its interaction visuals. When the post
-/// API is ready, replace `setLike` with the request and retain the optimistic
-/// state, button animation, XP effect, and level-up presentation.
-class PostInteractionDemoService {
-  const PostInteractionDemoService();
+abstract interface class PostInteractionService {
+  Future<void> setLike({required String postId, required bool liked});
+}
 
-  Future<void> setLike({required String postId, required bool liked}) async {
-    await Future<void>.delayed(const Duration(milliseconds: 180));
+class ApiPostInteractionService implements PostInteractionService {
+  const ApiPostInteractionService(this.apiClient);
+
+  final ApiClient apiClient;
+
+  @override
+  Future<void> setLike({required String postId, required bool liked}) {
+    return apiClient.setPostLike(postId: postId, liked: liked);
   }
 }
 
-class DemoLikeButton extends StatefulWidget {
-  const DemoLikeButton({
+class PostLikeButton extends StatefulWidget {
+  const PostLikeButton({
     super.key,
     required this.postId,
     required this.likes,
     required this.initiallyLiked,
+    required this.service,
     this.onLikesChanged,
     this.onLikedChanged,
-    this.service = const PostInteractionDemoService(),
   });
 
   final String postId;
@@ -31,13 +34,13 @@ class DemoLikeButton extends StatefulWidget {
   final bool initiallyLiked;
   final ValueChanged<int>? onLikesChanged;
   final ValueChanged<bool>? onLikedChanged;
-  final PostInteractionDemoService service;
+  final PostInteractionService service;
 
   @override
-  State<DemoLikeButton> createState() => _DemoLikeButtonState();
+  State<PostLikeButton> createState() => _PostLikeButtonState();
 }
 
-class _DemoLikeButtonState extends State<DemoLikeButton>
+class _PostLikeButtonState extends State<PostLikeButton>
     with SingleTickerProviderStateMixin {
   static const _teal = Color(0xFF00AF92);
   static const _like = Color(0xFFFF6262);
@@ -60,7 +63,7 @@ class _DemoLikeButtonState extends State<DemoLikeButton>
   }
 
   @override
-  void didUpdateWidget(covariant DemoLikeButton oldWidget) {
+  void didUpdateWidget(covariant PostLikeButton oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.postId != widget.postId) {
       _liked = widget.initiallyLiked;

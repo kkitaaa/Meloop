@@ -311,6 +311,87 @@ class ApiClient implements PostPublisher {
     );
   }
 
+  Future<List<Map<String, dynamic>>> getAuthorPosts(
+    String authorId, {
+    int limit = 10,
+    int offset = 0,
+  }) async {
+    if (authorId.trim().isEmpty) {
+      throw const ApiException(
+        message: 'No se pudo identificar al autor de las publicaciones.',
+      );
+    }
+
+    try {
+      final response = await _dio.get<Object?>(
+        '/api/v1/posts/author/${Uri.encodeComponent(authorId)}',
+        queryParameters: {'limit': limit, 'offset': offset},
+      );
+      final body = response.data;
+      final posts = body is List
+          ? body
+          : body is Map<String, dynamic> && body['data'] is List
+          ? body['data'] as List
+          : null;
+      if (posts == null) {
+        throw ApiException(
+          statusCode: response.statusCode,
+          message: 'El servicio devolvió una lista de publicaciones inválida.',
+        );
+      }
+
+      return posts.map((post) {
+        if (post is! Map<String, dynamic>) {
+          throw ApiException(
+            statusCode: response.statusCode,
+            message: 'El servicio devolvió una publicación inválida.',
+          );
+        }
+        return post;
+      }).toList();
+    } on DioException catch (error) {
+      throw ApiException(
+        statusCode: error.response?.statusCode,
+        errorCode: _readErrorCode(error.response?.data),
+        message:
+            _readErrorMessage(error.response?.data) ??
+            'No se pudieron cargar las publicaciones del perfil.',
+      );
+    }
+  }
+
+  Future<void> setPostLike({
+    required String postId,
+    required bool liked,
+  }) async {
+    final normalizedPostId = postId.trim();
+    if (normalizedPostId.isEmpty) {
+      throw const ApiException(
+        message: 'No se pudo identificar la publicación.',
+      );
+    }
+
+    final path = '/v1/posts/${Uri.encodeComponent(normalizedPostId)}/like';
+    try {
+      if (liked) {
+        await _dio.post<Object?>(path);
+      } else {
+        await _dio.delete<Object?>(path);
+      }
+    } on DioException catch (error) {
+      final responseData = error.response?.data;
+      throw ApiException(
+        statusCode: error.response?.statusCode,
+        errorCode: _readErrorCode(responseData),
+        message:
+            _readErrorMessage(responseData) ??
+            (liked
+                ? 'No se pudo guardar el like. Inténtalo de nuevo.'
+                : 'No se pudo quitar el like. Inténtalo de nuevo.'),
+      );
+    }
+  }
+
   Future<ApiResponse<MutualFriendsPage>> getMutualFriends(
     String targetUserId, {
     String? cursor,
@@ -734,34 +815,20 @@ class ApiClient implements PostPublisher {
     required CancelToken cancelToken,
     required void Function(int sent, int total) onSendProgress,
   }) async {
-    final formData = FormData()..fields.add(MapEntry('content', content));
-    for (final image in images) {
-      formData.files.add(
-        MapEntry(
-          'images',
-          MultipartFile.fromBytes(image.bytes, filename: image.name),
-        ),
+    if (images.isNotEmpty ||
+        audioBytes != null ||
+        audioName != null ||
+        song != null) {
+      throw const ApiException(
+        message: 'Por ahora solo se pueden publicar textos, sin imágenes, audio ni canciones.',
       );
-    }
-    if (audioBytes != null && audioName != null) {
-      formData.files.add(
-        MapEntry(
-          'audio',
-          MultipartFile.fromBytes(audioBytes, filename: audioName),
-        ),
-      );
-    }
-    if (song != null) {
-      formData.fields
-        ..add(MapEntry('song_id', song.id))
-        ..add(MapEntry('song_title', song.title))
-        ..add(MapEntry('artist_name', song.artist));
     }
 
     try {
       final response = await _dio.post<Object?>(
-        '/v1/posts',
-        data: formData,
+        '/api/v1/posts',
+        data: {'content': content, 'media_urls': <String>[], 'music_id': ''},
+        options: Options(contentType: Headers.jsonContentType),
         cancelToken: cancelToken,
         onSendProgress: onSendProgress,
       );
@@ -808,24 +875,28 @@ class ApiClient implements PostPublisher {
 
     final success = body['success'];
     final data = body['data'];
-    if (success != true || data is! Map<String, dynamic>) {
-      final errorCode = _readErrorCode(body);
-      throw ApiException(
-        statusCode: statusCode,
-        errorCode: errorCode,
-        message: _localizedPostError(
-          errorCode,
-          _readErrorMessage(body) ?? 'El servidor rechazó la publicación.',
-        ),
+    if (success == true && data is Map<String, dynamic>) {
+      final rawPost = data['post'];
+      final post = rawPost is Map<String, dynamic> ? rawPost : data;
+      final xpAwarded = data['xp_awarded'];
+      return PostPublishResult(
+        post: post,
+        xpAwarded: xpAwarded is int ? xpAwarded : null,
       );
     }
 
-    final rawPost = data['post'];
-    final post = rawPost is Map<String, dynamic> ? rawPost : data;
-    final xpAwarded = data['xp_awarded'];
-    return PostPublishResult(
-      post: post,
-      xpAwarded: xpAwarded is int ? xpAwarded : null,
+    if (statusCode == 201 && body['id'] != null && body['content'] is String) {
+      return PostPublishResult(post: body);
+    }
+
+    final errorCode = _readErrorCode(body);
+    throw ApiException(
+      statusCode: statusCode,
+      errorCode: errorCode,
+      message: _localizedPostError(
+        errorCode,
+        _readErrorMessage(body) ?? 'El servidor rechazó la publicación.',
+      ),
     );
   }
 
@@ -841,10 +912,11 @@ class ApiClient implements PostPublisher {
   String? _readErrorMessage(Object? body) {
     if (body is! Map<String, dynamic>) return null;
     final error = body['error'];
+    if (error is String) return error;
     if (error is Map<String, dynamic> && error['message'] is String) {
       return error['message'] as String;
     }
-    return null;
+    return body['message'] is String ? body['message'] as String : null;
   }
 
   String _localizedPostError(String? code, String fallback) {

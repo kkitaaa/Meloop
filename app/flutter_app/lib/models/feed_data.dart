@@ -11,6 +11,7 @@ class FeedPost {
   final String? audioName;
   final int likes;
   final int comments;
+  final bool isLiked;
   final bool isAuthor;
   final bool isEdited;
   final bool within24Hours;
@@ -29,6 +30,7 @@ class FeedPost {
     this.audioName,
     required this.likes,
     required this.comments,
+    this.isLiked = false,
     required this.isAuthor,
     required this.isEdited,
     required this.within24Hours,
@@ -52,6 +54,9 @@ class FeedPost {
     final comments = json is Map<String, dynamic>
         ? json['comments'] ?? json['comments_count'] ?? 0
         : null;
+    final isLiked = json is Map<String, dynamic>
+        ? json['is_liked'] ?? false
+        : null;
     final imageUrl = json is Map<String, dynamic>
         ? json['image_url'] ?? json['media_url']
         : null;
@@ -64,6 +69,7 @@ class FeedPost {
         json['content'] is! String ||
         likes is! int ||
         comments is! int ||
+        isLiked is! bool ||
         (json['isAuthor'] != null && json['isAuthor'] is! bool) ||
         (json['isEdited'] != null && json['isEdited'] is! bool) ||
         (json['within24Hours'] != null && json['within24Hours'] is! bool) ||
@@ -93,6 +99,7 @@ class FeedPost {
       audioName: json['audio_name'] as String?,
       likes: likes,
       comments: comments,
+      isLiked: isLiked,
       isAuthor: json['isAuthor'] as bool? ?? false,
       isEdited: json['isEdited'] as bool? ?? false,
       within24Hours: json['within24Hours'] as bool? ?? true,
@@ -113,6 +120,7 @@ class FeedPost {
     'audio_name': audioName,
     'likes': likes,
     'comments': comments,
+    'is_liked': isLiked,
     'isAuthor': isAuthor,
     'isEdited': isEdited,
     'within24Hours': within24Hours,

@@ -3,56 +3,100 @@ import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_app/models/music_track.dart';
 import 'package:flutter_app/services/api_client.dart';
 import 'package:flutter_app/services/post_publisher.dart';
 
 void main() {
-  test('envía los campos del post como multipart y procesa el éxito', () async {
-    final adapter = _ResponseAdapter(
-      statusCode: 201,
-      responseBody: {
-        'success': true,
-        'data': {
-          'post': {'id': 'post-123'},
-          'xp_awarded': 15,
+  test(
+    'envía una publicación de texto como JSON y procesa la respuesta 201',
+    () async {
+      final adapter = _ResponseAdapter(
+        statusCode: 201,
+        responseBody: {
+          'id': 'post-123',
+          'author_id': 'author-1',
+          'content': 'Texto de prueba',
+          'media_url': '',
+          'music_id': '',
+          'created_at': '2026-11-24T20:00:00Z',
         },
-        'error': null,
-      },
-    );
-    final dio = Dio()..httpClientAdapter = adapter;
-    final apiClient = ApiClient(dio: dio);
-    final progress = <(int, int)>[];
+      );
+      final dio = Dio()..httpClientAdapter = adapter;
+      final apiClient = ApiClient(dio: dio);
 
-    final result = await apiClient.publishPost(
-      content: 'Texto de prueba',
-      images: [
-        PostImageUpload(
-          bytes: Uint8List.fromList([1, 2, 3]),
-          name: 'cover.jpg',
+      final result = await apiClient.publishPost(
+        content: 'Texto de prueba',
+        images: const [],
+        cancelToken: CancelToken(),
+        onSendProgress: (_, _) {},
+      );
+
+      expect(adapter.requestOptions?.method, 'POST');
+      expect(adapter.requestOptions?.path, '/api/v1/posts');
+      expect(adapter.requestOptions?.contentType, Headers.jsonContentType);
+      expect(jsonDecode(adapter.requestBody), {
+        'content': 'Texto de prueba',
+        'media_urls': <String>[],
+        'music_id': '',
+      });
+      expect(result.post['id'], 'post-123');
+      expect(result.post['author_id'], 'author-1');
+      expect(result.xpAwarded, isNull);
+    },
+  );
+
+  test(
+    'rechaza adjuntos mientras solo está habilitada la publicación de texto',
+    () async {
+      final adapter = _ResponseAdapter(statusCode: 201, responseBody: {});
+      final apiClient = ApiClient(dio: Dio()..httpClientAdapter = adapter);
+
+      await expectLater(
+        apiClient.publishPost(
+          content: 'Texto',
+          images: [
+            PostImageUpload(bytes: Uint8List.fromList([1]), name: 'imagen.jpg'),
+          ],
+          cancelToken: CancelToken(),
+          onSendProgress: (_, _) {},
         ),
-      ],
-      audioBytes: Uint8List.fromList([4, 5, 6]),
-      audioName: 'audio.mp3',
-      song: const MusicTrack(
-        id: 'spotify-track',
-        title: 'Canción',
-        artist: 'Artista',
-      ),
-      cancelToken: CancelToken(),
-      onSendProgress: (sent, total) => progress.add((sent, total)),
-    );
+        throwsA(
+          isA<ApiException>().having(
+            (error) => error.message,
+            'message',
+            contains('solo se pueden publicar textos'),
+          ),
+        ),
+      );
+      expect(adapter.requestOptions, isNull);
+    },
+  );
 
-    expect(adapter.requestOptions?.method, 'POST');
-    expect(adapter.requestOptions?.path, '/v1/posts');
-    expect(adapter.requestBody, contains('Texto de prueba'));
-    expect(adapter.requestBody, contains('name="images"'));
-    expect(adapter.requestBody, contains('filename="cover.jpg"'));
-    expect(adapter.requestBody, contains('filename="audio.mp3"'));
-    expect(adapter.requestBody, contains('spotify-track'));
-    expect(progress, isNotEmpty);
-    expect(result.post['id'], 'post-123');
-    expect(result.xpAwarded, 15);
+  test('expone status y error del servidor en HTTP 400', () async {
+    final dio = Dio()
+      ..httpClientAdapter = _ResponseAdapter(
+        statusCode: 400,
+        responseBody: {'error': 'datos inválidos o incompletos'},
+      );
+    final apiClient = ApiClient(dio: dio);
+
+    await expectLater(
+      apiClient.publishPost(
+        content: 'Texto',
+        images: const [],
+        cancelToken: CancelToken(),
+        onSendProgress: (_, _) {},
+      ),
+      throwsA(
+        isA<ApiException>()
+            .having((error) => error.statusCode, 'statusCode', 400)
+            .having(
+              (error) => error.message,
+              'message',
+              'datos inválidos o incompletos',
+            ),
+      ),
+    );
   });
 
   test('traduce los códigos de error de creación de posts', () async {
