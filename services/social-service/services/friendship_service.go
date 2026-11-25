@@ -29,7 +29,11 @@ var (
 	ErrNoMusicalPreferences   = errors.New("no musical preferences found for user")
 	ErrInsufficientCandidates = errors.New("insufficient candidates found for suggestions")
 	ErrNoCandidates           = errors.New("no candidates available for suggestions")
+	ErrSelfMutualFriends      = errors.New("cannot query mutual friends for yourself")
+	ErrInvalidPagination      = errors.New("invalid mutual-friends pagination")
 )
+
+const MaxMutualFriendsLimit = 100
 
 type EventPublisher interface {
 	PublishFriendAccepted(ctx context.Context, request *models.FriendRequest) error
@@ -46,6 +50,7 @@ type FriendshipService interface {
 	ListFriends(ctx context.Context, userID string, limit int, query string, cursor *models.FriendCursor) (models.FriendPage, error)
 	RemoveFriend(ctx context.Context, userID, targetID string) error
 	GetFriendProfile(ctx context.Context, userID, friendID string) (*models.FriendProfile, error)
+	GetMutualFriends(ctx context.Context, userID, targetID string, limit int, cursor string) (*models.MutualFriendsResponse, error)
 	BlockUser(ctx context.Context, blockerID, blockedID string) error
 	UnblockUser(ctx context.Context, blockerID, blockedID string) error
 	GetFriendsCount(ctx context.Context, userID string) (int, error)
@@ -164,6 +169,63 @@ func (s *friendshipService) GetFriendProfile(ctx context.Context, userID, friend
 		return nil, mapRepositoryError(err)
 	}
 	return profile, nil
+}
+
+func (s *friendshipService) GetMutualFriends(ctx context.Context, userID, targetID string, limit int, cursor string) (*models.MutualFriendsResponse, error) {
+	userID = strings.TrimSpace(userID)
+	targetID = strings.TrimSpace(targetID)
+	cursor = strings.TrimSpace(cursor)
+	if userID == "" || targetID == "" {
+		return nil, ErrInvalidUser
+	}
+	if userID == targetID {
+		return nil, ErrSelfMutualFriends
+	}
+	if limit <= 0 || limit > MaxMutualFriendsLimit || len(cursor) > 64 {
+		return nil, ErrInvalidPagination
+	}
+
+	query, err := s.repo.GetMutualFriendsQuery(ctx, userID, targetID)
+	if err != nil {
+		return nil, mapRepositoryError(err)
+	}
+	if !query.TargetExists {
+		return nil, ErrUserNotFound
+	}
+	blocked, err := s.repo.IsBlocked(ctx, userID, targetID)
+	if err != nil {
+		return nil, mapRepositoryError(err)
+	}
+	if blocked {
+		return nil, ErrBlocked
+	}
+
+	result := &models.MutualFriendsResponse{
+		Count:   query.Count,
+		Friends: []models.MutualFriend{},
+	}
+	isAllowed := query.Visibility == "PUBLICO" || (query.Visibility == "AMIGOS" && query.ViewerFriend)
+	if !isAllowed {
+		result.Hidden = true
+		return result, nil
+	}
+
+	pageIDs, hasMore, err := s.repo.GetMutualFriendsPage(ctx, userID, targetID, cursor, limit)
+	if err != nil {
+		return nil, mapRepositoryError(err)
+	}
+	if len(pageIDs) == 0 {
+		return result, nil
+	}
+	if hasMore {
+		result.NextCursor = pageIDs[len(pageIDs)-1]
+	}
+
+	result.Friends, err = s.repo.ListMutualFriendProfiles(ctx, pageIDs)
+	if err != nil {
+		return nil, mapRepositoryError(err)
+	}
+	return result, nil
 }
 
 func (s *friendshipService) BlockUser(ctx context.Context, blockerID, blockedID string) error {

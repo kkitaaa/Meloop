@@ -126,6 +126,7 @@ services:
       DATABASE_URL: ${DATABASE_URL:?Debes configurar DATABASE_URL en .env}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
       RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/
+      AUTH_SERVICE_URL: http://auth-service:8083
       SOCIAL_SERVICE_INTERNAL_TOKEN: ${SOCIAL_SERVICE_INTERNAL_TOKEN:?Debes configurar SOCIAL_SERVICE_INTERNAL_TOKEN en .env}
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -133,6 +134,8 @@ services:
       rabbitmq:
         condition: service_healthy
       redis:
+        condition: service_started
+      auth-service:
         condition: service_started
     networks:
       - meloop-network

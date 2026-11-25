@@ -26,6 +26,15 @@ ni rutas para Publicaciones, Música, Chat, Notificaciones generales o
 Gamificación. Las preferencias de notificación y el inventario existentes son
 operaciones del prefijo de Usuarios.
 
+La ruta versionada de social-service reenvía `/v1/social/...` sin reescrituras;
+Social Service exige un Bearer token: su middleware consulta la sesión a Auth
+Service y obtiene la identidad del usuario de la respuesta validada. El
+encabezado `X-User-ID` enviado por el cliente no se utiliza como identidad
+confiable. El sistema utiliza tokens de sesión opacos, no JWT.
+
+Las variables de destino aceptan una URL completa. Si no están definidas, el
+gateway usa los valores locales `http://localhost:8081`,
+`http://localhost:8082` y `http://localhost:8083`, respectivamente.
 ## Seguridad y propagación de identidad
 
 El Gateway valida las peticiones protegidas de `/users`, `/friends`,
