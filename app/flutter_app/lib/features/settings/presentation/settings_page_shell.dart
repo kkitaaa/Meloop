@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/navigation/desktop_navigation_shell.dart';
+
 abstract final class SettingsColors {
   static const background = Color(0xFF0D5C5E);
   static const accent = Color(0xFF1ABC9C);
@@ -23,63 +25,88 @@ class SettingsPageShell extends StatelessWidget {
   final double maxWidth;
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    backgroundColor: SettingsColors.background,
-    appBar: PreferredSize(
-      preferredSize: const Size.fromHeight(56),
-      child: Container(
-        color: SettingsColors.accent,
-        padding: const EdgeInsets.symmetric(horizontal: 20),
-        child: Row(
-          children: [
-            IconButton(
-              tooltip: 'Volver',
-              onPressed: () => Navigator.maybePop(context),
-              icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
-            ),
-            const SizedBox(width: 8),
-            Image.asset(
-              'assets/imagenes/meloop.png',
-              height: 26,
-              fit: BoxFit.contain,
-            ),
-            const SizedBox(width: 18),
-            Expanded(
-              child: Text(
-                title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
+  Widget build(BuildContext context) {
+    final insideDesktopShell = DesktopShellScope.maybeOf(context) != null;
+
+    return Scaffold(
+      backgroundColor: insideDesktopShell
+          ? Colors.transparent
+          : SettingsColors.background,
+      appBar: insideDesktopShell
+          ? null
+          : PreferredSize(
+              preferredSize: const Size.fromHeight(56),
+              child: Container(
+                color: SettingsColors.accent,
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Row(
+                  children: [
+                    IconButton(
+                      tooltip: 'Volver',
+                      onPressed: () => Navigator.maybePop(context),
+                      icon: const Icon(
+                        Icons.arrow_back_rounded,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Image.asset(
+                      'assets/imagenes/meloop.png',
+                      height: 26,
+                      fit: BoxFit.contain,
+                    ),
+                    const SizedBox(width: 18),
+                    Expanded(
+                      child: Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    Icon(icon, color: Colors.white, size: 20),
+                  ],
                 ),
               ),
             ),
-            Icon(icon, color: Colors.white, size: 20),
-          ],
-        ),
-      ),
-    ),
-    body: Center(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: maxWidth),
-          child: Container(
-            width: double.infinity,
-            height: double.infinity,
-            decoration: BoxDecoration(
-              color: SettingsColors.panel,
-              borderRadius: BorderRadius.circular(16),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: maxWidth),
+            child: Container(
+              width: double.infinity,
+              height: double.infinity,
+              decoration: BoxDecoration(
+                color: SettingsColors.panel,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: insideDesktopShell
+                  ? Column(
+                      children: [
+                        DesktopSubPageBar(
+                          title: title,
+                          trailing: Icon(
+                            icon,
+                            color: const Color(0xFF16877F),
+                            size: 20,
+                          ),
+                        ),
+                        Expanded(child: child),
+                      ],
+                    )
+                  : child,
             ),
-            clipBehavior: Clip.antiAlias,
-            child: child,
           ),
         ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 class SettingsSectionCard extends StatelessWidget {

@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../core/navigation/desktop_navigation_shell.dart';
 import '../core/navigation/responsive_navigation_shell.dart';
 import '../features/moderation/data/moderation_models.dart';
 import '../features/notifications/presentation/notification_scope.dart';
@@ -15,7 +16,6 @@ import '../theme/meloop_typography.dart';
 import '../utils/web_splash.dart';
 import '../widgets/paper/stacked_paper_card.dart';
 import '../widgets/parallax_album_covers.dart';
-import 'feed_screen.dart';
 import 'kubernetes_connectivity_screen.dart';
 
 class AuthScreen extends StatefulWidget {
@@ -227,7 +227,7 @@ class _AuthScreenState extends State<AuthScreen>
     const userRole = ModerationRole.user;
     final Widget destination = defaultTargetPlatform == TargetPlatform.android
         ? const ResponsiveNavigationShell(userRole: userRole)
-        : FeedScreen(userRole: userRole);
+        : const DesktopNavigationShell(userRole: userRole);
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(builder: (_) => destination),

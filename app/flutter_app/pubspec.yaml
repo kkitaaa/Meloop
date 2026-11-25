@@ -68,7 +68,13 @@ flutter:
   uses-material-design: true
   assets:
     - assets/imagenes/
+    - assets/textures/
     - assets/textures/PLACEHOLDER_ALBUMCOVER/
+  fonts:
+    - family: RobotoCondensed
+      fonts:
+        - asset: assets/fonts/RobotoCondensed-Regular.ttf
+          weight: 400
 
   # To add assets to your application, add an assets section, like this:
   # assets:
