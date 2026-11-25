@@ -45,9 +45,9 @@ func (r *PostgresFeedRepository) GetMainFeed(userID string, limit, offset int) (
 		) c ON p.id_publicacion = c.id_publicacion
 		WHERE (
 			p.id_usuario IN (
-				SELECT id_usuario_2 FROM AMISTAD WHERE id_usuario_1 = ? AND estado = 'aceptada'
+				SELECT id_usuario_2 FROM AMISTAD WHERE id_usuario_1 = ? AND UPPER(estado) = 'ACEPTADA'
 				UNION
-				SELECT id_usuario_1 FROM AMISTAD WHERE id_usuario_2 = ? AND estado = 'aceptada'
+				SELECT id_usuario_1 FROM AMISTAD WHERE id_usuario_2 = ? AND UPPER(estado) = 'ACEPTADA'
 			) 
 			-- OR p.es_publico = true (Falta definir en BD)
 		)
