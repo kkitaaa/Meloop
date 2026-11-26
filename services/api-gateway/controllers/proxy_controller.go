@@ -53,6 +53,7 @@ func ProxyToService(targetEnvVar string, defaultTarget string, stripPrefix strin
 		c.Request.Header.Del("X-User-ID")
 		c.Request.Header.Del("X-User-Id")
 		c.Request.Header.Del("X-User-Role")
+		c.Request.Header.Del("X-Role")
 		if userID, exists := c.Get(ContextUserIDKey); exists {
 			if value, ok := userID.(string); ok && strings.TrimSpace(value) != "" {
 				c.Request.Header.Set("X-User-ID", strings.TrimSpace(value))
