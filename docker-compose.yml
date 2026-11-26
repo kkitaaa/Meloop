@@ -88,13 +88,16 @@ services:
       - "8082:8082"
     environment:
       MEDIA_SERVICE_URL: http://media-service:8085
-      DATABASE_URL: ${DATABASE_URL:?Debes configurar DATABASE_URL en .env}
+      AUTH_SERVICE_URL: http://auth-service:8083
+      DATABASE_URL: ${DATABASE_URL:-postgres://postgres:postgres@host.docker.internal:5432/postgres?sslmode=disable}
       SOCIAL_SERVICE_URL: http://social-service:8086
       SOCIAL_SERVICE_INTERNAL_TOKEN: ${SOCIAL_SERVICE_INTERNAL_TOKEN:?Debes configurar SOCIAL_SERVICE_INTERNAL_TOKEN en .env}
     depends_on:
       - social-service
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    depends_on:
+      - auth-service
     networks:
       - meloop-network
 

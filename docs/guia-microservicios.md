@@ -315,7 +315,19 @@ login como un health check. Configuraciones adicionales incluyen
 - **Dependencias:** PostgreSQL; también llama a `media-service` para verificar
   medios (`MEDIA_SERVICE_URL`, por defecto `http://localhost:8085`).
 - **Rutas:** `GET/POST /users`; las rutas `/users/me` y `/v1/users/...` requieren
-  autenticación.
+  autenticación. La búsqueda pública de perfiles requiere sesión:
+  `GET /users/search?q=<texto>&limit=20&offset=0` (también disponible bajo
+  `/v1/users/search`).
+
+La búsqueda consulta username y biografía, prioriza coincidencias exactas y
+prefijos, y usa índices trigram de PostgreSQL para coincidencias aproximadas.
+Devuelve solo ID, username, foto y biografía de perfiles `PUBLICO`; excluye la
+cuenta solicitante, cuentas suspendidas y usuarios con bloqueo en cualquiera
+de las dos direcciones. Perfiles `AMIGOS` o `PRIVADO` no aparecen en los
+resultados. `q` debe tener entre 2 y 100 caracteres; `limit` acepta de 1 a 50
+(por defecto 20) y `offset` de 0 a 1.000.000 (por defecto 0). La migración de
+índices se aplica con `npx supabase migration up` en la base local, sin
+reinicializar ni borrar los datos existentes.
 
 ```powershell
 $env:DATABASE_URL = "postgresql://postgres:<contraseña-local>@127.0.0.1:15422/postgres?sslmode=disable"
