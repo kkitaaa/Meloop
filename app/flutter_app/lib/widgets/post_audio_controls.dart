@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_app/services/post_audio_playback.dart';
 
+import '../theme/meloop_theme_controller.dart';
 import '../theme/meloop_typography.dart';
 import 'paper/stacked_paper_card.dart';
 
@@ -93,9 +94,11 @@ class _PostAudioControlsState extends State<PostAudioControls> {
 
   @override
   Widget build(BuildContext context) {
+    final themeCtrl = MeloopThemeController.instance;
     return AnimatedBuilder(
-      animation: _controller,
+      animation: Listenable.merge([_controller, themeCtrl]),
       builder: (context, _) {
+        final pillColor = themeCtrl.pillTrackColor;
         final isActive = _controller.activePostId == widget.postId;
         final isPlaying = isActive && _controller.isPlaying;
         final duration = isActive ? _controller.duration : null;
@@ -111,10 +114,13 @@ class _PostAudioControlsState extends State<PostAudioControls> {
             return Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
-                gradient: const LinearGradient(
+                gradient: LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
-                  colors: [Color(0xFF1A847D), Color(0xFF125E5B)],
+                  colors: [
+                    pillColor,
+                    Color.lerp(pillColor, Colors.black, 0.22)!,
+                  ],
                 ),
                 borderRadius: BorderRadius.circular(14),
                 boxShadow: [
@@ -145,12 +151,13 @@ class _PostAudioControlsState extends State<PostAudioControls> {
                         padding: EdgeInsets.zero,
                         style: IconButton.styleFrom(
                           backgroundColor: Colors.white,
-                          foregroundColor: const Color(0xFF136862),
+                          foregroundColor: pillColor,
                           disabledBackgroundColor: Colors.white.withValues(
                             alpha: 0.82,
                           ),
-                          disabledForegroundColor: const Color(0xFF136862)
-                              .withValues(alpha: 0.6),
+                          disabledForegroundColor: pillColor.withValues(
+                            alpha: 0.6,
+                          ),
                           shape: const CircleBorder(),
                         ),
                         icon: Icon(
@@ -165,14 +172,20 @@ class _PostAudioControlsState extends State<PostAudioControls> {
                       const SizedBox(width: 12),
 
                       // Placeholder de carátula cuadrada
-                      const MeloopImagePlaceholder(
+                      MeloopImagePlaceholder(
                         width: 44,
                         height: 44,
                         iconSize: 20,
-                        borderRadius: BorderRadius.all(Radius.circular(6)),
-                        backgroundColor: Color(0xFF215E5A),
-                        iconColor: Color(0xFFA7D9D4),
-                        borderColor: Color(0xFF2E7873),
+                        borderRadius: const BorderRadius.all(
+                          Radius.circular(6),
+                        ),
+                        backgroundColor: Color.lerp(
+                          pillColor,
+                          Colors.black,
+                          0.26,
+                        )!,
+                        iconColor: Colors.white.withValues(alpha: 0.78),
+                        borderColor: Colors.white.withValues(alpha: 0.22),
                       ),
                       const SizedBox(width: 12),
 

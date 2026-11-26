@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../features/gamification/presentation/gamification_demo_controller.dart';
 import '../../services/api_client.dart';
+import '../../theme/meloop_theme_controller.dart';
 
 abstract interface class PostInteractionService {
   Future<void> setLike({required String postId, required bool liked});
@@ -44,7 +45,6 @@ class PostLikeButton extends StatefulWidget {
 
 class _PostLikeButtonState extends State<PostLikeButton>
     with SingleTickerProviderStateMixin {
-  static const _teal = Color(0xFF00AF92);
   static const _like = Color(0xFFFF6262);
 
   late final AnimationController _animationController;
@@ -127,98 +127,105 @@ class _PostLikeButtonState extends State<PostLikeButton>
     final iconSize = widget.compact ? 19.0 : 23.0;
     final boxWidth = widget.compact ? 26.0 : 34.0;
     final boxHeight = widget.compact ? 28.0 : 36.0;
+    final themeCtrl = MeloopThemeController.instance;
 
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Tooltip(
-          message: _liked ? 'Quitar like' : 'Dar like',
-          child: Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onTap: _isUpdating ? null : _toggleLike,
-              borderRadius: BorderRadius.circular(6),
-              child: SizedBox(
-                width: boxWidth,
-                height: boxHeight,
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  alignment: Alignment.center,
-                  children: [
-                    AnimatedScale(
-                      scale: _liked ? 1.08 : 1,
-                      duration: const Duration(milliseconds: 180),
-                      curve: Curves.easeOutBack,
-                      child: Icon(
-                        _liked ? Icons.favorite : Icons.favorite_border,
-                        color: _liked ? _like : _teal,
-                        size: iconSize,
-                      ),
-                    ),
-                    if (_liked)
-                      IgnorePointer(
-                        child: AnimatedBuilder(
-                          animation: _animationController,
-                          builder: (context, child) => Opacity(
-                            opacity: (1 - _animationController.value)
-                                .clamp(0, 1)
-                                .toDouble(),
-                            child: Transform.scale(
-                              scale: 1 + _animationController.value * .7,
-                              child: Icon(
-                                Icons.favorite,
-                                color: _like,
-                                size: iconSize,
-                              ),
-                            ),
+    return AnimatedBuilder(
+      animation: themeCtrl,
+      builder: (context, _) {
+        final accent = themeCtrl.primaryColor;
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Tooltip(
+              message: _liked ? 'Quitar like' : 'Dar like',
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: _isUpdating ? null : _toggleLike,
+                  borderRadius: BorderRadius.circular(6),
+                  child: SizedBox(
+                    width: boxWidth,
+                    height: boxHeight,
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      alignment: Alignment.center,
+                      children: [
+                        AnimatedScale(
+                          scale: _liked ? 1.08 : 1,
+                          duration: const Duration(milliseconds: 180),
+                          curve: Curves.easeOutBack,
+                          child: Icon(
+                            _liked ? Icons.favorite : Icons.favorite_border,
+                            color: _liked ? _like : accent,
+                            size: iconSize,
                           ),
                         ),
-                      ),
-                    if (_showXp)
-                      IgnorePointer(
-                        child: AnimatedBuilder(
-                          animation: _animationController,
-                          builder: (context, child) => Opacity(
-                            opacity: (1 - _animationController.value)
-                                .clamp(0, 1)
-                                .toDouble(),
-                            child: Transform.translate(
-                              offset: Offset(
-                                0,
-                                -24 * _animationController.value,
-                              ),
-                              child: const SizedBox(
-                                width: 70,
-                                child: Text(
-                                  '+10 XP',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    color: _teal,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 11,
+                        if (_liked)
+                          IgnorePointer(
+                            child: AnimatedBuilder(
+                              animation: _animationController,
+                              builder: (context, child) => Opacity(
+                                opacity: (1 - _animationController.value)
+                                    .clamp(0, 1)
+                                    .toDouble(),
+                                child: Transform.scale(
+                                  scale: 1 + _animationController.value * .7,
+                                  child: Icon(
+                                    Icons.favorite,
+                                    color: _like,
+                                    size: iconSize,
                                   ),
                                 ),
                               ),
                             ),
                           ),
-                        ),
-                      ),
-                  ],
+                        if (_showXp)
+                          IgnorePointer(
+                            child: AnimatedBuilder(
+                              animation: _animationController,
+                              builder: (context, child) => Opacity(
+                                opacity: (1 - _animationController.value)
+                                    .clamp(0, 1)
+                                    .toDouble(),
+                                child: Transform.translate(
+                                  offset: Offset(
+                                    0,
+                                    -24 * _animationController.value,
+                                  ),
+                                  child: SizedBox(
+                                    width: 70,
+                                    child: Text(
+                                      '+10 XP',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        color: accent,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 11,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
             ),
-          ),
-        ),
-        SizedBox(width: widget.compact ? 4 : 6),
-        Text(
-          '$_likes Likes',
-          style: TextStyle(
-            color: _teal,
-            fontSize: widget.compact ? 12 : 14,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-      ],
+            SizedBox(width: widget.compact ? 4 : 6),
+            Text(
+              '$_likes Likes',
+              style: TextStyle(
+                color: accent,
+                fontSize: widget.compact ? 12 : 14,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }

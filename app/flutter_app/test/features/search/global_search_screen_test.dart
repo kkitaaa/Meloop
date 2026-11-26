@@ -11,6 +11,7 @@ import 'package:flutter_app/features/notifications/state/notification_repository
 import 'package:flutter_app/features/search/presentation/global_search_screen.dart';
 import 'package:flutter_app/screens/friends_screen.dart';
 import 'package:flutter_app/services/api_client.dart';
+import 'package:flutter_app/widgets/paper/stacked_paper_card.dart';
 import 'package:flutter_app/widgets/post_card.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -28,7 +29,7 @@ void main() {
       find.byType(PreferredSize).first,
     );
     expect(appBar.preferredSize.height, 55);
-    expect(find.byType(Image), findsOneWidget);
+    expect(find.byType(MeloopLogoSticker), findsOneWidget);
 
     // Typing and pausing does NOT auto-trigger search or pollute recent history.
     await tester.enterText(find.byType(TextField), 'ana');

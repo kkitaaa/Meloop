@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../theme/meloop_theme_controller.dart';
 import '../theme/meloop_typography.dart';
 
 /// Muestra una píldora flotante plana (en sintonía con la barra de navegación
@@ -57,7 +58,7 @@ class _MeloopToastPillOverlay extends StatefulWidget {
 
 class _MeloopToastPillOverlayState extends State<_MeloopToastPillOverlay>
     with SingleTickerProviderStateMixin {
-  static const _pillColor = Color(0xFF00AF92);
+  Color get _pillColor => MeloopThemeController.instance.primaryColor;
 
   late final AnimationController _controller;
   late final Animation<double> _opacity;

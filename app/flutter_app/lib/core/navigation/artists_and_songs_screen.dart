@@ -7,6 +7,7 @@ import '../../features/gamification/presentation/gamification_demo_controller.da
 import '../../features/profile/presentation/profile_screen.dart';
 import '../../features/search/presentation/global_search_route.dart';
 import '../../screens/friends_screen.dart';
+import '../../theme/meloop_theme_controller.dart';
 import '../../theme/meloop_typography.dart';
 import '../../widgets/desktop_app_header.dart';
 import '../../widgets/meloop_pill_tabs.dart';
@@ -28,8 +29,8 @@ class ArtistsAndSongsScreen extends StatefulWidget {
 }
 
 class ArtistsAndSongsScreenState extends State<ArtistsAndSongsScreen> {
-  static const Color _tealAccent = Color(0xFF00AF92);
-  static const Color _pillTrackColor = Color(0xFF288B83);
+  Color get _tealAccent => MeloopThemeController.instance.primaryColor;
+  Color get _pillTrackColor => MeloopThemeController.instance.pillTrackColor;
   static const int _pageSize = 15; // 3 filas completas de 5 álbumes en desktop
 
   final TextEditingController _searchController = TextEditingController();
@@ -633,46 +634,49 @@ class ArtistsAndSongsScreenState extends State<ArtistsAndSongsScreen> {
       _activeTab = _MusicFeedTab.recommended;
     }
 
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: Column(
-        children: [
-          if (!hideTopBar && isAndroidMobile)
-            MobileAppHeader(onSearchTap: () => openGlobalSearch(context))
-          else if (!hideTopBar && isDesktop)
-            DesktopAppHeader(
-              activeSection: DesktopNavigationSection.artists,
-              onHomeTap: () => navigateToDesktopHome(context),
-              onFriendsTap: () => navigateToDesktopSection(
-                context,
-                (_) => const FriendsScreen(),
-              ),
-              onArtistsTap: () {},
-              onProfileTap: () => navigateToDesktopSection(
-                context,
-                (_) => const ProfileScreen(),
-              ),
-              onSearchTap: () => openGlobalSearch(context),
-            )
-          else if (!hideTopBar)
-            Container(
-              height: 55,
-              color: _tealAccent,
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              alignment: Alignment.centerLeft,
-              child: Text(
-                'Artistas y canciones',
-                style: MeloopTypography.lexend(
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
+    return AnimatedBuilder(
+      animation: MeloopThemeController.instance,
+      builder: (context, _) => Scaffold(
+        backgroundColor: Colors.transparent,
+        body: Column(
+          children: [
+            if (!hideTopBar && isAndroidMobile)
+              MobileAppHeader(onSearchTap: () => openGlobalSearch(context))
+            else if (!hideTopBar && isDesktop)
+              DesktopAppHeader(
+                activeSection: DesktopNavigationSection.artists,
+                onHomeTap: () => navigateToDesktopHome(context),
+                onFriendsTap: () => navigateToDesktopSection(
+                  context,
+                  (_) => const FriendsScreen(),
+                ),
+                onArtistsTap: () {},
+                onProfileTap: () => navigateToDesktopSection(
+                  context,
+                  (_) => const ProfileScreen(),
+                ),
+                onSearchTap: () => openGlobalSearch(context),
+              )
+            else if (!hideTopBar)
+              Container(
+                height: 55,
+                color: _tealAccent,
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Artistas y canciones',
+                  style: MeloopTypography.lexend(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
+            Expanded(
+              child: isDesktop ? _buildDesktopLayout() : _buildMobileLayout(),
             ),
-          Expanded(
-            child: isDesktop ? _buildDesktopLayout() : _buildMobileLayout(),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -738,7 +742,10 @@ class ArtistsAndSongsScreenState extends State<ArtistsAndSongsScreen> {
                           Positioned.fill(
                             child: StackedPaperCard(
                               textureAsset: 'assets/textures/paper.png',
-                              tintColor: const Color(0xFFF3FBFA),
+                              tintColor: MeloopThemeController
+                                  .instance
+                                  .colorTheme
+                                  .softCardTint,
                               padding: const EdgeInsets.fromLTRB(
                                 20,
                                 28,
@@ -754,7 +761,9 @@ class ArtistsAndSongsScreenState extends State<ArtistsAndSongsScreen> {
                                     style: MeloopTypography.lexend(
                                       fontSize: 17.5,
                                       fontWeight: FontWeight.w700,
-                                      color: const Color(0xFF141A1A),
+                                      color: MeloopThemeController
+                                          .instance
+                                          .cardTitleColor,
                                     ),
                                   ),
                                   const SizedBox(height: 4),
@@ -763,7 +772,9 @@ class ArtistsAndSongsScreenState extends State<ArtistsAndSongsScreen> {
                                     textAlign: TextAlign.center,
                                     style: MeloopTypography.lexend(
                                       fontSize: 11.5,
-                                      color: const Color(0xFF6B7777),
+                                      color: MeloopThemeController
+                                          .instance
+                                          .cardMutedColor,
                                     ),
                                   ),
                                   const SizedBox(height: 12),
@@ -772,7 +783,9 @@ class ArtistsAndSongsScreenState extends State<ArtistsAndSongsScreen> {
                                   Divider(
                                     height: 1,
                                     thickness: 1,
-                                    color: Colors.black.withValues(alpha: 0.1),
+                                    color: MeloopThemeController
+                                        .instance
+                                        .cardDividerColor,
                                   ),
                                   const SizedBox(height: 12),
                                   Expanded(
@@ -817,7 +830,7 @@ class ArtistsAndSongsScreenState extends State<ArtistsAndSongsScreen> {
             overflow: TextOverflow.ellipsis,
             style: MeloopTypography.momoDisplay(
               fontSize: 28,
-              color: const Color(0xFF141919),
+              color: MeloopThemeController.instance.cardTitleColor,
             ),
           ),
         ),
@@ -828,7 +841,7 @@ class ArtistsAndSongsScreenState extends State<ArtistsAndSongsScreen> {
           overflow: TextOverflow.ellipsis,
           style: MeloopTypography.lexend(
             fontSize: 12,
-            color: const Color(0xFF6A7878),
+            color: MeloopThemeController.instance.cardMutedColor,
           ),
         ),
       ],
@@ -909,7 +922,7 @@ class ArtistsAndSongsScreenState extends State<ArtistsAndSongsScreen> {
                     overflow: TextOverflow.ellipsis,
                     style: MeloopTypography.momoDisplay(
                       fontSize: 21,
-                      color: const Color(0xFF141919),
+                      color: MeloopThemeController.instance.cardTitleColor,
                     ),
                   ),
                 ),
@@ -977,19 +990,22 @@ class ArtistsAndSongsScreenState extends State<ArtistsAndSongsScreen> {
   }
 
   Widget _buildSearchBar({required bool isMobile}) {
+    final themeCtrl = MeloopThemeController.instance;
     return Container(
       height: isMobile ? 40 : 42,
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: themeCtrl.inputFillColor,
         borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: const Color(0xFFD5E1DF)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        border: Border.all(color: themeCtrl.inputBorderColor),
+        boxShadow: themeCtrl.isDarkCardStyle
+            ? null
+            : [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.03),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
+                ),
+              ],
       ),
       child: TextField(
         controller: _searchController,
@@ -1001,27 +1017,27 @@ class ArtistsAndSongsScreenState extends State<ArtistsAndSongsScreen> {
         },
         style: MeloopTypography.lexend(
           fontSize: isMobile ? 12.5 : 13.5,
-          color: const Color(0xFF182222),
+          color: themeCtrl.cardTitleColor,
         ),
         decoration: InputDecoration(
           hintText: 'Buscar por álbum, artista o canción...',
           hintStyle: MeloopTypography.lexend(
             fontSize: isMobile ? 12.5 : 13.5,
-            color: const Color(0xFF94A1A1),
+            color: themeCtrl.cardSubtleMutedColor,
           ),
-          prefixIcon: const Icon(
+          prefixIcon: Icon(
             Icons.search_rounded,
             size: 20,
-            color: Color(0xFF5D7675),
+            color: themeCtrl.cardMutedColor,
           ),
           suffixIcon: _query.isNotEmpty
               ? IconButton(
                   tooltip: 'Limpiar búsqueda',
                   padding: EdgeInsets.zero,
-                  icon: const Icon(
+                  icon: Icon(
                     Icons.close_rounded,
                     size: 18,
-                    color: Color(0xFF7B8B8B),
+                    color: themeCtrl.cardMutedColor,
                   ),
                   onPressed: () {
                     _searchController.clear();
@@ -1052,10 +1068,10 @@ class ArtistsAndSongsScreenState extends State<ArtistsAndSongsScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(
+              Icon(
                 Icons.album_outlined,
                 size: 48,
-                color: Color(0xFFB5C3C2),
+                color: MeloopThemeController.instance.cardSubtleMutedColor,
               ),
               const SizedBox(height: 12),
               Text(
@@ -1064,7 +1080,7 @@ class ArtistsAndSongsScreenState extends State<ArtistsAndSongsScreen> {
                 style: MeloopTypography.lexend(
                   fontSize: 15.5,
                   fontWeight: FontWeight.w700,
-                  color: const Color(0xFF283434),
+                  color: MeloopThemeController.instance.cardTitleColor,
                 ),
               ),
               const SizedBox(height: 6),
@@ -1073,7 +1089,7 @@ class ArtistsAndSongsScreenState extends State<ArtistsAndSongsScreen> {
                 textAlign: TextAlign.center,
                 style: MeloopTypography.lexend(
                   fontSize: 12.5,
-                  color: const Color(0xFF7B8A8A),
+                  color: MeloopThemeController.instance.cardMutedColor,
                 ),
               ),
             ],
@@ -1131,9 +1147,9 @@ class ArtistsAndSongsScreenState extends State<ArtistsAndSongsScreen> {
               ),
             ),
             if (_isLoadingMore)
-              const SliverToBoxAdapter(
+              SliverToBoxAdapter(
                 child: Padding(
-                  padding: EdgeInsets.only(bottom: 24),
+                  padding: const EdgeInsets.only(bottom: 24),
                   child: Center(
                     child: SizedBox(
                       width: 22,
@@ -1183,6 +1199,7 @@ class ArtistsAndSongsScreenState extends State<ArtistsAndSongsScreen> {
     required bool selected,
     required VoidCallback onTap,
   }) {
+    final themeCtrl = MeloopThemeController.instance;
     return Padding(
       padding: const EdgeInsets.only(right: 6),
       child: InkWell(
@@ -1192,10 +1209,10 @@ class ArtistsAndSongsScreenState extends State<ArtistsAndSongsScreen> {
           duration: const Duration(milliseconds: 160),
           padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
           decoration: BoxDecoration(
-            color: selected ? _tealAccent : Colors.white,
+            color: selected ? _tealAccent : themeCtrl.inputFillColor,
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: selected ? _tealAccent : const Color(0xFFD0DFDC),
+              color: selected ? _tealAccent : themeCtrl.inputBorderColor,
             ),
           ),
           child: Text(
@@ -1203,7 +1220,7 @@ class ArtistsAndSongsScreenState extends State<ArtistsAndSongsScreen> {
             style: MeloopTypography.lexend(
               fontSize: 11.5,
               fontWeight: FontWeight.w600,
-              color: selected ? Colors.white : const Color(0xFF335553),
+              color: selected ? Colors.white : themeCtrl.cardBodyColor,
             ),
           ),
         ),
@@ -1215,6 +1232,8 @@ class ArtistsAndSongsScreenState extends State<ArtistsAndSongsScreen> {
     required bool isMobile,
     double bottomPadding = 12,
   }) {
+    final themeCtrl = MeloopThemeController.instance;
+    final isDark = themeCtrl.isDarkCardStyle;
     final artists = _visibleFriendArtists;
     if (artists.isEmpty) {
       return Center(
@@ -1223,7 +1242,7 @@ class ArtistsAndSongsScreenState extends State<ArtistsAndSongsScreen> {
           textAlign: TextAlign.center,
           style: MeloopTypography.lexend(
             fontSize: 12.5,
-            color: const Color(0xFF7B8A8A),
+            color: themeCtrl.cardMutedColor,
           ),
         ),
       );
@@ -1241,15 +1260,17 @@ class ArtistsAndSongsScreenState extends State<ArtistsAndSongsScreen> {
         return Container(
           margin: const EdgeInsets.only(bottom: 10),
           decoration: BoxDecoration(
-            color: Colors.white,
-            border: Border.all(color: const Color(0xFFE3ECEB)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.05),
-                blurRadius: 6,
-                offset: const Offset(0, 2),
-              ),
-            ],
+            color: themeCtrl.innerTileColor,
+            border: Border.all(color: themeCtrl.innerTileBorderColor),
+            boxShadow: isDark
+                ? null
+                : [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.05),
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
           ),
           child: Material(
             color: Colors.transparent,
@@ -1267,19 +1288,23 @@ class ArtistsAndSongsScreenState extends State<ArtistsAndSongsScreen> {
                       height: 46,
                       padding: const EdgeInsets.all(3),
                       decoration: BoxDecoration(
-                        color: Colors.white,
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.13),
-                            blurRadius: 4,
-                            offset: const Offset(0, 1),
-                          ),
-                        ],
+                        color: isDark
+                            ? Colors.white.withValues(alpha: 0.14)
+                            : Colors.white,
+                        boxShadow: isDark
+                            ? null
+                            : [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.13),
+                                  blurRadius: 4,
+                                  offset: const Offset(0, 1),
+                                ),
+                              ],
                       ),
-                      child: const MeloopImagePlaceholder(
+                      child: MeloopImagePlaceholder(
                         iconSize: 20,
-                        backgroundColor: Color(0xFFE5ECEB),
-                        iconColor: Color(0xFF7F9391),
+                        backgroundColor: themeCtrl.placeholderBgColor,
+                        iconColor: themeCtrl.placeholderIconColor,
                       ),
                     ),
                     const SizedBox(width: 11),
@@ -1298,13 +1323,13 @@ class ArtistsAndSongsScreenState extends State<ArtistsAndSongsScreen> {
                                   style: MeloopTypography.lexend(
                                     fontSize: 14,
                                     fontWeight: FontWeight.w700,
-                                    color: const Color(0xFF1A2222),
+                                    color: themeCtrl.cardTitleColor,
                                   ),
                                 ),
                               ),
                               if (item.isLiveNow) ...[
                                 const SizedBox(width: 6),
-                                const Icon(
+                                Icon(
                                   Icons.graphic_eq_rounded,
                                   size: 14,
                                   color: _tealAccent,
@@ -1319,7 +1344,7 @@ class ArtistsAndSongsScreenState extends State<ArtistsAndSongsScreen> {
                             overflow: TextOverflow.ellipsis,
                             style: MeloopTypography.lexend(
                               fontSize: 11,
-                              color: const Color(0xFF607473),
+                              color: themeCtrl.cardMutedColor,
                             ),
                           ),
                           const SizedBox(height: 2),
@@ -1344,7 +1369,7 @@ class ArtistsAndSongsScreenState extends State<ArtistsAndSongsScreen> {
                                   style: MeloopTypography.lexend(
                                     fontSize: 10.5,
                                     fontWeight: FontWeight.w500,
-                                    color: const Color(0xFF14847B),
+                                    color: themeCtrl.accentLinkColor,
                                   ),
                                 ),
                               ),
@@ -1354,10 +1379,10 @@ class ArtistsAndSongsScreenState extends State<ArtistsAndSongsScreen> {
                       ),
                     ),
                     const SizedBox(width: 4),
-                    const Icon(
+                    Icon(
                       Icons.chevron_right_rounded,
                       size: 18,
-                      color: Color(0xFF9AA9A8),
+                      color: themeCtrl.cardSubtleMutedColor,
                     ),
                   ],
                 ),
@@ -1525,7 +1550,7 @@ class _AlbumVinylCardState extends State<_AlbumVinylCard> {
                     style: MeloopTypography.lexend(
                       fontSize: 13,
                       fontWeight: FontWeight.w700,
-                      color: const Color(0xFF182222),
+                      color: MeloopThemeController.instance.cardTitleColor,
                       height: 1.15,
                     ),
                   ),
@@ -1540,7 +1565,7 @@ class _AlbumVinylCardState extends State<_AlbumVinylCard> {
                     style: MeloopTypography.lexend(
                       fontSize: 11.5,
                       fontWeight: FontWeight.w500,
-                      color: const Color(0xFF6B7B7B),
+                      color: MeloopThemeController.instance.cardMutedColor,
                       height: 1.15,
                     ),
                   ),
@@ -1557,7 +1582,7 @@ class _AlbumVinylCardState extends State<_AlbumVinylCard> {
                         style: MeloopTypography.lexend(
                           fontSize: 10.5,
                           fontWeight: FontWeight.w600,
-                          color: const Color(0xFF009B82),
+                          color: MeloopThemeController.instance.accentLinkColor,
                           height: 1.15,
                         ),
                       ),
@@ -1600,12 +1625,13 @@ class _AlbumSleevePlaceholder extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final themeCtrl = MeloopThemeController.instance;
     return MeloopImagePlaceholder(
       width: size,
       height: size,
       iconSize: (size * 0.28).clamp(22.0, 46.0),
-      backgroundColor: const Color(0xFFE3EAE9),
-      iconColor: const Color(0xFF7B8E8C),
+      backgroundColor: themeCtrl.placeholderBgColor,
+      iconColor: themeCtrl.placeholderIconColor,
     );
   }
 }
@@ -1636,7 +1662,7 @@ class _AlbumDetailPaperDialog extends StatefulWidget {
 }
 
 class _AlbumDetailPaperDialogState extends State<_AlbumDetailPaperDialog> {
-  static const Color _tealAccent = Color(0xFF00AF92);
+  Color get _tealAccent => MeloopThemeController.instance.primaryColor;
 
   late bool _isLiked = widget.initiallyLiked;
   late bool _isFavorite = widget.initiallyFavorite;
@@ -1750,7 +1776,9 @@ class _AlbumDetailPaperDialogState extends State<_AlbumDetailPaperDialog> {
                                   vertical: 3,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFFE1F6F2),
+                                  color: MeloopThemeController
+                                      .instance
+                                      .softBadgeBgColor,
                                   borderRadius: BorderRadius.circular(12),
                                 ),
                                 child: Text(
@@ -1758,7 +1786,9 @@ class _AlbumDetailPaperDialogState extends State<_AlbumDetailPaperDialog> {
                                   style: MeloopTypography.lexend(
                                     fontSize: 10.5,
                                     fontWeight: FontWeight.w700,
-                                    color: const Color(0xFF0E8777),
+                                    color: MeloopThemeController
+                                        .instance
+                                        .softBadgeFgColor,
                                     letterSpacing: 1.1,
                                   ),
                                 ),
@@ -1771,7 +1801,9 @@ class _AlbumDetailPaperDialogState extends State<_AlbumDetailPaperDialog> {
                                   overflow: TextOverflow.ellipsis,
                                   style: MeloopTypography.lexend(
                                     fontSize: 11.5,
-                                    color: const Color(0xFF6B7B7B),
+                                    color: MeloopThemeController
+                                        .instance
+                                        .cardMutedColor,
                                   ),
                                 ),
                               ),
@@ -1785,7 +1817,8 @@ class _AlbumDetailPaperDialogState extends State<_AlbumDetailPaperDialog> {
                             style: MeloopTypography.lexend(
                               fontSize: isCompact ? 20 : 28,
                               fontWeight: FontWeight.w700,
-                              color: const Color(0xFF141D1D),
+                              color:
+                                  MeloopThemeController.instance.cardTitleColor,
                               height: 1.15,
                             ),
                           ),
@@ -1800,14 +1833,18 @@ class _AlbumDetailPaperDialogState extends State<_AlbumDetailPaperDialog> {
                                 style: MeloopTypography.lexend(
                                   fontSize: isCompact ? 13.5 : 15,
                                   fontWeight: FontWeight.w700,
-                                  color: const Color(0xFF13847A),
+                                  color: MeloopThemeController
+                                      .instance
+                                      .accentLinkColor,
                                 ),
                               ),
                               Text(
                                 '· ${widget.album.year} · ${widget.album.songs.length} canciones · ${_totalDurationLabel()}',
                                 style: MeloopTypography.lexend(
                                   fontSize: isCompact ? 12 : 13,
-                                  color: const Color(0xFF677777),
+                                  color: MeloopThemeController
+                                      .instance
+                                      .cardMutedColor,
                                 ),
                               ),
                             ],
@@ -1818,9 +1855,9 @@ class _AlbumDetailPaperDialogState extends State<_AlbumDetailPaperDialog> {
                     IconButton(
                       tooltip: 'Cerrar',
                       onPressed: widget.onClose,
-                      icon: const Icon(
+                      icon: Icon(
                         Icons.close_rounded,
-                        color: Color(0xFF475858),
+                        color: MeloopThemeController.instance.cardMutedColor,
                         size: 22,
                       ),
                     ),
@@ -1945,7 +1982,7 @@ class _AlbumDetailPaperDialogState extends State<_AlbumDetailPaperDialog> {
                       final isPlaying = _playingTrackIndex == index;
                       return Material(
                         color: isPlaying
-                            ? const Color(0xFFE4F7F3)
+                            ? MeloopThemeController.instance.softBadgeBgColor
                             : Colors.transparent,
                         child: InkWell(
                           onTap: () {
@@ -1963,7 +2000,7 @@ class _AlbumDetailPaperDialogState extends State<_AlbumDetailPaperDialog> {
                                 SizedBox(
                                   width: 28,
                                   child: isPlaying
-                                      ? const Icon(
+                                      ? Icon(
                                           Icons.graphic_eq_rounded,
                                           size: 17,
                                           color: _tealAccent,
@@ -1972,7 +2009,9 @@ class _AlbumDetailPaperDialogState extends State<_AlbumDetailPaperDialog> {
                                           '${index + 1}',
                                           style: MeloopTypography.lexend(
                                             fontSize: 13,
-                                            color: const Color(0xFF7B8B8B),
+                                            color: MeloopThemeController
+                                                .instance
+                                                .cardMutedColor,
                                           ),
                                         ),
                                 ),
@@ -1989,8 +2028,12 @@ class _AlbumDetailPaperDialogState extends State<_AlbumDetailPaperDialog> {
                                           fontSize: 14,
                                           fontWeight: FontWeight.w600,
                                           color: isPlaying
-                                              ? _tealAccent
-                                              : const Color(0xFF182222),
+                                              ? MeloopThemeController
+                                                    .instance
+                                                    .accentLinkColor
+                                              : MeloopThemeController
+                                                    .instance
+                                                    .cardTitleColor,
                                         ),
                                       ),
                                       const SizedBox(height: 1),
@@ -2000,7 +2043,9 @@ class _AlbumDetailPaperDialogState extends State<_AlbumDetailPaperDialog> {
                                         overflow: TextOverflow.ellipsis,
                                         style: MeloopTypography.lexend(
                                           fontSize: 11.5,
-                                          color: const Color(0xFF758585),
+                                          color: MeloopThemeController
+                                              .instance
+                                              .cardMutedColor,
                                         ),
                                       ),
                                     ],
@@ -2011,7 +2056,9 @@ class _AlbumDetailPaperDialogState extends State<_AlbumDetailPaperDialog> {
                                   _trackDuration(index),
                                   style: MeloopTypography.musicPlayer(
                                     fontSize: 13.5,
-                                    color: const Color(0xFF6B7B7B),
+                                    color: MeloopThemeController
+                                        .instance
+                                        .cardMutedColor,
                                   ),
                                 ),
                               ],
@@ -2084,8 +2131,11 @@ class _AlbumActionPillButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final themeCtrl = MeloopThemeController.instance;
     return Material(
-      color: active ? activeColor.withValues(alpha: 0.14) : Colors.white,
+      color: active
+          ? activeColor.withValues(alpha: 0.16)
+          : themeCtrl.innerTileColor,
       borderRadius: BorderRadius.circular(24),
       child: InkWell(
         onTap: onTap,
@@ -2097,7 +2147,7 @@ class _AlbumActionPillButton extends StatelessWidget {
             border: Border.all(
               color: active
                   ? activeColor.withValues(alpha: 0.65)
-                  : const Color(0xFFD0DDDB),
+                  : themeCtrl.inputBorderColor,
               width: 1.2,
             ),
           ),
@@ -2107,7 +2157,7 @@ class _AlbumActionPillButton extends StatelessWidget {
               Icon(
                 icon,
                 size: 19,
-                color: active ? activeColor : const Color(0xFF475B5A),
+                color: active ? activeColor : themeCtrl.cardMutedColor,
               ),
               const SizedBox(width: 7),
               Text(
@@ -2115,7 +2165,7 @@ class _AlbumActionPillButton extends StatelessWidget {
                 style: MeloopTypography.lexend(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
-                  color: active ? activeColor : const Color(0xFF283737),
+                  color: active ? activeColor : themeCtrl.cardTitleColor,
                 ),
               ),
             ],

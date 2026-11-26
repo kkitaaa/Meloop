@@ -28,10 +28,10 @@ class SlidingTabStack extends StatefulWidget {
   final Set<int> keepAliveIndices;
 
   @override
-  State<SlidingTabStack> createState() => _SlidingTabStackState();
+  State<SlidingTabStack> createState() => SlidingTabStackState();
 }
 
-class _SlidingTabStackState extends State<SlidingTabStack>
+class SlidingTabStackState extends State<SlidingTabStack>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
   late CurvedAnimation _curvedAnimation;
@@ -39,6 +39,20 @@ class _SlidingTabStackState extends State<SlidingTabStack>
   late int _currentIndex;
   int? _previousIndex;
   double _direction = 1.0;
+
+  /// Cambia inmediatamente a [index] sin ejecutar animación de deslizamiento.
+  /// Útil cuando el stack está oculto debajo de una subruta (como Perfil o
+  /// Búsqueda) y se está haciendo pop hacia una pestaña específica, evitando
+  /// que dos animaciones se superpongan y se vean cortadas.
+  void jumpWithoutAnimation(int index) {
+    final targetIndex = index.clamp(0, widget.children.length - 1);
+    _controller.stop();
+    _controller.value = 1.0;
+    setState(() {
+      _previousIndex = null;
+      _currentIndex = targetIndex;
+    });
+  }
 
   @override
   void initState() {

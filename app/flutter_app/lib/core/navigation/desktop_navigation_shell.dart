@@ -76,6 +76,8 @@ class DesktopNavigationShell extends StatefulWidget {
 class _DesktopNavigationShellState extends State<DesktopNavigationShell>
     implements DesktopShellController {
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
+  final GlobalKey<SlidingTabStackState> _tabStackKey =
+      GlobalKey<SlidingTabStackState>();
   final GlobalKey<FriendsScreenState> _friendsKey =
       GlobalKey<FriendsScreenState>();
   final GlobalKey<ArtistsAndSongsScreenState> _artistsKey =
@@ -173,6 +175,15 @@ class _DesktopNavigationShellState extends State<DesktopNavigationShell>
     final nav = _navigatorKey.currentState;
     final wasOnSubRoute = nav != null && nav.canPop();
 
+    // Actualizamos el índice ANTES de hacer popUntil para que el
+    // NavigatorObserver (`didPop`) vea inmediatamente la sección destino y no
+    // reinicie la píldora a "Inicio". Además, cuando venimos de Perfil/Búsqueda
+    // saltamos sin deslizar para que no choquen dos animaciones simultáneas.
+    if (wasOnSubRoute) {
+      _tabStackKey.currentState?.jumpWithoutAnimation(index);
+    }
+    _primaryTabIndex.value = index;
+
     setState(() {
       _activeSection = targetSection;
       _searchOpen = false;
@@ -181,7 +192,6 @@ class _DesktopNavigationShellState extends State<DesktopNavigationShell>
     if (wasOnSubRoute) {
       nav.popUntil((route) => route.isFirst);
     }
-    _primaryTabIndex.value = index;
 
     if (onReady != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -228,6 +238,37 @@ class _DesktopNavigationShellState extends State<DesktopNavigationShell>
     );
   }
 
+  PageRouteBuilder<void> _buildSubRoute({
+    required String name,
+    required WidgetBuilder builder,
+  }) {
+    return PageRouteBuilder<void>(
+      settings: RouteSettings(name: name),
+      pageBuilder: (context, animation, secondaryAnimation) => builder(context),
+      transitionDuration: const Duration(milliseconds: 300),
+      reverseTransitionDuration: const Duration(milliseconds: 260),
+      transitionsBuilder: (context, animation, secondaryAnimation, child) {
+        // Espera a que la vista inferior termine de desvanecerse (0.0 -> 0.44)
+        // antes de revelar la nueva pantalla, y al salir se oculta por completo
+        // (1.0 -> 0.50) antes de mostrar la pestaña destino. Así nunca se
+        // superponen dos pantallas en ningún fotograma.
+        final fadeIn = CurvedAnimation(
+          parent: animation,
+          curve: const Interval(0.46, 1.0, curve: Curves.easeOutCubic),
+          reverseCurve: const Interval(0.50, 1.0, curve: Curves.easeInCubic),
+        );
+        final slide = Tween<Offset>(
+          begin: const Offset(0, 0.018),
+          end: Offset.zero,
+        ).animate(fadeIn);
+        return FadeTransition(
+          opacity: fadeIn,
+          child: SlideTransition(position: slide, child: child),
+        );
+      },
+    );
+  }
+
   @override
   void openProfile({
     String? username,
@@ -239,8 +280,8 @@ class _DesktopNavigationShellState extends State<DesktopNavigationShell>
       _searchOpen = false;
     });
     _navigatorKey.currentState?.push<void>(
-      MaterialPageRoute<void>(
-        settings: const RouteSettings(name: '/profile'),
+      _buildSubRoute(
+        name: '/profile',
         builder: (_) => ProfileScreen(
           username: username,
           userId: userId,
@@ -264,33 +305,13 @@ class _DesktopNavigationShellState extends State<DesktopNavigationShell>
       _searchOpen = true;
     });
     _navigatorKey.currentState?.push<void>(
-      PageRouteBuilder<void>(
-        settings: const RouteSettings(name: '/search'),
-        pageBuilder: (context, animation, secondaryAnimation) =>
-            GlobalSearchScreen(
-              apiClient: _apiClient,
-              externalQueryController: _searchController,
-              externalSubmitTrigger: _searchSubmitNonce,
-            ),
-        transitionDuration: const Duration(milliseconds: 340),
-        reverseTransitionDuration: const Duration(milliseconds: 280),
-        transitionsBuilder: (context, animation, secondaryAnimation, child) {
-          // Espera a que la pestaña inferior se desvanezca primero (0.0 -> 0.44)
-          // y recién entonces revela la búsqueda sobre el fondo limpio.
-          final fadeIn = CurvedAnimation(
-            parent: animation,
-            curve: const Interval(0.44, 1.0, curve: Curves.easeOutCubic),
-            reverseCurve: const Interval(0.48, 1.0, curve: Curves.easeInCubic),
-          );
-          final slide = Tween<Offset>(
-            begin: const Offset(0, 0.022),
-            end: Offset.zero,
-          ).animate(fadeIn);
-          return FadeTransition(
-            opacity: fadeIn,
-            child: SlideTransition(position: slide, child: child),
-          );
-        },
+      _buildSubRoute(
+        name: '/search',
+        builder: (_) => GlobalSearchScreen(
+          apiClient: _apiClient,
+          externalQueryController: _searchController,
+          externalSubmitTrigger: _searchSubmitNonce,
+        ),
       ),
     );
   }
@@ -319,8 +340,8 @@ class _DesktopNavigationShellState extends State<DesktopNavigationShell>
       _searchOpen = false;
     });
     _navigatorKey.currentState?.push<void>(
-      MaterialPageRoute<void>(
-        settings: const RouteSettings(name: '/moderation'),
+      _buildSubRoute(
+        name: '/moderation',
         builder: (_) => ModerationQueueScreen(role: widget.userRole),
       ),
     );
@@ -333,10 +354,7 @@ class _DesktopNavigationShellState extends State<DesktopNavigationShell>
       _searchOpen = false;
     });
     _navigatorKey.currentState?.push<void>(
-      MaterialPageRoute<void>(
-        settings: const RouteSettings(name: '/subpage'),
-        builder: builder,
-      ),
+      _buildSubRoute(name: '/subpage', builder: builder),
     );
   }
 
@@ -418,6 +436,7 @@ class _DesktopNavigationShellState extends State<DesktopNavigationShell>
                           ValueListenableBuilder<int>(
                             valueListenable: _primaryTabIndex,
                             builder: (context, index, _) => SlidingTabStack(
+                              key: _tabStackKey,
                               currentIndex: index,
                               children: [
                                 _homeTab,

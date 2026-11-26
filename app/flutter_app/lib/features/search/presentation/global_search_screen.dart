@@ -9,6 +9,7 @@ import 'package:flutter_app/models/global_search.dart';
 import 'package:flutter_app/models/music_track.dart';
 import 'package:flutter_app/screens/friends_screen.dart';
 import 'package:flutter_app/services/api_client.dart';
+import 'package:flutter_app/theme/meloop_theme_controller.dart';
 import 'package:flutter_app/theme/meloop_typography.dart';
 import 'package:flutter_app/widgets/desktop_app_header.dart';
 import 'package:flutter_app/widgets/meloop_pill_tabs.dart';
@@ -41,10 +42,14 @@ class GlobalSearchScreen extends StatefulWidget {
 }
 
 class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
-  static const Color _tealAccent = Color(0xFF00AF92);
-  static const Color _pillTrackColor = Color(0xFF288B83);
-  static const Color _inkDark = Color(0xFF182828);
-  static const Color _inkMuted = Color(0xFF6B807D);
+  MeloopThemeController get _themeCtrl => MeloopThemeController.instance;
+  Color get _tealAccent => _themeCtrl.primaryColor;
+  Color get _pillTrackColor => _themeCtrl.pillTrackColor;
+  Color get _softTint => _themeCtrl.colorTheme.softCardTint;
+  Color get _gridBorder => _themeCtrl.colorTheme.gridLine;
+  Color get _inkDark => _themeCtrl.cardTitleColor;
+  Color get _inkMuted => _themeCtrl.cardMutedColor;
+  Color get _accentLink => _themeCtrl.accentLinkColor;
 
   static const _filters = <String, String>{
     'Texto': 'text',
@@ -409,14 +414,17 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
     final isDesktop = MediaQuery.sizeOf(context).width > 900;
     final insideDesktopShell = DesktopShellScope.maybeOf(context) != null;
 
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      appBar: insideDesktopShell ? null : _buildBrandedAppBar(isDesktop),
-      body: SafeArea(
-        top: false,
-        child: isDesktop
-            ? _buildDesktopLayout(insideDesktopShell: insideDesktopShell)
-            : _buildCompactLayout(),
+    return AnimatedBuilder(
+      animation: MeloopThemeController.instance,
+      builder: (context, _) => Scaffold(
+        backgroundColor: Colors.transparent,
+        appBar: insideDesktopShell ? null : _buildBrandedAppBar(isDesktop),
+        body: SafeArea(
+          top: false,
+          child: isDesktop
+              ? _buildDesktopLayout(insideDesktopShell: insideDesktopShell)
+              : _buildCompactLayout(),
+        ),
       ),
     );
   }
@@ -458,7 +466,7 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
                           _buildPostFilterChips(),
                         ],
                         const SizedBox(height: 14),
-                        const Divider(height: 1, color: Color(0xFFE0E8E6)),
+                        Divider(height: 1, color: _themeCtrl.cardDividerColor),
                         const SizedBox(height: 10),
                         Expanded(
                           child: hasSubmittedQuery
@@ -481,7 +489,7 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
                       Positioned.fill(
                         child: StackedPaperCard(
                           textureAsset: 'assets/textures/paper.png',
-                          tintColor: const Color(0xFFF2FAF8),
+                          tintColor: _softTint,
                           backAngleDegrees: 1.25,
                           padding: const EdgeInsets.fromLTRB(22, 26, 22, 18),
                           child: Column(
@@ -491,9 +499,9 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
                                 hasSubmittedQuery: hasSubmittedQuery,
                               ),
                               const SizedBox(height: 12),
-                              const Divider(
+                              Divider(
                                 height: 1,
-                                color: Color(0xFFD5E6E3),
+                                color: _themeCtrl.cardDividerColor,
                               ),
                               const SizedBox(height: 10),
                               Expanded(
@@ -632,7 +640,7 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
             _activeQuery.isNotEmpty ? _activeQuery : null,
           ),
           style: TextButton.styleFrom(
-            foregroundColor: const Color(0xFF16877F),
+            foregroundColor: _accentLink,
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           ),
           child: Row(
@@ -694,7 +702,7 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
   }) {
     return Row(
       children: [
-        Icon(icon, size: 18, color: const Color(0xFF16877F)),
+        Icon(icon, size: 18, color: _accentLink),
         const SizedBox(width: 8),
         Expanded(
           child: Column(
@@ -723,7 +731,7 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
           TextButton(
             onPressed: onTrailingTap,
             style: TextButton.styleFrom(
-              foregroundColor: const Color(0xFF16877F),
+              foregroundColor: _accentLink,
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             ),
             child: Row(
@@ -748,8 +756,8 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
   Widget _buildInlineMusicSection() {
     final error = _errors[_SearchSource.music];
     if (_loading[_SearchSource.music] == true) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 20),
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 20),
         child: Center(
           child: SizedBox(
             width: 24,
@@ -790,8 +798,8 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
   Widget _buildInlinePostsSection() {
     final error = _errors[_SearchSource.posts];
     if (_loading[_SearchSource.posts] == true) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 28),
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 28),
         child: Center(
           child: CircularProgressIndicator(color: _tealAccent),
         ),
@@ -832,8 +840,14 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
           constraints: const BoxConstraints(maxWidth: 880),
           child: DecoratedBox(
             decoration: BoxDecoration(
-              color: const Color(0xFFFAFBF9),
-              border: Border.all(color: const Color(0xFFDCE7E5)),
+              color: _themeCtrl.isDarkCardStyle
+                  ? const Color(0xFF131926)
+                  : const Color(0xFFFAFBF9),
+              border: Border.all(
+                color: _themeCtrl.isDarkCardStyle
+                    ? _themeCtrl.colorTheme.headerTop.withValues(alpha: 0.45)
+                    : const Color(0xFFDCE7E5),
+              ),
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withValues(alpha: 0.14),
@@ -926,7 +940,7 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
   Widget _buildPostsList() {
     final error = _errors[_SearchSource.posts];
     if (_loading[_SearchSource.posts] == true) {
-      return const Center(child: CircularProgressIndicator(color: _tealAccent));
+      return Center(child: CircularProgressIndicator(color: _tealAccent));
     }
     if (error != null) {
       return Center(
@@ -962,17 +976,20 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
   }
 
   Widget _buildInteractivePostCard(SearchPost post) {
+    final isDark = _themeCtrl.isDarkCardStyle;
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border.all(color: const Color(0xFFE1EAE8)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        color: _themeCtrl.innerTileColor,
+        border: Border.all(color: _themeCtrl.innerTileBorderColor),
+        boxShadow: isDark
+            ? null
+            : [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.05),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
       ),
       padding: const EdgeInsets.all(14),
       child: PostCard(
@@ -987,7 +1004,7 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
   Widget _buildMusicList() {
     final error = _errors[_SearchSource.music];
     if (_loading[_SearchSource.music] == true) {
-      return const Center(child: CircularProgressIndicator(color: _tealAccent));
+      return Center(child: CircularProgressIndicator(color: _tealAccent));
     }
     if (error != null) {
       return Center(
@@ -1044,13 +1061,13 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
         : track.artist.trim();
 
     return Material(
-      color: Colors.white,
+      color: _themeCtrl.innerTileColor,
       child: InkWell(
         onTap: () => _openInArtistsTab(targetQuery),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
-            border: Border.all(color: const Color(0xFFE0EAE8)),
+            border: Border.all(color: _themeCtrl.innerTileBorderColor),
           ),
           child: Row(
             children: [
@@ -1062,20 +1079,24 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
                     width: 46,
                     height: 46,
                     fit: BoxFit.cover,
-                    errorBuilder: (_, _, _) => const MeloopImagePlaceholder(
+                    errorBuilder: (_, _, _) => MeloopImagePlaceholder(
                       width: 46,
                       height: 46,
                       iconSize: 20,
                       borderColor: null,
+                      backgroundColor: _themeCtrl.placeholderBgColor,
+                      iconColor: _themeCtrl.placeholderIconColor,
                     ),
                   ),
                 )
               else
-                const MeloopImagePlaceholder(
+                MeloopImagePlaceholder(
                   width: 46,
                   height: 46,
                   iconSize: 20,
                   borderColor: null,
+                  backgroundColor: _themeCtrl.placeholderBgColor,
+                  iconColor: _themeCtrl.placeholderIconColor,
                 ),
               const SizedBox(width: 12),
               Expanded(
@@ -1111,7 +1132,7 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFEAF7F4),
+                  color: _themeCtrl.softBadgeBgColor,
                   borderRadius: BorderRadius.circular(14),
                 ),
                 child: Row(
@@ -1122,14 +1143,14 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
                       style: MeloopTypography.lexend(
                         fontSize: 11,
                         fontWeight: FontWeight.w600,
-                        color: const Color(0xFF0D5C5E),
+                        color: _themeCtrl.softBadgeFgColor,
                       ),
                     ),
                     const SizedBox(width: 3),
-                    const Icon(
+                    Icon(
                       Icons.arrow_forward_rounded,
                       size: 13,
-                      color: Color(0xFF0D5C5E),
+                      color: _themeCtrl.softBadgeFgColor,
                     ),
                   ],
                 ),
@@ -1144,7 +1165,7 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
   Widget _buildUsersList({required bool isDesktop}) {
     final error = _errors[_SearchSource.users];
     if (_loading[_SearchSource.users] == true) {
-      return const Center(child: CircularProgressIndicator(color: _tealAccent));
+      return Center(child: CircularProgressIndicator(color: _tealAccent));
     }
     if (error != null) {
       return Center(
@@ -1193,13 +1214,13 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
     final isSending = _sendingRequests.contains(user.id);
 
     return Material(
-      color: Colors.white,
+      color: _themeCtrl.innerTileColor,
       child: InkWell(
         onTap: () => _openInFriendsTab(user.name),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
-            border: Border.all(color: const Color(0xFFDCEAE7)),
+            border: Border.all(color: _themeCtrl.innerTileBorderColor),
           ),
           child: Row(
             children: [
@@ -1208,23 +1229,29 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
                   width: 44,
                   height: 44,
                   decoration: BoxDecoration(
-                    border: Border.all(color: const Color(0xFFD0DFDC)),
+                    border: Border.all(color: _themeCtrl.placeholderBorderColor),
                   ),
                   child: Image.network(
                     user.avatarUrl!,
                     fit: BoxFit.cover,
-                    errorBuilder: (_, _, _) => const MeloopImagePlaceholder(
+                    errorBuilder: (_, _, _) => MeloopImagePlaceholder(
                       width: 44,
                       height: 44,
                       iconSize: 20,
+                      backgroundColor: _themeCtrl.placeholderBgColor,
+                      iconColor: _themeCtrl.placeholderIconColor,
+                      borderColor: _themeCtrl.placeholderBorderColor,
                     ),
                   ),
                 )
               else
-                const MeloopImagePlaceholder(
+                MeloopImagePlaceholder(
                   width: 44,
                   height: 44,
                   iconSize: 20,
+                  backgroundColor: _themeCtrl.placeholderBgColor,
+                  iconColor: _themeCtrl.placeholderIconColor,
+                  borderColor: _themeCtrl.placeholderBorderColor,
                 ),
               const SizedBox(width: 12),
               Expanded(
@@ -1270,15 +1297,19 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
               OutlinedButton(
                 style: OutlinedButton.styleFrom(
                   foregroundColor: isFriend || isPending
-                      ? const Color(0xFF56716D)
-                      : const Color(0xFF0D5C5E),
+                      ? _inkMuted
+                      : _themeCtrl.softBadgeFgColor,
                   backgroundColor: isFriend || isPending
-                      ? const Color(0xFFF0F5F4)
-                      : const Color(0xFFE9F8F5),
+                      ? _themeCtrl.inputFillColor
+                      : _themeCtrl.softBadgeBgColor,
                   side: BorderSide(
                     color: isFriend || isPending
-                        ? const Color(0xFFDDE7E5)
-                        : const Color(0xFFBDE9E1),
+                        ? _themeCtrl.inputBorderColor
+                        : (_themeCtrl.isDarkCardStyle
+                              ? _themeCtrl.colorTheme.headerTop.withValues(
+                                  alpha: 0.45,
+                                )
+                              : _gridBorder),
                   ),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(18),
@@ -1384,12 +1415,12 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: const Color(0xFFF6FAF9),
-        border: Border.all(color: const Color(0xFFE0ECEA)),
+        color: _themeCtrl.innerTileColor,
+        border: Border.all(color: _themeCtrl.innerTileBorderColor),
       ),
       child: Row(
         children: [
-          const Icon(Icons.search_off_rounded, size: 18, color: _inkMuted),
+          Icon(Icons.search_off_rounded, size: 18, color: _inkMuted),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
@@ -1420,10 +1451,10 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
           padding: const EdgeInsets.fromLTRB(2, 4, 2, 10),
           child: Row(
             children: [
-              const Icon(
+              Icon(
                 Icons.history_rounded,
                 size: 18,
-                color: Color(0xFF0D5C5E),
+                color: _accentLink,
               ),
               const SizedBox(width: 8),
               Text(
@@ -1446,16 +1477,16 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: Material(
-              color: Colors.white,
-              shape: const RoundedRectangleBorder(
-                side: BorderSide(color: Color(0xFFE2ECEA)),
+              color: _themeCtrl.innerTileColor,
+              shape: RoundedRectangleBorder(
+                side: BorderSide(color: _themeCtrl.innerTileBorderColor),
               ),
               child: ListTile(
                 dense: true,
-                leading: const Icon(
+                leading: Icon(
                   Icons.history_rounded,
                   size: 18,
-                  color: Color(0xFF79918D),
+                  color: _inkMuted,
                 ),
                 title: Text(
                   query,
@@ -1508,12 +1539,12 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
                 ),
                 selected: _postFilter == entry.value,
                 selectedColor: _tealAccent,
-                backgroundColor: const Color(0xFFF0F6F5),
+                backgroundColor: _themeCtrl.inputFillColor,
                 showCheckmark: false,
                 side: BorderSide(
                   color: _postFilter == entry.value
                       ? _tealAccent
-                      : const Color(0xFFD5E4E1),
+                      : _themeCtrl.inputBorderColor,
                 ),
                 visualDensity: VisualDensity.compact,
                 onSelected: (_) => _changePostFilter(entry.value),
@@ -1531,9 +1562,9 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
         Expanded(
           child: Container(
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: _themeCtrl.inputFillColor,
               borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: const Color(0xFFD8E6E4)),
+              border: Border.all(color: _themeCtrl.inputBorderColor),
             ),
             child: TextField(
               controller: _queryController,
@@ -1546,9 +1577,9 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
                   color: _inkMuted,
                   fontSize: 13.5,
                 ),
-                prefixIcon: const Icon(
+                prefixIcon: Icon(
                   Icons.search_rounded,
-                  color: Color(0xFF16877F),
+                  color: _accentLink,
                   size: 20,
                 ),
                 suffixIcon: _queryController.text.isEmpty
@@ -1623,12 +1654,12 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
       return PreferredSize(
         preferredSize: Size.fromHeight(55 + topInset),
         child: Container(
-          color: const Color(0xFF1ABC9C),
+          color: _tealAccent,
           child: SafeArea(
             bottom: false,
             child: Container(
               height: 55,
-              color: const Color(0xFF1ABC9C),
+              color: _tealAccent,
               padding: const EdgeInsets.symmetric(horizontal: 8),
               child: Row(
                 children: [
@@ -1637,13 +1668,9 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
                     onPressed: () => Navigator.maybePop(context),
                     icon: const Icon(Icons.arrow_back, color: Colors.white),
                   ),
-                  Expanded(
+                  const Expanded(
                     child: Center(
-                      child: Image.asset(
-                        'assets/imagenes/meloop.png',
-                        height: 24,
-                        fit: BoxFit.contain,
-                      ),
+                      child: MeloopLogoSticker(height: 24, whiteOnly: true),
                     ),
                   ),
                   const SizedBox(width: 48),
@@ -1659,7 +1686,7 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
       preferredSize: const Size.fromHeight(55),
       child: Container(
         height: 55,
-        color: const Color(0xFF1ABC9C),
+        color: _tealAccent,
         padding: const EdgeInsets.symmetric(horizontal: 20),
         child: Row(
           children: [
@@ -1675,11 +1702,7 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
               ),
             ),
             const SizedBox(width: 16),
-            Image.asset(
-              'assets/imagenes/meloop.png',
-              height: 24,
-              fit: BoxFit.contain,
-            ),
+            const MeloopLogoSticker(height: 24, whiteOnly: true),
             const SizedBox(width: 18),
             Text(
               'Búsqueda rápida',
@@ -1713,6 +1736,7 @@ class _StateCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final themeCtrl = MeloopThemeController.instance;
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(20),
@@ -1720,8 +1744,8 @@ class _StateCard extends StatelessWidget {
           constraints: const BoxConstraints(maxWidth: 360),
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
           decoration: BoxDecoration(
-            color: Colors.white,
-            border: Border.all(color: const Color(0xFFE0EAE8)),
+            color: themeCtrl.innerTileColor,
+            border: Border.all(color: themeCtrl.innerTileBorderColor),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -1730,17 +1754,21 @@ class _StateCard extends StatelessWidget {
                 height: 48,
                 width: 48,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFE8F7F3),
+                  color: themeCtrl.softBadgeBgColor,
                   borderRadius: BorderRadius.circular(14),
                 ),
-                child: Icon(icon, color: const Color(0xFF0D7771), size: 26),
+                child: Icon(
+                  icon,
+                  color: themeCtrl.softBadgeFgColor,
+                  size: 26,
+                ),
               ),
               const SizedBox(height: 12),
               Text(
                 title,
                 textAlign: TextAlign.center,
                 style: MeloopTypography.lexend(
-                  color: const Color(0xFF183D3B),
+                  color: themeCtrl.cardTitleColor,
                   fontSize: 15,
                   fontWeight: FontWeight.w700,
                 ),
@@ -1750,7 +1778,7 @@ class _StateCard extends StatelessWidget {
                 message,
                 textAlign: TextAlign.center,
                 style: MeloopTypography.lexend(
-                  color: const Color(0xFF788A86),
+                  color: themeCtrl.cardMutedColor,
                   fontSize: 12.5,
                   height: 1.45,
                 ),

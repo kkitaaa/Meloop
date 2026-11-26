@@ -10,6 +10,7 @@ import '../features/posts/post_detail_screen.dart';
 import '../features/posts/presentation/post_editor_dialog.dart';
 import '../features/posts/presentation/share_post_sheet.dart';
 import '../services/api_client.dart';
+import '../theme/meloop_theme_controller.dart';
 import '../theme/meloop_typography.dart';
 import 'paper/stacked_paper_card.dart';
 import 'post_audio_controls.dart';
@@ -167,9 +168,9 @@ class _PostCardState extends State<PostCard> {
                 ),
               ),
               ListTile(
-                leading: const Icon(
+                leading: Icon(
                   Icons.share_outlined,
-                  color: Color(0xFF16877F),
+                  color: MeloopThemeController.instance.pillTrackColor,
                 ),
                 title: Text(
                   'Compartir publicación',
@@ -185,7 +186,7 @@ class _PostCardState extends State<PostCard> {
                   _isSaved
                       ? Icons.bookmark_rounded
                       : Icons.bookmark_border_rounded,
-                  color: const Color(0xFF16877F),
+                  color: MeloopThemeController.instance.pillTrackColor,
                 ),
                 title: Text(
                   _isSaved ? 'Quitar de Guardados' : 'Guardar publicación',
@@ -199,9 +200,9 @@ class _PostCardState extends State<PostCard> {
               if (isAuthor) ...[
                 if (within24Hours)
                   ListTile(
-                    leading: const Icon(
+                    leading: Icon(
                       Icons.edit_outlined,
-                      color: Color(0xFF16877F),
+                      color: MeloopThemeController.instance.pillTrackColor,
                     ),
                     title: Text(
                       'Editar publicación',
@@ -463,17 +464,28 @@ class _PostCardState extends State<PostCard> {
         widget.postData["isAuthor"] ?? (postNumericId % 2 == 0);
     final bool isEdited = widget.postData["isEdited"] ?? false;
     final bool within24Hours = widget.postData["within24Hours"] ?? true;
+    final themeCtrl = MeloopThemeController.instance;
 
-    final isDarkSurface = widget.textColor.computeLuminance() > 0.5;
-    final cardSurfaceColor = isDarkSurface
-        ? Colors.white.withValues(alpha: 0.08)
-        : const Color(0xFFFEFEFE);
-    final secondaryTextColor = isDarkSurface
-        ? Colors.white70
-        : const Color(0xFF7B8787);
+    return AnimatedBuilder(
+      animation: themeCtrl,
+      builder: (context, _) {
+        final accent = themeCtrl.primaryColor;
+        final pillDark = themeCtrl.pillTrackColor;
+        final isDarkSurface =
+            themeCtrl.isDarkCardStyle ||
+            widget.textColor.computeLuminance() > 0.5;
+        final effectiveTextColor = isDarkSurface
+            ? Colors.white
+            : widget.textColor;
+        final cardSurfaceColor = isDarkSurface
+            ? Colors.white.withValues(alpha: 0.08)
+            : const Color(0xFFFEFEFE);
+        final secondaryTextColor = isDarkSurface
+            ? Colors.white70
+            : const Color(0xFF7B8787);
 
-    return LayoutBuilder(
-      builder: (context, cardConstraints) {
+        return LayoutBuilder(
+          builder: (context, cardConstraints) {
         final isMobileCard = cardConstraints.maxWidth < 480;
         final isCompactStyle = widget.compact || isMobileCard;
 
@@ -541,7 +553,7 @@ class _PostCardState extends State<PostCard> {
                                   ? 16.5
                                   : (widget.compact ? 17 : 20),
                               fontWeight: FontWeight.w700,
-                              color: widget.textColor,
+                              color: effectiveTextColor,
                               height: 1.15,
                             ),
                           ),
@@ -682,7 +694,7 @@ class _PostCardState extends State<PostCard> {
                   style: MeloopTypography.lexend(
                     fontSize: isMobileCard ? 15 : 18,
                     fontWeight: FontWeight.w700,
-                    color: widget.textColor,
+                    color: effectiveTextColor,
                     height: 1.3,
                   ),
                 ),
@@ -695,7 +707,7 @@ class _PostCardState extends State<PostCard> {
                 overflow: widget.compact ? TextOverflow.ellipsis : null,
                 style: MeloopTypography.lexend(
                   fontSize: isMobileCard ? 13 : (widget.compact ? 14 : 15),
-                  color: widget.textColor,
+                  color: effectiveTextColor,
                   height: isMobileCard ? 1.42 : 1.48,
                 ),
               ),
@@ -730,7 +742,7 @@ class _PostCardState extends State<PostCard> {
                   audioBytes: audioBytes,
                   audioUrl: audioUrl,
                   fileName: audioName,
-                  accentColor: widget.tealAccent,
+                  accentColor: accent,
                   playbackController: widget.audioPlaybackController,
                   onTrackTap: songSpotifyId != null
                       ? () => _openMusicDetail(songSpotifyId)
@@ -766,7 +778,7 @@ class _PostCardState extends State<PostCard> {
                         children: [
                           Icon(
                             Icons.mode_comment_outlined,
-                            color: const Color(0xFF00AF92),
+                            color: accent,
                             size: isMobileCard ? 18 : 21,
                           ),
                           SizedBox(width: isMobileCard ? 4 : 6),
@@ -776,7 +788,7 @@ class _PostCardState extends State<PostCard> {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: MeloopTypography.lexend(
-                                color: const Color(0xFF00AF92),
+                                color: accent,
                                 fontSize: isMobileCard ? 12 : 14,
                                 fontWeight: FontWeight.w500,
                               ),
@@ -806,16 +818,14 @@ class _PostCardState extends State<PostCard> {
                                 height: 16,
                                 child: CircularProgressIndicator(
                                   strokeWidth: 2,
-                                  color: widget.tealAccent,
+                                  color: accent,
                                 ),
                               )
                             : Icon(
                                 _isSaved
                                     ? Icons.bookmark_rounded
                                     : Icons.bookmark_border_rounded,
-                                color: _isSaved
-                                    ? const Color(0xFF00A98F)
-                                    : const Color(0xFF16877F),
+                                color: _isSaved ? accent : pillDark,
                                 size: isMobileCard ? 20 : 22,
                               ),
                       ),
@@ -834,7 +844,7 @@ class _PostCardState extends State<PostCard> {
                         SizedBox(width: isMobileCard ? 6 : 8),
                         ElevatedButton(
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF00B298),
+                            backgroundColor: accent,
                             foregroundColor: Colors.white,
                             elevation: 0,
                             minimumSize: isMobileCard
@@ -945,6 +955,8 @@ class _PostCardState extends State<PostCard> {
           );
         }
         return cardBody;
+          },
+        );
       },
     );
   }

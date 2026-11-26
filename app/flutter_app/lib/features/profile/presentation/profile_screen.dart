@@ -1,24 +1,34 @@
-import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
-
 import 'dart:async';
+import 'dart:math' as math;
+
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 
 import '../../../core/navigation/artists_and_songs_screen.dart';
 import '../../../core/navigation/desktop_navigation_shell.dart';
 import '../../../core/navigation/responsive_navigation_shell.dart';
-import '../../social/presentation/mutual_friends_row.dart';
+import '../../../models/feed_data.dart';
 import '../../../screens/friends_screen.dart';
+import '../../../services/api_client.dart';
+import '../../../services/auth_session.dart';
+import '../../../theme/meloop_theme_controller.dart';
+import '../../../theme/meloop_typography.dart';
 import '../../../widgets/desktop_app_header.dart';
+import '../../../widgets/meloop_pill_tabs.dart';
+import '../../../widgets/meloop_toast_pill.dart';
 import '../../../widgets/mobile_app_header.dart';
 import '../../../widgets/paper/stacked_paper_card.dart';
 import '../../../widgets/post_card.dart';
-import '../../../widgets/level_progress/level_progress.dart';
-import '../../../services/api_client.dart';
-import '../../../services/auth_session.dart';
-import '../../../models/feed_data.dart';
+import '../../gamification/presentation/gamification_demo_controller.dart';
+import '../../posts/presentation/post_editor_dialog.dart';
 import '../../posts/presentation/saved_posts_screen.dart';
 import '../../search/presentation/global_search_route.dart';
-import '../../gamification/presentation/gamification_demo_controller.dart';
+import '../../social/presentation/mutual_friends_row.dart';
+import '../models/profile_customization.dart';
+import '../widgets/profile_editor_panel.dart';
+import '../widgets/profile_stickers.dart';
+
+enum _ProfileBlogsFilter { recent, trending }
 
 class ProfileScreen extends StatefulWidget {
   final String? username;
@@ -27,6 +37,10 @@ class ProfileScreen extends StatefulWidget {
   final bool openInventory;
   final bool insideDesktopShell;
 
+  /// Personalización remota opcional cuando se visita el perfil de otro usuario
+  /// cargado desde el backend (`GET /users/:id/profile`).
+  final ProfileCustomizationConfig? initialCustomization;
+
   const ProfileScreen({
     super.key,
     this.username,
@@ -34,20 +48,22 @@ class ProfileScreen extends StatefulWidget {
     this.apiClient,
     this.openInventory = false,
     this.insideDesktopShell = false,
+    this.initialCustomization,
   });
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
 }
 
-class _ProfileScreenState extends State<ProfileScreen> {
-  final Color _tealAccent = const Color(0xFF1ABC9C);
-
+class _ProfileScreenState extends State<ProfileScreen>
+    with SingleTickerProviderStateMixin {
   final ScrollController _scrollController = ScrollController();
-  final ScrollController _blogsScrollController = ScrollController();
+  final GlobalKey _stickerCanvasKey = GlobalKey();
   final List<Map<String, dynamic>> _posts = [];
   late final ApiClient _apiClient;
   late final bool _ownsApiClient;
+  late final AnimationController _rgbBorderController;
+  Offset _stickerDragOffset = Offset.zero;
 
   bool _isInitialLoading = true;
   bool _isLoadingMore = false;
@@ -57,68 +73,102 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   // Estados del perfil: own, public, private, blocked
   late String _profileStatus;
-
   late String _displayUsername;
   String _biography =
-      "Hola, gente soy Vicente. Me gusta mucho la música ambiental y la música rapidísima con mucho bajo, también el jazz fusion y otras cosas más.\nAl igual que a todos, me gustan los gatos (tengo 2).";
+      'Hola gente, me gusta mucho la música ambiental y la música rapidísima '
+      'con mucho bajo, también el jazz fusión y otras cosas más.\n'
+      'Al igual que muchos soy re fan de los gatos.';
 
   final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _bioController = TextEditingController();
 
-  // --- VARIABLES DE PERSONALIZACIÓN (GAMIFICACIÓN) ---
-  Color? _activeFrameColor;
-  Color _activePinColor = Colors.red[700]!;
-  Color _paperColor = const Color(0xFFFDFDFD);
-  Color _paperTextColor = Colors.black87;
+  _ProfileBlogsFilter _blogsFilter = _ProfileBlogsFilter.recent;
+  bool _isEditing = false;
+  ProfileEditorTab _editorInitialTab = ProfileEditorTab.style;
+  String? _selectedStickerId;
+  bool _songPlaying = false;
 
-  final List<Map<String, dynamic>> _inventory = [
-    {
-      "id": "f1",
-      "type": "frame",
-      "name": "Marco Neón",
-      "icon": Icons.crop_square,
-      "color": Colors.cyanAccent,
-      "isEquipped": false,
-    },
-    {
-      "id": "f2",
-      "type": "frame",
-      "name": "Marco Dorado",
-      "icon": Icons.crop_portrait,
-      "color": Colors.amber,
-      "isEquipped": false,
-    },
-    {
-      "id": "p1",
-      "type": "pin",
-      "name": "Pin Zafiro",
-      "icon": Icons.push_pin,
-      "color": Colors.blueAccent,
-      "isEquipped": false,
-    },
-    {
-      "id": "bg1",
-      "type": "bg",
-      "name": "Modo Nocturno",
-      "icon": Icons.format_paint,
-      "color": const Color(0xFF2C3E50),
-      "isEquipped": false,
-    },
+  // TODO(backend): Reemplazar artistas y amigos de muestra con los endpoints
+  // reales de music-service (`GET /v1/music/preferences`) y social-service
+  // (`GET /v1/social/friends`).
+  static const List<({String name, String genres, String stats})>
+  _favoriteArtists = [
+    (
+      name: 'Travis Scott',
+      genres: 'Hip Hop · Trap · Experimental',
+      stats: '600+ Canciones · 6 Álbumes',
+    ),
+    (
+      name: 'JPEGMAFIA',
+      genres: 'Hip Hop Experimental · Alternativo',
+      stats: '100+ Canciones · 6 Álbumes',
+    ),
+    (
+      name: 'Hideki Naganuma',
+      genres: 'J-Pop · Electrónica · Funk · Breakbeat',
+      stats: '25+ Canciones · 5 Álbumes',
+    ),
+    (
+      name: 'Casiopea',
+      genres: 'Jazz Fusión · Ambiente',
+      stats: '25+ Canciones · 5 Álbumes',
+    ),
+    (
+      name: 'Daft Punk',
+      genres: 'Electrónica · French House · Funk',
+      stats: '90+ Canciones · 4 Álbumes',
+    ),
+    (
+      name: 'Kidd Voodoo',
+      genres: 'Urbano · Reggaetón · Pop',
+      stats: '60+ Canciones · 3 Álbumes',
+    ),
   ];
+
+  static const List<({String id, String name, bool online})> _profileFriends = [
+    (id: '1', name: 'Vicente', online: true),
+    (id: '2', name: 'Andrea', online: true),
+    (id: '3', name: 'Felipe', online: true),
+    (id: '4', name: 'Valentina', online: false),
+  ];
+
+  ProfileCustomizationConfig get _activeConfig => _profileStatus == 'own'
+      ? MeloopThemeController.instance.ownConfig
+      : (widget.initialCustomization ?? const ProfileCustomizationConfig());
 
   @override
   void initState() {
     super.initState();
     _ownsApiClient = widget.apiClient == null;
     _apiClient = widget.apiClient ?? ApiClient();
+    _rgbBorderController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 4),
+    );
     _displayUsername =
         widget.username ??
         AuthSession.shared.user?.username ??
-        "Nombre de usuario";
+        'Nombre.de.usuario';
     _usernameController.text = _displayUsername;
     _bioController.text = _biography;
 
     _determineProfileStatus();
+
+    // Si se visita un perfil ajeno, mostramos su tema (o el tema por defecto
+    // mientras no venga del backend) sin alterar la personalización propia.
+    if (_profileStatus != 'own') {
+      final otherConfig =
+          widget.initialCustomization ?? const ProfileCustomizationConfig();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        MeloopThemeController.instance.setViewingOverride(this, otherConfig);
+      });
+    }
+
+    if (_profileStatus == 'own' && widget.openInventory) {
+      _isEditing = true;
+      _editorInitialTab = ProfileEditorTab.decorations;
+    }
 
     if (_profileStatus == 'own' || _profileStatus == 'public') {
       _fetchInitialPosts();
@@ -126,17 +176,30 @@ class _ProfileScreenState extends State<ProfileScreen> {
       _isInitialLoading = false;
     }
 
-    _blogsScrollController.addListener(_handleBlogsScroll);
+    _scrollController.addListener(_handleProfileScroll);
+    _syncRgbAnimation();
+  }
+
+  void _syncRgbAnimation() {
+    if (_activeConfig.borderStyle == ProfileBorderStyle.rainbowRgb) {
+      if (!_rgbBorderController.isAnimating) {
+        _rgbBorderController.repeat();
+      }
+    } else if (_rgbBorderController.isAnimating) {
+      _rgbBorderController.stop();
+    }
   }
 
   void _determineProfileStatus() {
     if (widget.userId != null && widget.userId == AuthSession.shared.user?.id) {
       _profileStatus = 'own';
-    } else if (widget.username == "UsuarioPrivado") {
+    } else if (widget.username == 'UsuarioPrivado') {
       _profileStatus = 'private';
-    } else if (widget.username == "UsuarioBloqueado") {
+    } else if (widget.username == 'UsuarioBloqueado') {
       _profileStatus = 'blocked';
-    } else if (widget.username == null || widget.username == "MiUsuario") {
+    } else if (widget.username == null && widget.userId == null) {
+      _profileStatus = 'own';
+    } else if (widget.username == 'MiUsuario') {
       _profileStatus = 'own';
     } else {
       _profileStatus = 'public';
@@ -152,9 +215,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   void dispose() {
-    _scrollController.dispose();
-    _blogsScrollController
-      ..removeListener(_handleBlogsScroll)
+    MeloopThemeController.instance.clearViewingOverride(this);
+    _rgbBorderController.dispose();
+    _scrollController
+      ..removeListener(_handleProfileScroll)
       ..dispose();
     if (_ownsApiClient) _apiClient.close();
     _usernameController.dispose();
@@ -235,26 +299,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
     } on ApiException catch (error) {
       if (!mounted) return;
       setState(() => _isLoadingMore = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('No se pudieron cargar más blogs: ${error.message}'),
-        ),
+      showMeloopToastPill(
+        context,
+        message: 'No se pudieron cargar más blogs: ${error.message}',
+        icon: Icons.error_outline_rounded,
       );
     } on FormatException catch (error) {
       if (!mounted) return;
       setState(() => _isLoadingMore = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('No se pudieron mostrar los blogs: ${error.message}'),
-        ),
+      showMeloopToastPill(
+        context,
+        message: 'No se pudieron mostrar los blogs: ${error.message}',
+        icon: Icons.error_outline_rounded,
       );
     }
   }
 
-  void _handleBlogsScroll() {
-    if (!_blogsScrollController.hasClients) return;
-    if (_blogsScrollController.position.pixels >=
-        _blogsScrollController.position.maxScrollExtent - 200) {
+  void _handleProfileScroll() {
+    if (!_scrollController.hasClients) return;
+    if (_scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent - 220) {
       _fetchMorePosts();
     }
   }
@@ -316,140 +380,1787 @@ class _ProfileScreenState extends State<ProfileScreen> {
             const Duration(hours: 24);
   }
 
-  void _toggleEquipItem(int index) {
-    final item = _inventory[index];
-    final bool isEquipping = !(item['isEquipped'] as bool);
+  // ---------------------------------------------------------------------------
+  // ACCIONES DE PERSONALIZACIÓN
+  // ---------------------------------------------------------------------------
+  void _updateOwnCustomization(ProfileCustomizationConfig next) {
+    if (_profileStatus != 'own') return;
+    MeloopThemeController.instance.updateConfig(next);
+    _syncRgbAnimation();
+    setState(() {});
+  }
 
-    setState(() {
-      if (isEquipping) {
-        for (var i in _inventory) {
-          if (i['type'] == item['type']) i['isEquipped'] = false;
-        }
-        item['isEquipped'] = true;
+  void _addStickerToCanvas(String stickerId) {
+    final config = _activeConfig;
+    final count = config.stickers.length;
+    final placement = ProfileStickerPlacement(
+      id: 'stk-${DateTime.now().microsecondsSinceEpoch}',
+      stickerId: stickerId,
+      // Posiciones iniciales variadas cerca de las esquinas de las tarjetas
+      x: (0.20 + (count * 0.19) % 0.56).clamp(0.08, 0.84),
+      y: (0.22 + (count * 0.14) % 0.42).clamp(0.08, 0.78),
+      scale: 1.0,
+      rotation: count.isEven ? -0.09 : 0.11,
+    );
+    _updateOwnCustomization(
+      config.copyWith(stickers: [...config.stickers, placement]),
+    );
+    setState(() => _selectedStickerId = placement.id);
+  }
 
-        if (item['type'] == 'frame') _activeFrameColor = item['color'] as Color;
-        if (item['type'] == 'pin') {
-          _activePinColor = item['color'] as Color;
-          GamificationDemoController.instance.setActivePinColor(
-            _activePinColor,
-          );
-        }
-        if (item['type'] == 'bg') {
-          _paperColor = item['color'] as Color;
-          _paperTextColor = Colors.white;
-        }
-      } else {
-        item['isEquipped'] = false;
+  void _updateStickerPlacement(ProfileStickerPlacement updated) {
+    final config = _activeConfig;
+    final nextList = config.stickers
+        .map((item) => item.id == updated.id ? updated : item)
+        .toList(growable: false);
+    _updateOwnCustomization(config.copyWith(stickers: nextList));
+  }
 
-        if (item['type'] == 'frame') _activeFrameColor = null;
-        if (item['type'] == 'pin') {
-          _activePinColor = Colors.red[700]!;
-          GamificationDemoController.instance.setActivePinColor(null);
-        }
-        if (item['type'] == 'bg') {
-          _paperColor = const Color(0xFFFDFDFD);
-          _paperTextColor = Colors.black87;
-        }
+  void _removeStickerById(String id) {
+    final config = _activeConfig;
+    final nextList = config.stickers
+        .where((item) => item.id != id)
+        .toList(growable: false);
+    _updateOwnCustomization(config.copyWith(stickers: nextList));
+    if (_selectedStickerId == id) {
+      setState(() => _selectedStickerId = null);
+    }
+  }
+
+  void _demoLevelUp() {
+    final gamification = GamificationDemoController.instance;
+    final remaining = gamification.experienceNeeded - gamification.xp;
+    final steps = math.max(1, (remaining / 10).ceil());
+    for (var i = 0; i < steps; i++) {
+      gamification.grantLikeXp();
+    }
+    showMeloopToastPill(
+      context,
+      message:
+          'Nivel ${gamification.level} alcanzado · Revisa nuevos desbloqueos',
+      icon: Icons.auto_awesome_rounded,
+    );
+    setState(() {});
+  }
+
+  void _toggleEditMode({ProfileEditorTab tab = ProfileEditorTab.style}) {
+    final isDesktop = MediaQuery.sizeOf(context).width > 960;
+    if (isDesktop) {
+      setState(() {
+        _editorInitialTab = tab;
+        _isEditing = !_isEditing;
+        if (!_isEditing) _selectedStickerId = null;
+      });
+      return;
+    }
+
+    // En móvil abrimos el estudio como hoja inferior para conservar toda la vista
+    setState(() => _isEditing = true);
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => FractionallySizedBox(
+        heightFactor: 0.78,
+        child: AnimatedBuilder(
+          animation: Listenable.merge([
+            MeloopThemeController.instance,
+            GamificationDemoController.instance,
+          ]),
+          builder: (context, _) => ProfileEditorPanel(
+            config: _activeConfig,
+            userLevel: GamificationDemoController.instance.level,
+            rgbFrameUnlocked:
+                GamificationDemoController.instance.rgbFrameUnlocked,
+            usernameController: _usernameController,
+            bioController: _bioController,
+            selectedStickerId: _selectedStickerId,
+            initialTab: tab,
+            onConfigChanged: _updateOwnCustomization,
+            onProfileTextChanged: _syncProfileTextFields,
+            onAddSticker: _addStickerToCanvas,
+            onUpdateSelectedSticker: _updateStickerPlacement,
+            onRemoveSelectedSticker: () {
+              if (_selectedStickerId != null) {
+                _removeStickerById(_selectedStickerId!);
+              }
+            },
+            onDemoLevelUp: _demoLevelUp,
+            onResetDefault: () {
+              MeloopThemeController.instance.resetToDefault();
+              setState(() => _selectedStickerId = null);
+            },
+            onClose: () => Navigator.of(sheetContext).pop(),
+          ),
+        ),
+      ),
+    ).whenComplete(() {
+      if (mounted) {
+        setState(() {
+          _isEditing = false;
+          _selectedStickerId = null;
+        });
       }
     });
+  }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          isEquipping
-              ? "Equipado: ${item['name']}"
-              : "Desequipado: ${item['name']}",
-        ),
-        backgroundColor: _tealAccent,
-        duration: const Duration(milliseconds: 1500),
+  void _syncProfileTextFields() {
+    setState(() {
+      final trimmedName = _usernameController.text.trim();
+      if (trimmedName.isNotEmpty) {
+        _displayUsername = trimmedName;
+      }
+      _biography = _bioController.text.trim();
+    });
+  }
+
+  Future<void> _openCreateBlogDialog() async {
+    final created = await showDialog<PostEditorResult>(
+      context: context,
+      builder: (_) => PostEditorDialog(
+        tealAccent: _activeConfig.colorTheme.primary,
+        apiClient: _apiClient,
+      ),
+    );
+    if (!mounted || created == null) return;
+    setState(() {
+      _posts.insert(0, {
+        'id': 'local-${DateTime.now().millisecondsSinceEpoch}',
+        'user': _displayUsername,
+        'user_id': _profileAuthorId ?? 'local-user',
+        'time': 'Ahora',
+        'content': created.content,
+        'mood': _activeConfig.mood,
+        'song': created.songTitle,
+        'artist': created.artistName,
+        'likes': 0,
+        'comments': 0,
+        'isAuthor': true,
+        'isEdited': false,
+        'within24Hours': true,
+      });
+    });
+    showMeloopToastPill(
+      context,
+      message: 'Blog publicado',
+      xpAwarded: created.xpAwarded ?? 15,
+      icon: Icons.check_circle_rounded,
+    );
+  }
+
+  void _openFriendsSection() {
+    final desktopShell = DesktopShellScope.maybeOf(context);
+    if (desktopShell != null) {
+      desktopShell.openFriends();
+      return;
+    }
+    final mobileShell = MobileShellScope.maybeOf(context);
+    if (mobileShell != null) {
+      mobileShell.openFriends();
+      return;
+    }
+    Navigator.of(
+      context,
+    ).push<void>(MaterialPageRoute<void>(builder: (_) => const FriendsScreen()));
+  }
+
+  void _openArtistsSection({String? query}) {
+    final desktopShell = DesktopShellScope.maybeOf(context);
+    if (desktopShell != null) {
+      desktopShell.openArtists(initialQuery: query);
+      return;
+    }
+    final mobileShell = MobileShellScope.maybeOf(context);
+    if (mobileShell != null) {
+      mobileShell.openArtists(initialQuery: query);
+      return;
+    }
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => ArtistsAndSongsScreen(initialQuery: query),
       ),
     );
   }
 
-  void _showEditProfileDialog() {
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          backgroundColor: Colors.white,
-          title: const Text(
-            "Editar Perfil",
-            style: TextStyle(fontWeight: FontWeight.bold),
+  @override
+  Widget build(BuildContext context) {
+    final double screenWidth = MediaQuery.sizeOf(context).width;
+    final bool isDesktop = screenWidth > 960;
+    final bool insideDesktopShell =
+        widget.insideDesktopShell || DesktopShellScope.maybeOf(context) != null;
+    final bool insideMobileShell = MobileShellScope.maybeOf(context) != null;
+
+    return AnimatedBuilder(
+      animation: Listenable.merge([
+        MeloopThemeController.instance,
+        GamificationDemoController.instance,
+      ]),
+      builder: (context, _) {
+        final config = _activeConfig;
+        final accent = config.colorTheme.primary;
+
+        return Scaffold(
+          backgroundColor: Colors.transparent,
+          body: Column(
+            children: [
+              if (!insideDesktopShell && !insideMobileShell)
+                _buildTopBar(isDesktop, context),
+              if (_isEditing && _profileStatus == 'own')
+                _buildEditModeBanner(accent),
+              Expanded(
+                child: isDesktop
+                    ? _buildDesktopWithOptionalEditor(config)
+                    : _buildMobileLayout(config),
+              ),
+            ],
           ),
-          content: SizedBox(
-            width: 400,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
+        );
+      },
+    );
+  }
+
+  Widget _buildEditModeBanner(Color accent) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      decoration: BoxDecoration(
+        color: accent,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.14),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.auto_awesome_rounded, color: Colors.white, size: 17),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Modo personalización activo · Arrastra tus stickers sobre cualquier parte del perfil',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: MeloopTypography.lexend(
+                color: Colors.white,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: () => setState(() {
+              _isEditing = false;
+              _selectedStickerId = null;
+            }),
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.white,
+              backgroundColor: Colors.white.withValues(alpha: 0.2),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(18),
+              ),
+            ),
+            child: Text(
+              'Listo',
+              style: MeloopTypography.lexend(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDesktopWithOptionalEditor(ProfileCustomizationConfig config) {
+    final gamification = GamificationDemoController.instance;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(child: _buildDesktopProfileCanvas(config)),
+        if (_isEditing && _profileStatus == 'own')
+          SizedBox(
+            width: 390,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(0, 14, 18, 18),
+              child: ProfileEditorPanel(
+                config: config,
+                userLevel: gamification.level,
+                rgbFrameUnlocked: gamification.rgbFrameUnlocked,
+                usernameController: _usernameController,
+                bioController: _bioController,
+                selectedStickerId: _selectedStickerId,
+                initialTab: _editorInitialTab,
+                onConfigChanged: _updateOwnCustomization,
+                onProfileTextChanged: _syncProfileTextFields,
+                onAddSticker: _addStickerToCanvas,
+                onUpdateSelectedSticker: _updateStickerPlacement,
+                onRemoveSelectedSticker: () {
+                  if (_selectedStickerId != null) {
+                    _removeStickerById(_selectedStickerId!);
+                  }
+                },
+                onDemoLevelUp: _demoLevelUp,
+                onResetDefault: () {
+                  MeloopThemeController.instance.resetToDefault();
+                  setState(() => _selectedStickerId = null);
+                },
+                onClose: () => setState(() {
+                  _isEditing = false;
+                  _selectedStickerId = null;
+                }),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // LIENZO PRINCIPAL DE PERFIL (ESCRITORIO) + CAPA LIBRE DE STICKERS
+  // ---------------------------------------------------------------------------
+  Widget _buildDesktopProfileCanvas(ProfileCustomizationConfig config) {
+    return SingleChildScrollView(
+      controller: _scrollController,
+      padding: const EdgeInsets.fromLTRB(28, 22, 28, 42),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1320),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              return Stack(
+                key: _stickerCanvasKey,
+                clipBehavior: Clip.none,
+                children: [
+                  _buildDesktopStructuredContent(config),
+                  if (_profileStatus != 'blocked')
+                    Positioned.fill(
+                      child: _buildStickersOverlay(
+                        config: config,
+                        canvasWidth: constraints.maxWidth,
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDesktopStructuredContent(ProfileCustomizationConfig config) {
+    if (_profileStatus == 'blocked') {
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(width: 248, child: _buildPolaroidProfile(config)),
+          const SizedBox(width: 26),
+          Expanded(child: _buildBlockedState(config)),
+        ],
+      );
+    }
+
+    final layout = config.layout;
+    final hasRightColumn =
+        _profileStatus != 'private' &&
+        layout.preset != ProfileLayoutPreset.compactFocus &&
+        (layout.showFavoriteSong || layout.showFriends);
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Columna izquierda: Polaroid + Nivel (+ Canción/Amigos si preset Enfoque blogs)
+        SizedBox(
+          width: 248,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _buildPolaroidProfile(config),
+              const SizedBox(height: 18),
+              _buildLevelCard(config),
+              if (layout.preset == ProfileLayoutPreset.compactFocus &&
+                  _profileStatus != 'private' &&
+                  layout.showFavoriteSong) ...[
+                const SizedBox(height: 18),
+                _buildFavoriteSongCard(config),
+              ],
+              if (layout.preset == ProfileLayoutPreset.compactFocus &&
+                  _profileStatus != 'private' &&
+                  layout.showFriends) ...[
+                const SizedBox(height: 18),
+                _buildFriendsCard(config),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(width: 26),
+
+        // Área derecha principal:
+        // 1) Barra superior de píldoras y acciones alineada arriba
+        // 2) Bloques principales (Sobre mí + Artistas | Canción + Amigos) en la misma línea base
+        // 3) Sección inferior de Blogs
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _buildStatsAndActionsBar(config),
+              if (_profileStatus == 'public' &&
+                  widget.userId != null &&
+                  widget.userId!.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                MutualFriendsRow(targetUserId: widget.userId!),
+              ],
+              const SizedBox(height: 16),
+              if (_profileStatus == 'private')
+                _buildPrivateState(config)
+              else ...[
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      flex: hasRightColumn
+                          ? (layout.preset == ProfileLayoutPreset.showcase
+                                ? 68
+                                : 64)
+                          : 100,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: _buildCenterInfoBlocks(config),
+                      ),
+                    ),
+                    if (hasRightColumn) ...[
+                      const SizedBox(width: 22),
+                      Expanded(
+                        flex: layout.preset == ProfileLayoutPreset.showcase
+                            ? 32
+                            : 36,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            if (layout.showFavoriteSong) ...[
+                              _buildFavoriteSongCard(config),
+                              if (layout.showFriends)
+                                const SizedBox(height: 18),
+                            ],
+                            if (layout.showFriends) _buildFriendsCard(config),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 24),
+                _buildBlogsSection(config),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  List<Widget> _buildCenterInfoBlocks(ProfileCustomizationConfig config) {
+    final bio = _buildAboutMeCard(config);
+    final artists = config.layout.showFavoriteArtists
+        ? _buildFavoriteArtistsCard(config)
+        : null;
+
+    if (artists == null) return [bio];
+    if (config.layout.artistsBeforeBio) {
+      return [artists, const SizedBox(height: 18), bio];
+    }
+    return [bio, const SizedBox(height: 18), artists];
+  }
+
+  // ---------------------------------------------------------------------------
+  // MÓVIL / ANDROID
+  // ---------------------------------------------------------------------------
+  Widget _buildMobileLayout(ProfileCustomizationConfig config) {
+    return SingleChildScrollView(
+      controller: _scrollController,
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 148),
+      child: LayoutBuilder(
+        builder: (context, constraints) => Stack(
+          key: _stickerCanvasKey,
+          clipBehavior: Clip.none,
+          children: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                TextField(
-                  controller: _usernameController,
-                  decoration: const InputDecoration(
-                    labelText: "Nombre de usuario",
-                    border: OutlineInputBorder(),
+                Center(
+                  child: SizedBox(
+                    width: 250,
+                    child: _buildPolaroidProfile(config),
                   ),
                 ),
                 const SizedBox(height: 16),
-                TextField(
-                  controller: _bioController,
-                  maxLines: 4,
-                  decoration: const InputDecoration(
-                    labelText: "Sobre mí (Biografía)",
-                    border: OutlineInputBorder(),
-                  ),
-                ),
+                if (_profileStatus == 'blocked')
+                  _buildBlockedState(config)
+                else ...[
+                  _buildLevelCard(config),
+                  const SizedBox(height: 14),
+                  _buildStatsAndActionsBar(config, isMobile: true),
+                  if (_profileStatus == 'public' &&
+                      widget.userId != null &&
+                      widget.userId!.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    MutualFriendsRow(targetUserId: widget.userId!),
+                  ],
+                  const SizedBox(height: 16),
+                  if (_profileStatus == 'private')
+                    _buildPrivateState(config)
+                  else ...[
+                    ..._buildCenterInfoBlocks(config),
+                    if (config.layout.showFavoriteSong) ...[
+                      const SizedBox(height: 16),
+                      _buildFavoriteSongCard(config),
+                    ],
+                    if (config.layout.showFriends) ...[
+                      const SizedBox(height: 16),
+                      _buildFriendsCard(config),
+                    ],
+                    const SizedBox(height: 20),
+                    _buildBlogsSection(config),
+                  ],
+                ],
               ],
             ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text(
-                "Cancelar",
-                style: TextStyle(color: Colors.grey),
+            if (_profileStatus != 'blocked')
+              Positioned.fill(
+                child: _buildStickersOverlay(
+                  config: config,
+                  canvasWidth: constraints.maxWidth,
+                ),
               ),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: _tealAccent),
-              onPressed: () {
-                setState(() {
-                  _displayUsername = _usernameController.text;
-                  _biography = _bioController.text;
-                });
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: const Text("Perfil actualizado correctamente."),
-                    backgroundColor: _tealAccent,
-                  ),
-                );
-              },
-              child: const Text(
-                "Guardar",
-                style: TextStyle(color: Colors.white),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // CAPA INTERACTIVA DE STICKERS LIBRES (ARRASTRABLES SOBRE CUALQUIER TARJETA)
+  // ---------------------------------------------------------------------------
+  Widget _buildStickersOverlay({
+    required ProfileCustomizationConfig config,
+    required double canvasWidth,
+  }) {
+    if (config.stickers.isEmpty) return const SizedBox.shrink();
+
+    return LayoutBuilder(
+      builder: (context, box) {
+        final width = box.maxWidth > 0 ? box.maxWidth : canvasWidth;
+        final height = box.maxHeight > 0 ? box.maxHeight : 900.0;
+
+        return Stack(
+          clipBehavior: Clip.none,
+          children: [
+            for (final sticker in config.stickers)
+              _buildSinglePlacedSticker(
+                sticker: sticker,
+                canvasWidth: width,
+                canvasHeight: height,
+                accent: config.colorTheme.primary,
               ),
-            ),
           ],
         );
       },
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final double screenWidth = MediaQuery.of(context).size.width;
-    final bool isDesktop = screenWidth > 900;
-    final bool insideDesktopShell =
-        widget.insideDesktopShell || DesktopShellScope.maybeOf(context) != null;
-    final bool insideMobileShell = MobileShellScope.maybeOf(context) != null;
+  Widget _buildSinglePlacedSticker({
+    required ProfileStickerPlacement sticker,
+    required double canvasWidth,
+    required double canvasHeight,
+    required Color accent,
+  }) {
+    const baseSize = 86.0;
+    final displaySize = baseSize * sticker.scale;
+    final double left = (sticker.x * canvasWidth - displaySize / 2)
+        .clamp(0.0, math.max(0.0, canvasWidth - displaySize))
+        .toDouble();
+    final double top = (sticker.y * canvasHeight - displaySize / 2)
+        .clamp(0.0, math.max(0.0, canvasHeight - displaySize))
+        .toDouble();
+    final isSelected = _isEditing && _selectedStickerId == sticker.id;
 
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: Column(
+    final artwork = Transform.rotate(
+      angle: sticker.rotation,
+      child: ProfileStickerArtwork(
+        stickerId: sticker.stickerId,
+        size: displaySize,
+      ),
+    );
+
+    if (!_isEditing || _profileStatus != 'own') {
+      return Positioned(
+        left: left,
+        top: top,
+        child: IgnorePointer(child: artwork),
+      );
+    }
+
+    return Positioned(
+      left: left,
+      top: top,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.grab,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => setState(() => _selectedStickerId = sticker.id),
+          onPanStart: (details) {
+            setState(() => _selectedStickerId = sticker.id);
+            final box =
+                _stickerCanvasKey.currentContext?.findRenderObject()
+                    as RenderBox?;
+            if (box != null && box.hasSize) {
+              final pointerInCanvas = box.globalToLocal(details.globalPosition);
+              final centerInCanvas = Offset(
+                sticker.x * box.size.width,
+                sticker.y * box.size.height,
+              );
+              _stickerDragOffset = centerInCanvas - pointerInCanvas;
+            } else {
+              _stickerDragOffset = Offset.zero;
+            }
+          },
+          onPanUpdate: (details) {
+            final box =
+                _stickerCanvasKey.currentContext?.findRenderObject()
+                    as RenderBox?;
+            if (box != null &&
+                box.hasSize &&
+                box.size.width > 0 &&
+                box.size.height > 0) {
+              final pointerInCanvas = box.globalToLocal(details.globalPosition);
+              final nextCenter = pointerInCanvas + _stickerDragOffset;
+              final nextX = (nextCenter.dx / box.size.width).clamp(0.02, 0.94);
+              final nextY = (nextCenter.dy / box.size.height).clamp(0.02, 0.92);
+              _updateStickerPlacement(sticker.copyWith(x: nextX, y: nextY));
+            } else {
+              final nextX =
+                  ((left + details.delta.dx + displaySize / 2) / canvasWidth)
+                      .clamp(0.02, 0.94);
+              final nextY =
+                  ((top + details.delta.dy + displaySize / 2) / canvasHeight)
+                      .clamp(0.02, 0.92);
+              _updateStickerPlacement(sticker.copyWith(x: nextX, y: nextY));
+            }
+          },
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(3),
+                decoration: isSelected
+                    ? BoxDecoration(
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: accent, width: 2),
+                        color: accent.withValues(alpha: 0.08),
+                      )
+                    : null,
+                child: artwork,
+              ),
+              if (isSelected)
+                Positioned(
+                  top: -10,
+                  right: -10,
+                  child: GestureDetector(
+                    onTap: () => _removeStickerById(sticker.id),
+                    child: Container(
+                      width: 24,
+                      height: 24,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFE04848),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.close_rounded,
+                        size: 14,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // TARJETAS DEL PERFIL (COHERENTES CON MOCKUP 1 Y MOCKUP 2)
+  // ---------------------------------------------------------------------------
+  Widget _buildPolaroidProfile(ProfileCustomizationConfig config) {
+    final pinColor = config.activePinOption.color;
+    final borderStyle = config.borderStyle;
+    final isDark = config.appStyle == MeloopAppStyle.neonNight;
+    final textColor = isDark ? Colors.white : const Color(0xFF1A2424);
+    final mutedColor = isDark
+        ? Colors.white.withValues(alpha: 0.72)
+        : const Color(0xFF6B7E7C);
+
+    final polaroidBody = StackedPaperCard(
+      textureAsset: 'assets/textures/photopaper.png',
+      tintColor: config.appStyle == MeloopAppStyle.paper
+          ? null
+          : config.colorTheme.softCardTint,
+      backAngleDegrees: -1.6,
+      padding: const EdgeInsets.fromLTRB(14, 18, 14, 16),
+      child: Column(
         children: [
-          if (!insideDesktopShell && !insideMobileShell)
-            _buildTopBar(isDesktop, context),
-          Expanded(
-            child: isDesktop ? _buildDesktopLayout() : _buildMobileLayout(),
+          _buildFramedAvatar(borderStyle, config.colorTheme.primary),
+          const SizedBox(height: 14),
+          Text(
+            _displayUsername,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            // Regla tipográfica de Meloop: tu propio nombre bajo la polaroid
+            // usa Kalam (fuente manuscrita).
+            style: MeloopTypography.username(
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              color: textColor,
+            ),
+          ),
+          if (_profileStatus != 'blocked' && config.layout.showMood) ...[
+            const SizedBox(height: 4),
+            Text(
+              'Me siento: ${config.mood}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: MeloopTypography.lexend(fontSize: 12.5, color: mutedColor),
+            ),
+          ],
+        ],
+      ),
+    );
+
+    return Stack(
+      alignment: Alignment.topCenter,
+      clipBehavior: Clip.none,
+      children: [
+        Padding(padding: const EdgeInsets.only(top: 14), child: polaroidBody),
+        Positioned(
+          top: -6,
+          child: CustomizablePin(color: pinColor, size: 46),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFramedAvatar(ProfileBorderStyle border, Color accent) {
+    const photo = AspectRatio(
+      aspectRatio: 1.0,
+      child: MeloopImagePlaceholder(
+        iconSize: 48,
+        backgroundColor: Color(0xFFE7EEEC),
+        iconColor: Color(0xFF7B908D),
+        borderColor: null,
+      ),
+    );
+
+    switch (border) {
+      case ProfileBorderStyle.none:
+        return photo;
+      case ProfileBorderStyle.pastelRibbon:
+        return Container(
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            border: Border.all(color: const Color(0xFFFF8EC4), width: 3),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFFFF8EC4).withValues(alpha: 0.35),
+                blurRadius: 10,
+              ),
+            ],
+          ),
+          child: photo,
+        );
+      case ProfileBorderStyle.goldenFrame:
+        return Container(
+          padding: const EdgeInsets.all(4),
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFFFFE082), Color(0xFFD49A1A), Color(0xFFFFE082)],
+            ),
+          ),
+          child: photo,
+        );
+      case ProfileBorderStyle.neonCyan:
+        return Container(
+          padding: const EdgeInsets.all(3.5),
+          decoration: BoxDecoration(
+            border: Border.all(color: const Color(0xFF26F7DF), width: 3),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF26F7DF).withValues(alpha: 0.55),
+                blurRadius: 14,
+              ),
+            ],
+          ),
+          child: photo,
+        );
+      case ProfileBorderStyle.aeroGlass:
+        return Container(
+          padding: const EdgeInsets.all(4.5),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [Color(0xFFE8FAFF), Color(0xFF39B7E8), Color(0xFFB5EEFF)],
+            ),
+            borderRadius: BorderRadius.circular(10),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF39B7E8).withValues(alpha: 0.45),
+                blurRadius: 12,
+              ),
+            ],
+          ),
+          child: ClipRRect(borderRadius: BorderRadius.circular(6), child: photo),
+        );
+      case ProfileBorderStyle.rainbowRgb:
+        return AnimatedBuilder(
+          animation: _rgbBorderController,
+          builder: (context, child) {
+            final angle = _rgbBorderController.value * 2 * math.pi;
+            return Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                gradient: SweepGradient(
+                  transform: GradientRotation(angle),
+                  colors: const [
+                    Color(0xFFFF4D8D),
+                    Color(0xFFFFC93C),
+                    Color(0xFF00E5A3),
+                    Color(0xFF38BDF8),
+                    Color(0xFFA855F7),
+                    Color(0xFFFF4D8D),
+                  ],
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: accent.withValues(alpha: 0.35),
+                    blurRadius: 12,
+                  ),
+                ],
+              ),
+              child: child,
+            );
+          },
+          child: photo,
+        );
+    }
+  }
+
+  Widget _buildLevelCard(ProfileCustomizationConfig config) {
+    final gamification = GamificationDemoController.instance;
+    final accent = config.colorTheme.primary;
+    final progressRatio = (gamification.xp / gamification.experienceNeeded)
+        .clamp(0.0, 1.0);
+    final rankLabel = gamification.level >= 15
+        ? 'Coleccionista'
+        : gamification.level >= 10
+        ? 'Melómano'
+        : gamification.level >= 5
+        ? 'Novato'
+        : 'Aún empezando';
+    final isDark = config.appStyle == MeloopAppStyle.neonNight;
+
+    return StackedPaperCard(
+      textureAsset: 'assets/textures/paper.png',
+      tintColor: config.colorTheme.xpCardTint,
+      backAngleDegrees: 1.35,
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.star_border_rounded, size: 17, color: accent),
+              const SizedBox(width: 5),
+              Flexible(
+                child: Text(
+                  'Nivel ${gamification.level} • $rankLabel',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: MeloopTypography.lexend(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                    color: isDark ? Colors.white : const Color(0xFF1A2929),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Container(
+            height: 14,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: isDark ? 0.16 : 0.9),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: accent.withValues(alpha: 0.45),
+                width: 1.2,
+              ),
+            ),
+            padding: const EdgeInsets.all(2),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: FractionallySizedBox(
+                widthFactor: math.max(0.06, progressRatio),
+                child: Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [config.colorTheme.headerTop, accent],
+                    ),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 7),
+          Text(
+            '${gamification.xp} / ${gamification.experienceNeeded} EXP',
+            style: MeloopTypography.lexend(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.78)
+                  : const Color(0xFF5D7675),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatsAndActionsBar(
+    ProfileCustomizationConfig config, {
+    bool isMobile = false,
+  }) {
+    final accent = config.colorTheme.primary;
+    final level = GamificationDemoController.instance.level;
+    final maxStickers = ProfileCustomizationConfig.maxStickersForLevel(level);
+    final placedStickers = config.stickers.length;
+    final decorationsCount = config.equippedDecorationsCount;
+
+    final pills = <Widget>[
+      _statCapsule(
+        'Amigos: ${_profileFriends.length}',
+        config,
+        onTap: _openFriendsSection,
+      ),
+      _statCapsule(
+        'Stickers: $placedStickers/$maxStickers',
+        config,
+        onTap: _profileStatus == 'own'
+            ? () => _toggleEditMode(tab: ProfileEditorTab.stickers)
+            : null,
+      ),
+      _statCapsule(
+        'Decoraciones: $decorationsCount',
+        config,
+        onTap: _profileStatus == 'own'
+            ? () => _toggleEditMode(tab: ProfileEditorTab.decorations)
+            : null,
+      ),
+    ];
+
+    final actions = <Widget>[
+      if (_profileStatus == 'own') ...[
+        FilledButton(
+          style: FilledButton.styleFrom(
+            backgroundColor: accent,
+            foregroundColor: Colors.white,
+            elevation: 2,
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(22),
+            ),
+          ),
+          onPressed: () => _toggleEditMode(tab: ProfileEditorTab.style),
+          child: Text(
+            'Editar perfil',
+            style: MeloopTypography.lexend(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+            ),
+          ),
+        ),
+        OutlinedButton.icon(
+          style: OutlinedButton.styleFrom(
+            backgroundColor: Colors.white.withValues(alpha: 0.94),
+            foregroundColor: accent,
+            side: BorderSide(color: accent.withValues(alpha: 0.6)),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(22),
+            ),
+          ),
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute<void>(
+              builder: (_) => SavedPostsScreen(apiClient: widget.apiClient),
+            ),
+          ),
+          icon: Icon(Icons.bookmark_border_rounded, color: accent, size: 16),
+          label: Text(
+            'Guardados',
+            style: MeloopTypography.lexend(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: accent,
+            ),
+          ),
+        ),
+      ] else
+        FilledButton.icon(
+          style: FilledButton.styleFrom(
+            backgroundColor: accent,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(22),
+            ),
+          ),
+          onPressed: () {
+            showMeloopToastPill(
+              context,
+              message: 'Solicitud enviada a $_displayUsername',
+              icon: Icons.person_add_alt_1_rounded,
+            );
+          },
+          icon: const Icon(Icons.person_add_alt_1_rounded, size: 16),
+          label: Text(
+            'Añadir amigo',
+            style: MeloopTypography.lexend(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+            ),
+          ),
+        ),
+    ];
+
+    return Wrap(
+      spacing: 10,
+      runSpacing: 8,
+      alignment: isMobile ? WrapAlignment.center : WrapAlignment.start,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [...pills, ...actions],
+    );
+  }
+
+  Widget _statCapsule(
+    String text,
+    ProfileCustomizationConfig config, {
+    VoidCallback? onTap,
+  }) {
+    final isDark = config.appStyle == MeloopAppStyle.neonNight;
+    return Material(
+      color: isDark ? const Color(0xFF1D2635) : Colors.white,
+      borderRadius: BorderRadius.circular(22),
+      elevation: 2,
+      shadowColor: Colors.black.withValues(alpha: 0.14),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(22),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(
+              color: config.colorTheme.primary.withValues(
+                alpha: isDark ? 0.5 : 0.22,
+              ),
+            ),
+          ),
+          child: Text(
+            text,
+            style: MeloopTypography.lexend(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w700,
+              color: isDark ? Colors.white : const Color(0xFF1A2828),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAboutMeCard(ProfileCustomizationConfig config) {
+    final isDark = config.appStyle == MeloopAppStyle.neonNight;
+    return StackedPaperCard(
+      textureAsset: 'assets/textures/paper.png',
+      tintColor: config.appStyle == MeloopAppStyle.paper
+          ? null
+          : config.colorTheme.softCardTint,
+      backAngleDegrees: -0.95,
+      padding: const EdgeInsets.fromLTRB(22, 18, 22, 20),
+      child: SizedBox(
+        width: double.infinity,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Transform.rotate(
+              angle: -0.02,
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'Sobre mí:',
+                style: MeloopTypography.momoDisplay(
+                  fontSize: 22,
+                  color: isDark ? Colors.white : const Color(0xFF182424),
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              _biography.isEmpty
+                  ? 'Aún no has escrito tu biografía. Presiona "Editar perfil" para contar qué música te apasiona.'
+                  : _biography,
+              style: MeloopTypography.lexend(
+                fontSize: 13.5,
+                height: 1.55,
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.88)
+                    : const Color(0xFF283737),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFavoriteArtistsCard(ProfileCustomizationConfig config) {
+    final accent = config.colorTheme.primary;
+    final isDark = config.appStyle == MeloopAppStyle.neonNight;
+
+    return StackedPaperCard(
+      textureAsset: 'assets/textures/paper.png',
+      tintColor: config.appStyle == MeloopAppStyle.paper
+          ? null
+          : config.colorTheme.softCardTint,
+      backAngleDegrees: 1.05,
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
+      child: SizedBox(
+        width: double.infinity,
+        child: Column(
+          children: [
+          Text(
+            'Artistas que me gustan',
+            style: MeloopTypography.lexend(
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+              color: isDark ? Colors.white : const Color(0xFF1A2626),
+            ),
+          ),
+          const SizedBox(height: 12),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final twoCols = constraints.maxWidth >= 430;
+              if (!twoCols) {
+                return Column(
+                  children: [
+                    for (final artist in _favoriteArtists.take(4))
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: _buildArtistMiniTile(artist, config),
+                      ),
+                  ],
+                );
+              }
+              final leftCol = <Widget>[];
+              final rightCol = <Widget>[];
+              for (var i = 0; i < _favoriteArtists.length; i++) {
+                final tile = Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: _buildArtistMiniTile(_favoriteArtists[i], config),
+                );
+                if (i.isEven) {
+                  leftCol.add(tile);
+                } else {
+                  rightCol.add(tile);
+                }
+              }
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: Column(children: leftCol)),
+                  const SizedBox(width: 10),
+                  Expanded(child: Column(children: rightCol)),
+                ],
+              );
+            },
+          ),
+          const SizedBox(height: 6),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: accent,
+              foregroundColor: Colors.white,
+              elevation: 0,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+              minimumSize: const Size(0, 32),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(18),
+              ),
+            ),
+            onPressed: () => _openArtistsSection(),
+            child: Text(
+              'Ver más',
+              style: MeloopTypography.lexend(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Colors.white,
+              ),
+            ),
+          ),
+        ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildArtistMiniTile(
+    ({String name, String genres, String stats}) artist,
+    ProfileCustomizationConfig config,
+  ) {
+    final isDark = config.appStyle == MeloopAppStyle.neonNight;
+    return Material(
+      color: isDark
+          ? Colors.white.withValues(alpha: 0.06)
+          : Colors.white.withValues(alpha: 0.92),
+      child: InkWell(
+        onTap: () => _openArtistsSection(query: artist.name),
+        child: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            border: Border.all(
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.12)
+                  : const Color(0xFFE2ECEA),
+            ),
+          ),
+          child: Row(
+            children: [
+              const MeloopImagePlaceholder(
+                width: 40,
+                height: 40,
+                iconSize: 18,
+                borderColor: null,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      artist.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: MeloopTypography.lexend(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                        color: isDark ? Colors.white : const Color(0xFF1A2525),
+                      ),
+                    ),
+                    Text(
+                      artist.genres,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: MeloopTypography.lexend(
+                        fontSize: 10,
+                        color: isDark
+                            ? Colors.white.withValues(alpha: 0.65)
+                            : const Color(0xFF6B807D),
+                      ),
+                    ),
+                    Text(
+                      artist.stats,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: MeloopTypography.lexend(
+                        fontSize: 9.5,
+                        color: isDark
+                            ? Colors.white.withValues(alpha: 0.5)
+                            : const Color(0xFF889A97),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFavoriteSongCard(ProfileCustomizationConfig config) {
+    final accent = config.colorTheme.primary;
+    final isDark = config.appStyle == MeloopAppStyle.neonNight;
+
+    return StackedPaperCard(
+      textureAsset: 'assets/textures/paper.png',
+      tintColor: config.colorTheme.songCardTint,
+      backAngleDegrees: 1.4,
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+      child: Column(
+        children: [
+          Text(
+            'Canción favorita',
+            style: MeloopTypography.lexend(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: isDark ? Colors.white : const Color(0xFF182828),
+            ),
+          ),
+          const SizedBox(height: 10),
+          InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: () => setState(() => _songPlaying = !_songPlaying),
+            child: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [config.colorTheme.headerTop, accent],
+                ),
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: accent.withValues(alpha: 0.25),
+                    blurRadius: 8,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.22),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(
+                      _songPlaying
+                          ? Icons.pause_rounded
+                          : Icons.play_arrow_rounded,
+                      color: Colors.white,
+                      size: 24,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          config.favoriteSongTitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: MeloopTypography.musicPlayer(
+                            fontSize: 15,
+                            color: Colors.white,
+                            height: 1.1,
+                          ),
+                        ),
+                        Text(
+                          '${config.favoriteSongAlbum} · ${config.favoriteSongArtist}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: MeloopTypography.musicPlayer(
+                            fontSize: 12.5,
+                            color: Colors.white.withValues(alpha: 0.88),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Icon(
+                    _songPlaying
+                        ? Icons.graphic_eq_rounded
+                        : Icons.music_note_rounded,
+                    color: Colors.white,
+                    size: 18,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFriendsCard(ProfileCustomizationConfig config) {
+    final accent = config.colorTheme.primary;
+    final isDark = config.appStyle == MeloopAppStyle.neonNight;
+
+    return StackedPaperCard(
+      textureAsset: 'assets/textures/paper.png',
+      tintColor: config.colorTheme.softCardTint,
+      backAngleDegrees: -1.2,
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      child: Column(
+        children: [
+          Text(
+            'Amigos:',
+            style: MeloopTypography.lexend(
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+              color: isDark ? Colors.white : const Color(0xFF1A2626),
+            ),
+          ),
+          const SizedBox(height: 10),
+          for (final friend in _profileFriends)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Material(
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.06)
+                    : Colors.white,
+                child: InkWell(
+                  onTap: _openFriendsSection,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      border: Border.all(
+                        color: isDark
+                            ? Colors.white.withValues(alpha: 0.12)
+                            : const Color(0xFFE0ECE9),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        const MeloopImagePlaceholder(
+                          width: 34,
+                          height: 34,
+                          iconSize: 16,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            friend.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            // Regla tipográfica: usuarios en listas usan Lexend Bold
+                            style: MeloopTypography.lexend(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: isDark
+                                  ? Colors.white
+                                  : const Color(0xFF1A2525),
+                            ),
+                          ),
+                        ),
+                        Container(
+                          width: 9,
+                          height: 9,
+                          decoration: BoxDecoration(
+                            color: friend.online
+                                ? const Color(0xFF22C55E)
+                                : const Color(0xFF9CA3AF),
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          const SizedBox(height: 4),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: accent,
+              foregroundColor: Colors.white,
+              elevation: 0,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+              minimumSize: const Size(0, 32),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(18),
+              ),
+            ),
+            onPressed: _openFriendsSection,
+            child: Text(
+              'Ver más',
+              style: MeloopTypography.lexend(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Colors.white,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // SECCIÓN INFERIOR: TUS BLOGS (CONSERVA PERSISTENCIA REAL DEL BACKEND)
+  // ---------------------------------------------------------------------------
+  Widget _buildBlogsSection(ProfileCustomizationConfig config) {
+    final accent = config.colorTheme.primary;
+    final isDark = config.appStyle == MeloopAppStyle.neonNight;
+    final displayedPosts = List<Map<String, dynamic>>.from(_posts);
+    if (_blogsFilter == _ProfileBlogsFilter.trending) {
+      displayedPosts.sort(
+        (a, b) => ((b['likes'] as num?) ?? 0).compareTo(
+          (a['likes'] as num?) ?? 0,
+        ),
+      );
+    }
+
+    return TapeCornerOverlay(
+      leftWidth: 138,
+      rightWidth: 122,
+      child: StackedPaperCard(
+        textureAsset: 'assets/textures/paper.png',
+        backAngleDegrees: 0.95,
+        padding: const EdgeInsets.fromLTRB(26, 22, 26, 24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Wrap(
+              spacing: 12,
+              runSpacing: 10,
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Transform.rotate(
+                  angle: -0.025,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    _profileStatus == 'own'
+                        ? 'Tus Blogs:'
+                        : 'Blogs de $_displayUsername:',
+                    style: MeloopTypography.momoDisplay(
+                      fontSize: 24,
+                      color: isDark ? Colors.white : const Color(0xFF182424),
+                    ),
+                  ),
+                ),
+                MeloopPillTabs<_ProfileBlogsFilter>(
+                  items: const [
+                    MeloopPillItem(
+                      value: _ProfileBlogsFilter.recent,
+                      label: 'Recientes',
+                    ),
+                    MeloopPillItem(
+                      value: _ProfileBlogsFilter.trending,
+                      label: 'Tendencia',
+                    ),
+                  ],
+                  selectedValue: _blogsFilter,
+                  onSelected: (next) => setState(() => _blogsFilter = next),
+                  height: 38,
+                  padding: 3.5,
+                  fontSize: 12.5,
+                  fixedButtonWidth: 104,
+                  pillColor: config.colorTheme.pillTrack,
+                ),
+                if (_profileStatus == 'own')
+                  FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: accent,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 10,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                    ),
+                    onPressed: _openCreateBlogDialog,
+                    icon: const Icon(Icons.edit_note_rounded, size: 18),
+                    label: Text(
+                      'Escribir blog',
+                      style: MeloopTypography.lexend(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            const Divider(height: 1, color: Color(0xFFE0E8E6)),
+            const SizedBox(height: 18),
+            if (_isInitialLoading)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 42),
+                child: Center(child: CircularProgressIndicator(color: accent)),
+              )
+            else if (_postsError != null)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 32),
+                child: Column(
+                  children: [
+                    Text(
+                      _postsError!,
+                      textAlign: TextAlign.center,
+                      style: MeloopTypography.lexend(
+                        fontSize: 13,
+                        color: isDark
+                            ? Colors.white70
+                            : const Color(0xFF6B7E7C),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    OutlinedButton(
+                      onPressed: _fetchInitialPosts,
+                      child: const Text('Reintentar'),
+                    ),
+                  ],
+                ),
+              )
+            else if (displayedPosts.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 36),
+                child: Column(
+                  children: [
+                    Icon(
+                      Icons.post_add_rounded,
+                      size: 42,
+                      color: isDark ? Colors.white38 : Colors.grey[400],
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      'Aún no hay publicaciones',
+                      style: MeloopTypography.lexend(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: isDark
+                            ? Colors.white70
+                            : const Color(0xFF6B7E7C),
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else ...[
+              for (var i = 0; i < displayedPosts.length; i++)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: PostCard(
+                    postData: displayedPosts[i],
+                    tealAccent: accent,
+                    textColor: isDark ? Colors.white : const Color(0xFF1A2525),
+                    apiClient: _apiClient,
+                    onDelete: () {
+                      final target = displayedPosts[i];
+                      setState(() => _posts.remove(target));
+                    },
+                  ),
+                ),
+              if (_isLoadingMore)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  child: Center(child: CircularProgressIndicator(color: accent)),
+                )
+              else
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Center(
+                    child: Text(
+                      'No has publicado más blogs',
+                      style: MeloopTypography.lexend(
+                        fontSize: 12.5,
+                        color: isDark
+                            ? Colors.white54
+                            : const Color(0xFF7D908E),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // ESTADOS ESPECIALES (PRIVADO / BLOQUEADO)
+  // ---------------------------------------------------------------------------
+  Widget _buildBlockedState(ProfileCustomizationConfig config) {
+    return StackedPaperCard(
+      textureAsset: 'assets/textures/paper.png',
+      padding: const EdgeInsets.all(42),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.no_accounts_rounded, size: 58, color: Colors.grey[400]),
+          const SizedBox(height: 16),
+          Text(
+            'Esta cuenta no está disponible',
+            style: MeloopTypography.lexend(
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'El perfil que intentas buscar no existe o ha restringido tu acceso.',
+            textAlign: TextAlign.center,
+            style: MeloopTypography.lexend(
+              fontSize: 13,
+              color: const Color(0xFF6B7E7C),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPrivateState(ProfileCustomizationConfig config) {
+    return StackedPaperCard(
+      textureAsset: 'assets/textures/paper.png',
+      padding: const EdgeInsets.all(42),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.lock_outline_rounded, size: 58, color: Colors.grey[400]),
+          const SizedBox(height: 16),
+          Text(
+            'Este perfil es privado',
+            style: MeloopTypography.lexend(
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Añade a este usuario como amigo para ver sus publicaciones, artistas favoritos y más detalles.',
+            textAlign: TextAlign.center,
+            style: MeloopTypography.lexend(
+              fontSize: 13,
+              color: const Color(0xFF6B7E7C),
+            ),
           ),
         ],
       ),
@@ -480,910 +2191,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
       );
     }
 
-    return Container(
-      height: 55,
-      color: _tealAccent,
-      padding: const EdgeInsets.symmetric(horizontal: 24),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Image.asset(
-            'assets/imagenes/meloop.png',
-            height: 24,
-            fit: BoxFit.contain,
-          ),
-          if (isDesktop) ...[
-            Row(
-              children: [
-                _navLink(
-                  'Inicio',
-                  isActive: false,
-                  onTap: () => Navigator.pop(context),
-                ),
-                _navLink(
-                  'Amigos',
-                  isActive: false,
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const FriendsScreen(),
-                      ),
-                    );
-                  },
-                ),
-                _navLink('Artistas y canciones', isActive: false, onTap: () {}),
-              ],
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Row(
-                children: const [
-                  Icon(Icons.play_circle_fill, color: Colors.white, size: 18),
-                  SizedBox(width: 8),
-                  Text(
-                    "Playing... DJ Gouz",
-                    style: TextStyle(color: Colors.white, fontSize: 12),
-                  ),
-                  SizedBox(width: 8),
-                  Icon(Icons.graphic_eq, color: Colors.white, size: 16),
-                ],
-              ),
-            ),
-          ],
-          Row(
-            children: const [
-              Icon(Icons.notifications, color: Colors.white, size: 20),
-              SizedBox(width: 16),
-              CircleAvatar(
-                radius: 14,
-                backgroundColor: Colors.white,
-                child: Icon(Icons.person, color: Color(0xFF1ABC9C), size: 18),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _navLink(
-    String text, {
-    required bool isActive,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 4.0),
-        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 6.0),
-        decoration: BoxDecoration(
-          color: isActive ? Colors.white : Colors.transparent,
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Text(
-          text,
-          style: TextStyle(
-            color: isActive ? _tealAccent : Colors.white,
-            fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-            fontSize: 12,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDesktopLayout() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 32.0, vertical: 24.0),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          SizedBox(
-            width: 220,
-            child: SingleChildScrollView(
-              child: Column(
-                children: [
-                  _buildPolaroidProfile(),
-                  const SizedBox(height: 16),
-                  if (_profileStatus != 'blocked') _buildLevelCard(),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(width: 24),
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 800),
-            child: _profileStatus == 'blocked'
-                ? _buildBlockedState()
-                : SingleChildScrollView(
-                    controller: _scrollController,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildStatsAndActionsRow(),
-                        if (_profileStatus == 'public' &&
-                            widget.userId != null &&
-                            widget.userId!.isNotEmpty)
-                          MutualFriendsRow(targetUserId: widget.userId!),
-                        const SizedBox(height: 16),
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(flex: 3, child: _buildAboutMe()),
-                            const SizedBox(width: 16),
-                            if (_profileStatus != 'private')
-                              Expanded(
-                                flex: 2,
-                                child: Column(
-                                  children: [
-                                    _buildFavoriteArtists(),
-                                    const SizedBox(height: 16),
-                                    _buildFavoriteSong(),
-                                  ],
-                                ),
-                              ),
-                          ],
-                        ),
-                        const SizedBox(height: 24),
-                        _profileStatus == 'private'
-                            ? _buildPrivateState()
-                            : _buildProfilePaperTabs(),
-                      ],
-                    ),
-                  ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMobileLayout() {
-    return SingleChildScrollView(
-      controller: _scrollController,
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        children: [
-          _buildPolaroidProfile(),
-          const SizedBox(height: 16),
-          if (_profileStatus == 'blocked')
-            _buildBlockedState()
-          else ...[
-            _buildLevelCard(),
-            const SizedBox(height: 16),
-            _buildStatsAndActionsRow(isMobile: true),
-            if (_profileStatus == 'public' &&
-                widget.userId != null &&
-                widget.userId!.isNotEmpty)
-              MutualFriendsRow(targetUserId: widget.userId!),
-            const SizedBox(height: 16),
-            _buildAboutMe(),
-            const SizedBox(height: 16),
-            if (_profileStatus == 'private')
-              _buildPrivateState()
-            else ...[
-              _buildFavoriteSong(),
-              const SizedBox(height: 16),
-              _buildFavoriteArtists(),
-              const SizedBox(height: 24),
-              _buildProfilePaperTabs(),
-            ],
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPolaroidProfile() {
-    return Stack(
-      alignment: Alignment.topCenter,
-      clipBehavior: Clip.none,
-      children: [
-        Transform.rotate(
-          angle: -0.02,
-          child: Container(
-            margin: const EdgeInsets.only(top: 10),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(4),
-              border: _activeFrameColor != null
-                  ? Border.all(color: _activeFrameColor!, width: 3)
-                  : null,
-              boxShadow: [
-                BoxShadow(
-                  color: _activeFrameColor != null
-                      ? _activeFrameColor!.withValues(alpha: 0.5)
-                      : Colors.black.withValues(alpha: 0.1),
-                  blurRadius: _activeFrameColor != null ? 15 : 8,
-                ),
-              ],
-            ),
-            child: Column(
-              children: [
-                Container(
-                  height: 140,
-                  width: double.infinity,
-                  color: Colors.grey[200],
-                  child: const Icon(Icons.pets, size: 50, color: Colors.grey),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  _displayUsername,
-                  style: const TextStyle(
-                    fontFamily: 'Comic Sans MS',
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                if (_profileStatus != 'blocked')
-                  const Text(
-                    "Me siento Feliz",
-                    style: TextStyle(fontSize: 11, color: Colors.black54),
-                  ),
-              ],
-            ),
-          ),
-        ),
-        Positioned(
-          top: 0,
-          child: Transform.rotate(
-            angle: -0.08,
-            child: Container(
-              width: 50,
-              height: 18,
-              color: Colors.white.withValues(alpha: 0.7),
-            ),
-          ),
-        ),
-        Positioned(
-          top: -12,
-          child: CustomizablePin(
-            color: _activePinColor == Colors.red[700] ? null : _activePinColor,
-            size: 40,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildLevelCard() {
-    final progress = GamificationDemoController.instance;
-    return LevelProgress(
-      level: progress.level,
-      xp: progress.xp,
-      xpNeeded: progress.experienceNeeded,
-      compact: true,
-      demoController: progress,
-    );
-  }
-
-  Widget _buildStatsAndActionsRow({bool isMobile = false}) {
-    final int equippedCount = _inventory
-        .where((i) => i['isEquipped'] as bool)
-        .length;
-    final statsRow = Wrap(
-      spacing: 10,
-      runSpacing: 8,
-      alignment: isMobile ? WrapAlignment.center : WrapAlignment.start,
-      children: [
-        _pillStat("Amigos 5"),
-        _pillStat("Artistas 13"),
-        if (_profileStatus == 'own') _pillStat("Decoraciones $equippedCount"),
-      ],
-    );
-
-    if (isMobile) {
-      return Column(
-        children: [statsRow, const SizedBox(height: 12), _buildActionButtons()],
-      );
-    }
-
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Expanded(child: statsRow),
-        _buildActionButtons(),
-      ],
-    );
-  }
-
-  Widget _pillStat(String text) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 4),
-        ],
-      ),
-      child: Text(
-        text,
-        style: const TextStyle(
-          color: Colors.black87,
-          fontSize: 12,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildActionButtons() {
-    if (_profileStatus == 'own') {
-      return Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          OutlinedButton(
-            style: OutlinedButton.styleFrom(
-              side: BorderSide(color: _tealAccent),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-              ),
-              backgroundColor: Colors.white,
-            ),
-            onPressed: _showEditProfileDialog,
-            child: Text(
-              "Editar perfil",
-              style: TextStyle(
-                color: _tealAccent,
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          OutlinedButton.icon(
-            style: OutlinedButton.styleFrom(
-              side: BorderSide(color: _tealAccent),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-              ),
-              backgroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-            ),
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute<void>(
-                builder: (_) => SavedPostsScreen(apiClient: widget.apiClient),
-              ),
-            ),
-            icon: Icon(
-              Icons.bookmark_border_rounded,
-              color: _tealAccent,
-              size: 15,
-            ),
-            label: Text(
-              'Guardados',
-              style: TextStyle(
-                color: _tealAccent,
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-        ],
-      );
-    } else {
-      return Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          OutlinedButton.icon(
-            style: OutlinedButton.styleFrom(
-              side: BorderSide(color: _tealAccent),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-              ),
-              backgroundColor: Colors.white,
-            ),
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text("Solicitud enviada a $_displayUsername"),
-                  backgroundColor: _tealAccent,
-                ),
-              );
-            },
-            icon: Icon(Icons.person_add, color: _tealAccent, size: 16),
-            label: Text(
-              "Añadir amigo",
-              style: TextStyle(
-                color: _tealAccent,
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-        ],
-      );
-    }
-  }
-
-  Widget _buildAboutMe() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFDFDFD),
-        borderRadius: BorderRadius.circular(8),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 10),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            "Sobre mi:",
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            _biography,
-            style: const TextStyle(
-              fontSize: 13,
-              color: Colors.black87,
-              height: 1.5,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildFavoriteArtists() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 10,
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            "Artistas que me gustan:",
-            style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-          ),
-          const Divider(),
-          _artistListTile("Cris MJ"),
-          _artistListTile("Arcangel"),
-          _artistListTile("Tito el Bambino"),
-          _artistListTile("Kidd Voodoo"),
-          Center(
-            child: TextButton(
-              onPressed: () {},
-              child: Text(
-                "Ver mas",
-                style: TextStyle(color: _tealAccent, fontSize: 11),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _artistListTile(String name) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8.0),
-      child: Row(
-        children: [
-          const CircleAvatar(
-            radius: 12,
-            backgroundColor: Colors.black12,
-            child: Icon(Icons.person, size: 14, color: Colors.black54),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            name,
-            style: const TextStyle(fontSize: 11, color: Colors.black87),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildFavoriteSong() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFDFDFD),
-        borderRadius: BorderRadius.circular(8),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 10,
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          const Text(
-            "Cancion Favorita:",
-            style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: _tealAccent,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 36,
-                  height: 36,
-                  color: Colors.black87,
-                  child: const Icon(
-                    Icons.play_arrow,
-                    color: Colors.white,
-                    size: 20,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: const [
-                      Text(
-                        "Flashing Lights",
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 11,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      Text(
-                        "Kanye West",
-                        style: TextStyle(color: Colors.white70, fontSize: 9),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // --- SECCIÓN DE ESTADOS ESPECIALES (RN-09, RF-55) ---
-  Widget _buildBlockedState() {
-    return Container(
-      padding: const EdgeInsets.all(48.0),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.no_accounts, size: 64, color: Colors.grey[400]),
-          const SizedBox(height: 24),
-          const Text(
-            "Esta cuenta no está disponible",
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: Colors.black87,
-            ),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            "El perfil que intentas buscar no existe o ha restringido tu acceso.",
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 13, color: Colors.grey),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPrivateState() {
-    return Container(
-      padding: const EdgeInsets.all(48.0),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.lock, size: 64, color: Colors.grey[400]),
-          const SizedBox(height: 24),
-          const Text(
-            "Este perfil es privado",
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: Colors.black87,
-            ),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            "Añade a este usuario como amigo para ver sus publicaciones, artistas favoritos y más detalles.",
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 13, color: Colors.grey),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // --- SECCIÓN DE TABS (BLOGS E INVENTARIO) ---
-  Widget _buildProfilePaperTabs() {
-    final bool isOwn = _profileStatus == 'own';
-
-    return Container(
-      height: 700,
-      decoration: BoxDecoration(
-        color: _paperColor,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.15),
-            blurRadius: 20,
-          ),
-        ],
-      ),
-      child: DefaultTabController(
-        length: isOwn ? 2 : 1,
-        initialIndex: isOwn && widget.openInventory ? 1 : 0,
-        child: Column(
-          children: [
-            TabBar(
-              indicatorColor: _tealAccent,
-              indicatorWeight: 3,
-              labelColor: _tealAccent,
-              unselectedLabelColor: Colors.grey,
-              tabs: [
-                const Tab(text: "Tus Blogs"),
-                if (isOwn) const Tab(text: "Inventario"),
-              ],
-            ),
-            const Divider(height: 1, thickness: 1, color: Colors.black12),
-            Expanded(
-              child: TabBarView(
-                children: [_buildBlogsTab(), if (isOwn) _buildInventoryTab()],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildBlogsTab() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 32.0, vertical: 24.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
-                children: [
-                  _filterChip("recientes", isActive: true),
-                  _filterChip("tendencias", isActive: false),
-                ],
-              ),
-              if (_profileStatus == 'own')
-                OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(
-                    side: BorderSide(color: _tealAccent),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                  ),
-                  onPressed: () {},
-                  icon: Icon(Icons.edit, color: _tealAccent, size: 14),
-                  label: Text(
-                    "Tus reacciones",
-                    style: TextStyle(
-                      color: _tealAccent,
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 24),
-          Expanded(
-            child: _isInitialLoading
-                ? Center(child: CircularProgressIndicator(color: _tealAccent))
-                : _postsError != null
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          _postsError!,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: _paperTextColor.withValues(alpha: 0.7),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        OutlinedButton(
-                          onPressed: _fetchInitialPosts,
-                          child: const Text('Reintentar'),
-                        ),
-                      ],
-                    ),
-                  )
-                : _posts.isEmpty
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.post_add, size: 48, color: Colors.grey[400]),
-                        const SizedBox(height: 12),
-                        Text(
-                          "Aún no tiene publicaciones",
-                          style: TextStyle(
-                            color: _paperTextColor.withValues(alpha: 0.6),
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                  )
-                : ListView.builder(
-                    controller: _blogsScrollController,
-                    itemCount: _posts.length + (_isLoadingMore ? 1 : 0),
-                    itemBuilder: (context, index) {
-                      if (index == _posts.length) {
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 16.0),
-                          child: Center(
-                            child: CircularProgressIndicator(
-                              color: _tealAccent,
-                            ),
-                          ),
-                        );
-                      }
-                      // Renderiza usando la Tarjeta Reutilizable PostCard
-                      return PostCard(
-                        postData: _posts[index],
-                        tealAccent: _tealAccent,
-                        textColor: _paperTextColor,
-                        apiClient: _apiClient,
-                        onDelete: () {
-                          setState(() {
-                            _posts.removeAt(index);
-                          });
-                        },
-                      );
-                    },
-                  ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildInventoryTab() {
-    final double screenWidth = MediaQuery.of(context).size.width;
-    final int crossAxisCount = screenWidth > 600 ? 3 : 2;
-
-    return GridView.builder(
-      padding: const EdgeInsets.all(32.0),
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: crossAxisCount,
-        crossAxisSpacing: 16,
-        mainAxisSpacing: 16,
-        childAspectRatio: 0.85,
-      ),
-      itemCount: _inventory.length,
-      itemBuilder: (context, index) {
-        final item = _inventory[index];
-        final bool isEquipped = item['isEquipped'] as bool;
-
-        return Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: isEquipped
-                ? Border.all(color: _tealAccent, width: 2)
-                : Border.all(color: Colors.grey.withValues(alpha: 0.2)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.05),
-                blurRadius: 8,
-              ),
-            ],
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                item['icon'] as IconData,
-                size: 40,
-                color: item['color'] as Color,
-              ),
-              const SizedBox(height: 12),
-              Text(
-                item['name'] as String,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 13,
-                  color: Colors.black87,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                item['type'] == 'frame'
-                    ? "Marco"
-                    : item['type'] == 'pin'
-                    ? "Pin"
-                    : "Fondo",
-                style: const TextStyle(fontSize: 10, color: Colors.grey),
-              ),
-              const SizedBox(height: 16),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: isEquipped ? Colors.white : _tealAccent,
-                  foregroundColor: isEquipped ? Colors.redAccent : Colors.white,
-                  side: isEquipped
-                      ? const BorderSide(color: Colors.redAccent)
-                      : null,
-                  elevation: 0,
-                ),
-                onPressed: () => _toggleEquipItem(index),
-                child: Text(
-                  isEquipped ? "Desequipar" : "Equipar",
-                  style: const TextStyle(fontSize: 11),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _filterChip(String label, {required bool isActive}) {
-    return Container(
-      margin: const EdgeInsets.only(right: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      decoration: BoxDecoration(
-        color: isActive ? Colors.white : Colors.transparent,
-        border: isActive
-            ? Border.all(color: _tealAccent, width: 1)
-            : Border.all(color: Colors.grey),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: isActive ? _tealAccent : Colors.grey,
-          fontSize: 10,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
+    return MobileAppHeader(
+      onSearchTap: () => openGlobalSearch(context),
+      apiClient: widget.apiClient,
     );
   }
 }

@@ -8,6 +8,7 @@ import '../../features/search/presentation/global_search_route.dart';
 import '../../screens/feed_screen.dart';
 import '../../screens/friends_screen.dart';
 import '../../services/api_client.dart';
+import '../../theme/meloop_theme_controller.dart';
 import '../../widgets/mobile_app_header.dart';
 import '../../widgets/paper/stacked_paper_card.dart';
 import 'artists_and_songs_screen.dart';
@@ -58,7 +59,6 @@ class ResponsiveNavigationShell extends StatefulWidget {
 
 class _ResponsiveNavigationShellState extends State<ResponsiveNavigationShell>
     implements MobileShellController {
-  static const _accentColor = Color(0xFF00AF92);
   int _selectedIndex = 0;
   bool _texturesPreloaded = false;
   late final ApiClient _apiClient = widget.apiClient ?? ApiClient();
@@ -140,85 +140,104 @@ class _ResponsiveNavigationShellState extends State<ResponsiveNavigationShell>
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
     final canModerate = widget.userRole != ModerationRole.user;
+    final themeCtrl = MeloopThemeController.instance;
 
-    return MobileShellScope(
-      controller: this,
-      child: AnnotatedRegion<SystemUiOverlayStyle>(
-        value: const SystemUiOverlayStyle(
-          statusBarColor: Color(0xFF248686),
-          statusBarIconBrightness: Brightness.light,
-        ),
-        child: Scaffold(
-          backgroundColor: Colors.transparent,
-          extendBody: true,
-          body: SafeArea(
-            bottom: false,
-            child: Column(
-              children: [
-                Builder(
-                  builder: (headerContext) => MobileAppHeader(
-                    onSearchTap: () => openGlobalSearch(headerContext),
-                    onModerationTap: canModerate ? _openModerationQueue : null,
-                    apiClient: _apiClient,
-                  ),
-                ),
-                Expanded(
-                  child: SlidingTabStack(
-                    currentIndex: _selectedIndex,
-                    children: _screens,
-                  ),
-                ),
-              ],
+    return AnimatedBuilder(
+      animation: themeCtrl,
+      builder: (context, _) {
+        final accent = themeCtrl.primaryColor;
+        final highlight = themeCtrl.colorTheme.headerTop;
+        return MobileShellScope(
+          controller: this,
+          child: AnnotatedRegion<SystemUiOverlayStyle>(
+            value: SystemUiOverlayStyle(
+              statusBarColor: themeCtrl.colorTheme.bgStart,
+              statusBarIconBrightness: Brightness.light,
             ),
-          ),
-          bottomNavigationBar: Container(
-            height: bottomInset + 132,
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [Color(0x00000000), Color(0x88000000)],
-              ),
-            ),
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Positioned(
-                  left: 14,
-                  right: 14,
-                  bottom: bottomInset + 10,
-                  height: 52,
-                  child: _buildNavigationPill(),
-                ),
-                Positioned(
-                  right: 24,
-                  bottom: bottomInset + 72,
-                  child: Material(
-                    color: const Color(0xFF50DDC7),
-                    shape: const CircleBorder(),
-                    elevation: 8,
-                    shadowColor: Colors.black.withValues(alpha: 0.3),
-                    child: IconButton(
-                      tooltip: 'Crear blog',
-                      onPressed: _createBlog,
-                      icon: const Icon(Icons.edit_note, color: Colors.white),
-                      iconSize: 26,
-                      constraints: const BoxConstraints.tightFor(
-                        width: 56,
-                        height: 56,
+            child: Scaffold(
+              backgroundColor: Colors.transparent,
+              extendBody: true,
+              body: SafeArea(
+                bottom: false,
+                child: Column(
+                  children: [
+                    Builder(
+                      builder: (headerContext) => MobileAppHeader(
+                        onSearchTap: () => openGlobalSearch(headerContext),
+                        onModerationTap: canModerate
+                            ? _openModerationQueue
+                            : null,
+                        apiClient: _apiClient,
                       ),
                     ),
+                    Expanded(
+                      child: SlidingTabStack(
+                        currentIndex: _selectedIndex,
+                        children: _screens,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              bottomNavigationBar: Container(
+                height: bottomInset + 132,
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Color(0x00000000), Color(0x88000000)],
                   ),
                 ),
-              ],
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Positioned(
+                      left: 14,
+                      right: 14,
+                      bottom: bottomInset + 10,
+                      height: 52,
+                      child: _buildNavigationPill(
+                        accent: accent,
+                        highlight: highlight,
+                      ),
+                    ),
+                    Positioned(
+                      right: 24,
+                      bottom: bottomInset + 72,
+                      child: Material(
+                        color: highlight,
+                        shape: const CircleBorder(),
+                        elevation: 8,
+                        shadowColor: Colors.black.withValues(alpha: 0.3),
+                        child: IconButton(
+                          tooltip: 'Crear blog',
+                          onPressed: _createBlog,
+                          icon: const Icon(
+                            Icons.edit_note,
+                            color: Colors.white,
+                          ),
+                          iconSize: 26,
+                          constraints: const BoxConstraints.tightFor(
+                            width: 56,
+                            height: 56,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
-  Widget _buildNavigationPill() {
+  Widget _buildNavigationPill({
+    required Color accent,
+    required Color highlight,
+  }) {
     const items = <({IconData icon, String label})>[
       (icon: Icons.home_filled, label: 'Inicio'),
       (icon: Icons.people_outline, label: 'Amigos'),
@@ -229,7 +248,7 @@ class _ResponsiveNavigationShellState extends State<ResponsiveNavigationShell>
     return Container(
       padding: const EdgeInsets.all(5),
       decoration: BoxDecoration(
-        color: _accentColor,
+        color: accent,
         borderRadius: BorderRadius.circular(32),
         border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
         boxShadow: [
@@ -258,21 +277,15 @@ class _ResponsiveNavigationShellState extends State<ResponsiveNavigationShell>
                   curve: Curves.easeOutCubic,
                   height: 42,
                   decoration: BoxDecoration(
-                    color: isSelected
-                        ? const Color(0xFF50DDC7)
-                        : Colors.transparent,
+                    color: isSelected ? highlight : Colors.transparent,
                     borderRadius: BorderRadius.circular(26),
                   ),
                   child: Center(
                     child: index == 3
-                        ? const CircleAvatar(
+                        ? CircleAvatar(
                             radius: 15,
                             backgroundColor: Colors.white,
-                            child: Icon(
-                              Icons.person,
-                              color: Color(0xFF1ABC9C),
-                              size: 19,
-                            ),
+                            child: Icon(Icons.person, color: accent, size: 19),
                           )
                         : Icon(item.icon, color: Colors.white, size: 23),
                   ),

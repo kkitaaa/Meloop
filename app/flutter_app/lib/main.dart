@@ -9,6 +9,7 @@ import 'features/gamification/presentation/level_up_feedback_overlay.dart';
 import 'features/profile/presentation/profile_screen.dart';
 import 'services/auth_session.dart';
 import 'screens/auth_screen.dart';
+import 'theme/meloop_theme_controller.dart';
 import 'theme/meloop_typography.dart';
 import 'widgets/app_background.dart';
 import 'widgets/desktop_viewport_scaler.dart';
@@ -54,66 +55,73 @@ class _MeloopAppState extends State<MeloopApp> {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      navigatorKey: _navigatorKey,
-      title: 'Meloop',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        primaryColor: const Color(0xFF11B49F),
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF00AF92),
-          primary: const Color(0xFF00AF92),
-          surface: Colors.white,
-          surfaceContainerLowest: Colors.white,
-          surfaceContainerLow: const Color(0xFFFAFAFA),
-          surfaceContainer: Colors.white,
-          surfaceContainerHigh: Colors.white,
-          surfaceContainerHighest: const Color(0xFFF2F6F5),
-          surfaceTint: Colors.transparent,
-        ),
-        scaffoldBackgroundColor: Colors.transparent,
-        popupMenuTheme: const PopupMenuThemeData(
-          color: Colors.white,
-          surfaceTintColor: Colors.transparent,
-        ),
-        dialogTheme: const DialogThemeData(
-          backgroundColor: Colors.white,
-          surfaceTintColor: Colors.transparent,
-        ),
-        cardTheme: const CardThemeData(
-          color: Colors.white,
-          surfaceTintColor: Colors.transparent,
-        ),
-        textTheme: MeloopTypography.lexendTextTheme(),
-        pageTransitionsTheme: const PageTransitionsTheme(
-          builders: {
-            TargetPlatform.android: _MeloopPageTransitionsBuilder(),
-            TargetPlatform.iOS: _MeloopPageTransitionsBuilder(),
-            TargetPlatform.linux: _MeloopPageTransitionsBuilder(),
-            TargetPlatform.macOS: _MeloopPageTransitionsBuilder(),
-            TargetPlatform.windows: _MeloopPageTransitionsBuilder(),
-          },
-        ),
-      ),
-      home: const AuthScreen(),
-      builder: (context, child) => DesktopViewportScaler(
-        child: NotificationScope(
-          controller: _notificationController,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              const AppBackground(),
-              LevelUpFeedbackOverlay(
-                onEquip: _openInventory,
-                child: NotificationFeedbackOverlay(
-                  controller: _notificationController,
-                  child: child ?? const SizedBox.shrink(),
-                ),
-              ),
-            ],
+    final themeCtrl = MeloopThemeController.instance;
+    return AnimatedBuilder(
+      animation: themeCtrl,
+      builder: (context, _) {
+        final accent = themeCtrl.primaryColor;
+        return MaterialApp(
+          navigatorKey: _navigatorKey,
+          title: 'Meloop',
+          debugShowCheckedModeBanner: false,
+          theme: ThemeData(
+            primaryColor: accent,
+            colorScheme: ColorScheme.fromSeed(
+              seedColor: accent,
+              primary: accent,
+              surface: Colors.white,
+              surfaceContainerLowest: Colors.white,
+              surfaceContainerLow: const Color(0xFFFAFAFA),
+              surfaceContainer: Colors.white,
+              surfaceContainerHigh: Colors.white,
+              surfaceContainerHighest: const Color(0xFFF2F6F5),
+              surfaceTint: Colors.transparent,
+            ),
+            scaffoldBackgroundColor: Colors.transparent,
+            popupMenuTheme: const PopupMenuThemeData(
+              color: Colors.white,
+              surfaceTintColor: Colors.transparent,
+            ),
+            dialogTheme: const DialogThemeData(
+              backgroundColor: Colors.white,
+              surfaceTintColor: Colors.transparent,
+            ),
+            cardTheme: const CardThemeData(
+              color: Colors.white,
+              surfaceTintColor: Colors.transparent,
+            ),
+            textTheme: MeloopTypography.lexendTextTheme(),
+            pageTransitionsTheme: const PageTransitionsTheme(
+              builders: {
+                TargetPlatform.android: _MeloopPageTransitionsBuilder(),
+                TargetPlatform.iOS: _MeloopPageTransitionsBuilder(),
+                TargetPlatform.linux: _MeloopPageTransitionsBuilder(),
+                TargetPlatform.macOS: _MeloopPageTransitionsBuilder(),
+                TargetPlatform.windows: _MeloopPageTransitionsBuilder(),
+              },
+            ),
           ),
-        ),
-      ),
+          home: const AuthScreen(),
+          builder: (context, child) => DesktopViewportScaler(
+            child: NotificationScope(
+              controller: _notificationController,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  const AppBackground(),
+                  LevelUpFeedbackOverlay(
+                    onEquip: _openInventory,
+                    child: NotificationFeedbackOverlay(
+                      controller: _notificationController,
+                      child: child ?? const SizedBox.shrink(),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 

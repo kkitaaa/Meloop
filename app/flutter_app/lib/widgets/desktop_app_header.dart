@@ -9,6 +9,7 @@ import '../features/music/presentation/music_preferences_screen.dart';
 import '../features/profile/presentation/blocked_users_screen.dart';
 import '../services/api_client.dart';
 import '../services/post_audio_playback.dart';
+import '../theme/meloop_theme_controller.dart';
 import '../theme/meloop_typography.dart';
 import 'meloop_pill_tabs.dart';
 import 'notifications_menu.dart';
@@ -85,12 +86,6 @@ class DesktopAppHeader extends StatelessWidget {
   final ValueChanged<String>? onSearchSubmitted;
   final VoidCallback? onSearchBack;
 
-  static const _headerGradient = LinearGradient(
-    begin: Alignment.topCenter,
-    end: Alignment.bottomCenter,
-    colors: [Color(0xFF59E5C9), Color(0xFF00AF92)],
-  );
-  static const _pillColor = Color(0xFF16877F);
   static const _navFontSize = 14.5;
   static const _navButtonWidth = 192.0;
   static const _navHorizontalPadding = 16.0;
@@ -115,119 +110,140 @@ class DesktopAppHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const navigationWidth = _navTotalWidth;
+    final themeCtrl = MeloopThemeController.instance;
 
-    return Container(
-      height: 84,
-      decoration: BoxDecoration(
-        gradient: _headerGradient,
-        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(24)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.18),
-            blurRadius: 14,
-            offset: const Offset(0, 4),
+    return AnimatedBuilder(
+      animation: themeCtrl,
+      builder: (context, _) {
+        final headerGradient = themeCtrl.headerGradient;
+        final pillColor = themeCtrl.pillTrackColor;
+
+        return Container(
+          height: 84,
+          decoration: BoxDecoration(
+            gradient: headerGradient,
+            borderRadius: const BorderRadius.vertical(
+              bottom: Radius.circular(24),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.18),
+                blurRadius: 14,
+                offset: const Offset(0, 4),
+              ),
+            ],
           ),
-        ],
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 10),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final availableCenterSpace = constraints.maxWidth - 360;
-          final navScale = availableCenterSpace < navigationWidth
-              ? (availableCenterSpace / navigationWidth).clamp(0.65, 1.0)
-              : 1.0;
-          final scaledNavHalf = navigationWidth * navScale / 2;
-          final searchRightEdge =
-              constraints.maxWidth / 2 +
-              scaledNavHalf +
-              (onSearchTap != null ? _searchGap + _searchButtonSize : 0);
-          final rightAvailable = constraints.maxWidth - searchRightEdge - 16;
+          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 10),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final availableCenterSpace = constraints.maxWidth - 360;
+              final navScale = availableCenterSpace < navigationWidth
+                  ? (availableCenterSpace / navigationWidth).clamp(0.65, 1.0)
+                  : 1.0;
+              final scaledNavHalf = navigationWidth * navScale / 2;
+              final searchRightEdge =
+                  constraints.maxWidth / 2 +
+                  scaledNavHalf +
+                  (onSearchTap != null ? _searchGap + _searchButtonSize : 0);
+              final rightAvailable =
+                  constraints.maxWidth - searchRightEdge - 16;
 
-          final showFullMiniPlayer = rightAvailable >= 470;
-          final showCompactMiniPlayer =
-              !showFullMiniPlayer && rightAvailable >= 340;
+              final showFullMiniPlayer = rightAvailable >= 470;
+              final showCompactMiniPlayer =
+                  !showFullMiniPlayer && rightAvailable >= 340;
 
-          return Stack(
-            alignment: Alignment.center,
-            children: [
-              // Izquierda (logo) y Derecha (mini reproductor + notificaciones + perfil)
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              return Stack(
+                alignment: Alignment.center,
                 children: [
-                  MouseRegion(
-                    cursor: SystemMouseCursors.click,
-                    child: GestureDetector(
-                      onTap: onHomeTap,
-                      child: const MeloopLogoSticker(
-                        height: 46,
-                        strokeWidth: 2.2,
-                      ),
-                    ),
-                  ),
+                  // Izquierda (logo) y Derecha (mini reproductor + notificaciones + perfil)
                   Row(
-                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      if (showFullMiniPlayer) ...[
-                        const _HeaderMiniPlayer(width: 340),
-                        const SizedBox(width: 14),
-                      ] else if (showCompactMiniPlayer) ...[
-                        const _HeaderMiniPlayer(width: 210, compact: true),
-                        const SizedBox(width: 12),
-                      ],
-                      const NotificationsMenu(),
-                      const SizedBox(width: 10),
-                      _HeaderProfileDropdown(
-                        onProfileTap: onProfileTap,
-                        onModerationTap: onModerationTap,
-                        apiClient: apiClient,
-                        onMusicPreferencesTap: () => _pushScreen(
-                          context,
-                          (_) => MusicPreferencesScreen(apiClient: apiClient),
+                      MouseRegion(
+                        cursor: SystemMouseCursors.click,
+                        child: GestureDetector(
+                          onTap: onHomeTap,
+                          child: const MeloopLogoSticker(
+                            height: 46,
+                            strokeWidth: 2.2,
+                          ),
                         ),
-                        onBlockedUsersTap: () => _pushScreen(
-                          context,
-                          (_) => const BlockedUsersScreen(),
-                        ),
-                        onAccountSettingsTap: () => _pushScreen(
-                          context,
-                          (_) => AccountSettingsScreen(apiClient: apiClient),
-                        ),
+                      ),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (showFullMiniPlayer) ...[
+                            _HeaderMiniPlayer(
+                              width: 340,
+                              pillColor: pillColor,
+                            ),
+                            const SizedBox(width: 14),
+                          ] else if (showCompactMiniPlayer) ...[
+                            _HeaderMiniPlayer(
+                              width: 210,
+                              compact: true,
+                              pillColor: pillColor,
+                            ),
+                            const SizedBox(width: 12),
+                          ],
+                          const NotificationsMenu(),
+                          const SizedBox(width: 10),
+                          _HeaderProfileDropdown(
+                            onProfileTap: onProfileTap,
+                            onModerationTap: onModerationTap,
+                            apiClient: apiClient,
+                            onMusicPreferencesTap: () => _pushScreen(
+                              context,
+                              (_) =>
+                                  MusicPreferencesScreen(apiClient: apiClient),
+                            ),
+                            onBlockedUsersTap: () => _pushScreen(
+                              context,
+                              (_) => const BlockedUsersScreen(),
+                            ),
+                            onAccountSettingsTap: () => _pushScreen(
+                              context,
+                              (_) =>
+                                  AccountSettingsScreen(apiClient: apiClient),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
-                ],
-              ),
 
-              // Botones de navegación centrados + barra de búsqueda unificada con
-              // transición fluida (sin saltos ni desaparición brusca de la lupa)
-              Center(
-                child: Transform.scale(
-                  scale: navScale,
-                  child: _DesktopHeaderNavAndSearch(
-                    activeSection: activeSection,
-                    navigationWidth: navigationWidth,
-                    onHomeTap: onHomeTap,
-                    onFriendsTap: onFriendsTap,
-                    onArtistsTap: onArtistsTap,
-                    onSearchTap: onSearchTap,
-                    searchOpen: searchOpen,
-                    searchController: searchController,
-                    onSearchChanged: onSearchChanged,
-                    onSearchSubmitted: onSearchSubmitted,
-                    onSearchBack: onSearchBack,
-                    pillColor: _pillColor,
-                    fontSize: _navFontSize,
-                    horizontalItemPadding: _navHorizontalPadding,
-                    outerPadding: _navOuterPadding,
-                    searchGap: _searchGap,
-                    searchButtonSize: _searchButtonSize,
+                  // Botones de navegación centrados + barra de búsqueda unificada con
+                  // transición fluida (sin saltos ni desaparición brusca de la lupa)
+                  Center(
+                    child: Transform.scale(
+                      scale: navScale,
+                      child: _DesktopHeaderNavAndSearch(
+                        activeSection: activeSection,
+                        navigationWidth: navigationWidth,
+                        onHomeTap: onHomeTap,
+                        onFriendsTap: onFriendsTap,
+                        onArtistsTap: onArtistsTap,
+                        onSearchTap: onSearchTap,
+                        searchOpen: searchOpen,
+                        searchController: searchController,
+                        onSearchChanged: onSearchChanged,
+                        onSearchSubmitted: onSearchSubmitted,
+                        onSearchBack: onSearchBack,
+                        pillColor: pillColor,
+                        fontSize: _navFontSize,
+                        horizontalItemPadding: _navHorizontalPadding,
+                        outerPadding: _navOuterPadding,
+                        searchGap: _searchGap,
+                        searchButtonSize: _searchButtonSize,
+                      ),
+                    ),
                   ),
-                ),
-              ),
-            ],
-          );
-        },
-      ),
+                ],
+              );
+            },
+          ),
+        );
+      },
     );
   }
 }
@@ -604,10 +620,15 @@ class _MorphingSearchCircleButton extends StatelessWidget {
 }
 
 class _HeaderMiniPlayer extends StatefulWidget {
-  const _HeaderMiniPlayer({required this.width, this.compact = false});
+  const _HeaderMiniPlayer({
+    required this.width,
+    this.compact = false,
+    this.pillColor = const Color(0xFF167B74),
+  });
 
   final double width;
   final bool compact;
+  final Color pillColor;
 
   @override
   State<_HeaderMiniPlayer> createState() => _HeaderMiniPlayerState();
@@ -642,10 +663,13 @@ class _HeaderMiniPlayerState extends State<_HeaderMiniPlayer> {
           height: 58,
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
           decoration: BoxDecoration(
-            gradient: const LinearGradient(
+            gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [Color(0xFF167B74), Color(0xFF125E5B)],
+              colors: [
+                widget.pillColor,
+                Color.lerp(widget.pillColor, Colors.black, 0.22)!,
+              ],
             ),
             borderRadius: BorderRadius.circular(12),
             boxShadow: [

@@ -9,6 +9,7 @@ import '../core/navigation/responsive_navigation_shell.dart';
 import '../features/gamification/presentation/gamification_demo_controller.dart';
 import '../features/profile/presentation/profile_screen.dart';
 import '../features/search/presentation/global_search_route.dart';
+import '../theme/meloop_theme_controller.dart';
 import '../theme/meloop_typography.dart';
 import '../widgets/desktop_app_header.dart';
 import '../widgets/meloop_pill_tabs.dart';
@@ -28,8 +29,8 @@ class FriendsScreen extends StatefulWidget {
 }
 
 class FriendsScreenState extends State<FriendsScreen> {
-  static const Color _tealAccent = Color(0xFF00AF92);
-  static const Color _pillTrackColor = Color(0xFF288B83);
+  Color get _tealAccent => MeloopThemeController.instance.primaryColor;
+  Color get _pillTrackColor => MeloopThemeController.instance.pillTrackColor;
 
   final TextEditingController _searchController = TextEditingController();
   _FriendsTab _activeTab = _FriendsTab.friends;
@@ -317,16 +318,19 @@ class FriendsScreenState extends State<FriendsScreen> {
       _activeTab = _FriendsTab.friends;
     }
 
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: Column(
-        children: [
-          if (!insideDesktopShell && !insideMobileShell)
-            _buildTopBar(isDesktop, context),
-          Expanded(
-            child: isDesktop ? _buildDesktopLayout() : _buildMobileLayout(),
-          ),
-        ],
+    return AnimatedBuilder(
+      animation: MeloopThemeController.instance,
+      builder: (context, _) => Scaffold(
+        backgroundColor: Colors.transparent,
+        body: Column(
+          children: [
+            if (!insideDesktopShell && !insideMobileShell)
+              _buildTopBar(isDesktop, context),
+            Expanded(
+              child: isDesktop ? _buildDesktopLayout() : _buildMobileLayout(),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -428,7 +432,10 @@ class FriendsScreenState extends State<FriendsScreen> {
                           Positioned.fill(
                             child: StackedPaperCard(
                               textureAsset: 'assets/textures/paper.png',
-                              tintColor: const Color(0xFFF3FBFA),
+                              tintColor: MeloopThemeController
+                                  .instance
+                                  .colorTheme
+                                  .softCardTint,
                               padding: const EdgeInsets.fromLTRB(
                                 24,
                                 28,
@@ -444,7 +451,9 @@ class FriendsScreenState extends State<FriendsScreen> {
                                     style: MeloopTypography.lexend(
                                       fontSize: 18.5,
                                       fontWeight: FontWeight.w700,
-                                      color: const Color(0xFF141A1A),
+                                      color: MeloopThemeController
+                                          .instance
+                                          .cardTitleColor,
                                     ),
                                   ),
                                   const SizedBox(height: 4),
@@ -453,14 +462,18 @@ class FriendsScreenState extends State<FriendsScreen> {
                                     textAlign: TextAlign.center,
                                     style: MeloopTypography.lexend(
                                       fontSize: 12,
-                                      color: const Color(0xFF6B7777),
+                                      color: MeloopThemeController
+                                          .instance
+                                          .cardMutedColor,
                                     ),
                                   ),
                                   const SizedBox(height: 14),
                                   Divider(
                                     height: 1,
                                     thickness: 1,
-                                    color: Colors.black.withValues(alpha: 0.1),
+                                    color: MeloopThemeController
+                                        .instance
+                                        .cardDividerColor,
                                   ),
                                   const SizedBox(height: 14),
                                   Expanded(
@@ -509,7 +522,7 @@ class FriendsScreenState extends State<FriendsScreen> {
             overflow: TextOverflow.ellipsis,
             style: MeloopTypography.momoDisplay(
               fontSize: 30,
-              color: const Color(0xFF141919),
+              color: MeloopThemeController.instance.cardTitleColor,
             ),
           ),
         ),
@@ -520,7 +533,7 @@ class FriendsScreenState extends State<FriendsScreen> {
           overflow: TextOverflow.ellipsis,
           style: MeloopTypography.lexend(
             fontSize: 12.5,
-            color: const Color(0xFF6A7878),
+            color: MeloopThemeController.instance.cardMutedColor,
           ),
         ),
       ],
@@ -605,7 +618,8 @@ class FriendsScreenState extends State<FriendsScreen> {
                           overflow: TextOverflow.ellipsis,
                           style: MeloopTypography.momoDisplay(
                             fontSize: 22,
-                            color: const Color(0xFF141919),
+                            color:
+                                MeloopThemeController.instance.cardTitleColor,
                           ),
                         ),
                       ),
@@ -618,7 +632,7 @@ class FriendsScreenState extends State<FriendsScreen> {
                       vertical: 4,
                     ),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFE3F7F3),
+                      color: MeloopThemeController.instance.softBadgeBgColor,
                       borderRadius: BorderRadius.circular(14),
                     ),
                     child: Text(
@@ -626,7 +640,7 @@ class FriendsScreenState extends State<FriendsScreen> {
                       style: MeloopTypography.lexend(
                         fontSize: 11.5,
                         fontWeight: FontWeight.w600,
-                        color: const Color(0xFF158A82),
+                        color: MeloopThemeController.instance.softBadgeFgColor,
                       ),
                     ),
                   ),
@@ -703,39 +717,40 @@ class FriendsScreenState extends State<FriendsScreen> {
   }
 
   Widget _buildFriendsToolbar({required bool isMobile}) {
+    final themeCtrl = MeloopThemeController.instance;
     final searchField = Container(
       height: isMobile ? 38 : 40,
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: themeCtrl.inputFillColor,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFD5E1DF)),
+        border: Border.all(color: themeCtrl.inputBorderColor),
       ),
       child: TextField(
         controller: _searchController,
         onChanged: (value) => setState(() => _searchQuery = value),
         style: MeloopTypography.lexend(
           fontSize: isMobile ? 12.5 : 13.5,
-          color: const Color(0xFF182222),
+          color: themeCtrl.cardTitleColor,
         ),
         decoration: InputDecoration(
           hintText: 'Buscar en tus amigos...',
           hintStyle: MeloopTypography.lexend(
             fontSize: isMobile ? 12.5 : 13.5,
-            color: const Color(0xFF94A1A1),
+            color: themeCtrl.cardSubtleMutedColor,
           ),
-          prefixIcon: const Icon(
+          prefixIcon: Icon(
             Icons.search_rounded,
             size: 19,
-            color: Color(0xFF6B7D7C),
+            color: themeCtrl.cardMutedColor,
           ),
           suffixIcon: _searchQuery.isNotEmpty
               ? IconButton(
                   tooltip: 'Limpiar búsqueda',
                   padding: EdgeInsets.zero,
-                  icon: const Icon(
+                  icon: Icon(
                     Icons.close_rounded,
                     size: 17,
-                    color: Color(0xFF7B8B8B),
+                    color: themeCtrl.cardMutedColor,
                   ),
                   onPressed: () {
                     _searchController.clear();
@@ -770,13 +785,13 @@ class FriendsScreenState extends State<FriendsScreen> {
         style: MeloopTypography.lexend(
           fontSize: isMobile ? 11.5 : 12.5,
           fontWeight: FontWeight.w600,
-          color: _onlyOnline ? Colors.white : const Color(0xFF285552),
+          color: _onlyOnline ? Colors.white : themeCtrl.cardBodyColor,
         ),
       ),
-      backgroundColor: Colors.white,
+      backgroundColor: themeCtrl.inputFillColor,
       selectedColor: _tealAccent,
       side: BorderSide(
-        color: _onlyOnline ? _tealAccent : const Color(0xFFD0DFDC),
+        color: _onlyOnline ? _tealAccent : themeCtrl.inputBorderColor,
       ),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -901,6 +916,7 @@ class FriendsScreenState extends State<FriendsScreen> {
     required String title,
     required String subtitle,
   }) {
+    final themeCtrl = MeloopThemeController.instance;
     return Center(
       key: key,
       child: Padding(
@@ -908,7 +924,7 @@ class FriendsScreenState extends State<FriendsScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 46, color: const Color(0xFFB5C3C2)),
+            Icon(icon, size: 46, color: themeCtrl.cardSubtleMutedColor),
             const SizedBox(height: 12),
             Text(
               title,
@@ -916,7 +932,7 @@ class FriendsScreenState extends State<FriendsScreen> {
               style: MeloopTypography.lexend(
                 fontSize: 15.5,
                 fontWeight: FontWeight.w600,
-                color: const Color(0xFF283434),
+                color: themeCtrl.cardTitleColor,
               ),
             ),
             const SizedBox(height: 6),
@@ -925,7 +941,7 @@ class FriendsScreenState extends State<FriendsScreen> {
               textAlign: TextAlign.center,
               style: MeloopTypography.lexend(
                 fontSize: 12.5,
-                color: const Color(0xFF7B8A8A),
+                color: themeCtrl.cardMutedColor,
                 height: 1.4,
               ),
             ),
@@ -951,18 +967,22 @@ class _FriendProfileTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final themeCtrl = MeloopThemeController.instance;
+    final isDark = themeCtrl.isDarkCardStyle;
     return Container(
       margin: EdgeInsets.only(bottom: isMobile ? 10 : 12),
       decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border.all(color: const Color(0xFFE4ECEB)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.055),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        color: themeCtrl.innerTileColor,
+        border: Border.all(color: themeCtrl.innerTileBorderColor),
+        boxShadow: isDark
+            ? null
+            : [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.055),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
       ),
       child: Material(
         color: Colors.transparent,
@@ -995,7 +1015,7 @@ class _FriendProfileTile extends StatelessWidget {
                               style: MeloopTypography.lexend(
                                 fontSize: isMobile ? 15 : 16,
                                 fontWeight: FontWeight.w700,
-                                color: const Color(0xFF1A2222),
+                                color: themeCtrl.cardTitleColor,
                                 height: 1.2,
                               ),
                             ),
@@ -1020,7 +1040,7 @@ class _FriendProfileTile extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         style: MeloopTypography.lexend(
                           fontSize: isMobile ? 12 : 13,
-                          color: const Color(0xFF47605E),
+                          color: themeCtrl.cardMutedColor,
                         ),
                       ),
                       const SizedBox(height: 2),
@@ -1030,7 +1050,7 @@ class _FriendProfileTile extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         style: MeloopTypography.lexend(
                           fontSize: isMobile ? 10.5 : 11.5,
-                          color: const Color(0xFF93A1A1),
+                          color: themeCtrl.cardSubtleMutedColor,
                         ),
                       ),
                     ],
@@ -1040,8 +1060,14 @@ class _FriendProfileTile extends StatelessWidget {
                 if (!isMobile) ...[
                   OutlinedButton(
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFF16877F),
-                      side: const BorderSide(color: Color(0xFFB7DDD8)),
+                      foregroundColor: themeCtrl.accentLinkColor,
+                      side: BorderSide(
+                        color: isDark
+                            ? themeCtrl.colorTheme.headerTop.withValues(
+                                alpha: 0.45,
+                              )
+                            : themeCtrl.colorTheme.gridLine,
+                      ),
                       padding: const EdgeInsets.symmetric(
                         horizontal: 14,
                         vertical: 9,
@@ -1056,7 +1082,7 @@ class _FriendProfileTile extends StatelessWidget {
                       style: MeloopTypography.lexend(
                         fontSize: 12.5,
                         fontWeight: FontWeight.w600,
-                        color: const Color(0xFF16877F),
+                        color: themeCtrl.accentLinkColor,
                       ),
                     ),
                   ),
@@ -1065,7 +1091,9 @@ class _FriendProfileTile extends StatelessWidget {
                 Tooltip(
                   message: 'Eliminar amigo',
                   child: Material(
-                    color: const Color(0xFFFFF1F1),
+                    color: isDark
+                        ? const Color(0xFFE04848).withValues(alpha: 0.20)
+                        : const Color(0xFFFFF1F1),
                     borderRadius: BorderRadius.circular(20),
                     child: InkWell(
                       onTap: onDeleteTap,
@@ -1078,9 +1106,11 @@ class _FriendProfileTile extends StatelessWidget {
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(
+                            Icon(
                               Icons.person_remove_outlined,
-                              color: Color(0xFFD94444),
+                              color: isDark
+                                  ? const Color(0xFFFF7A7A)
+                                  : const Color(0xFFD94444),
                               size: 18,
                             ),
                             if (!isMobile) ...[
@@ -1090,7 +1120,9 @@ class _FriendProfileTile extends StatelessWidget {
                                 style: MeloopTypography.lexend(
                                   fontSize: 12.5,
                                   fontWeight: FontWeight.w600,
-                                  color: const Color(0xFFD94444),
+                                  color: isDark
+                                      ? const Color(0xFFFF7A7A)
+                                      : const Color(0xFFD94444),
                                 ),
                               ),
                             ],
@@ -1126,13 +1158,15 @@ class _FriendRequestTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final themeCtrl = MeloopThemeController.instance;
+    final isDark = themeCtrl.isDarkCardStyle;
     final actions = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         OutlinedButton(
           style: OutlinedButton.styleFrom(
-            foregroundColor: const Color(0xFF6B7B7B),
-            side: const BorderSide(color: Color(0xFFC9D6D5)),
+            foregroundColor: themeCtrl.cardMutedColor,
+            side: BorderSide(color: themeCtrl.inputBorderColor),
             padding: EdgeInsets.symmetric(
               horizontal: isMobile ? 12 : 16,
               vertical: isMobile ? 7 : 9,
@@ -1148,14 +1182,14 @@ class _FriendRequestTile extends StatelessWidget {
             style: MeloopTypography.lexend(
               fontSize: isMobile ? 12 : 12.5,
               fontWeight: FontWeight.w600,
-              color: const Color(0xFF667575),
+              color: themeCtrl.cardMutedColor,
             ),
           ),
         ),
         const SizedBox(width: 8),
         ElevatedButton(
           style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFF00AF92),
+            backgroundColor: themeCtrl.primaryColor,
             foregroundColor: Colors.white,
             elevation: 0,
             padding: EdgeInsets.symmetric(
@@ -1183,15 +1217,17 @@ class _FriendRequestTile extends StatelessWidget {
     return Container(
       margin: EdgeInsets.only(bottom: isMobile ? 10 : 12),
       decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border.all(color: const Color(0xFFE4ECEB)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.055),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        color: themeCtrl.innerTileColor,
+        border: Border.all(color: themeCtrl.innerTileBorderColor),
+        boxShadow: isDark
+            ? null
+            : [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.055),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
       ),
       child: Material(
         color: Colors.transparent,
@@ -1220,7 +1256,7 @@ class _FriendRequestTile extends StatelessWidget {
                             style: MeloopTypography.lexend(
                               fontSize: isMobile ? 15 : 16,
                               fontWeight: FontWeight.w700,
-                              color: const Color(0xFF1A2222),
+                              color: themeCtrl.cardTitleColor,
                               height: 1.2,
                             ),
                           ),
@@ -1231,7 +1267,7 @@ class _FriendRequestTile extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                             style: MeloopTypography.lexend(
                               fontSize: isMobile ? 12 : 13,
-                              color: const Color(0xFF47605E),
+                              color: themeCtrl.cardMutedColor,
                             ),
                           ),
                           const SizedBox(height: 2),
@@ -1241,7 +1277,7 @@ class _FriendRequestTile extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                             style: MeloopTypography.lexend(
                               fontSize: isMobile ? 10.5 : 11.5,
-                              color: const Color(0xFF93A1A1),
+                              color: themeCtrl.cardSubtleMutedColor,
                             ),
                           ),
                         ],
@@ -1278,18 +1314,22 @@ class _SuggestedProfileTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final themeCtrl = MeloopThemeController.instance;
+    final isDark = themeCtrl.isDarkCardStyle;
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border.all(color: const Color(0xFFE4ECEB)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        color: themeCtrl.innerTileColor,
+        border: Border.all(color: themeCtrl.innerTileBorderColor),
+        boxShadow: isDark
+            ? null
+            : [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.05),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
+                ),
+              ],
       ),
       child: Material(
         color: Colors.transparent,
@@ -1303,7 +1343,7 @@ class _SuggestedProfileTile extends StatelessWidget {
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _FramedAvatar(size: 46, isOnline: null),
+                    const _FramedAvatar(size: 46, isOnline: null),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(
@@ -1316,7 +1356,7 @@ class _SuggestedProfileTile extends StatelessWidget {
                             style: MeloopTypography.lexend(
                               fontSize: 15,
                               fontWeight: FontWeight.w700,
-                              color: const Color(0xFF1A2222),
+                              color: themeCtrl.cardTitleColor,
                               height: 1.2,
                             ),
                           ),
@@ -1327,7 +1367,7 @@ class _SuggestedProfileTile extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                             style: MeloopTypography.lexend(
                               fontSize: 11.5,
-                              color: const Color(0xFF5D6F6E),
+                              color: themeCtrl.cardMutedColor,
                               height: 1.3,
                             ),
                           ),
@@ -1338,7 +1378,7 @@ class _SuggestedProfileTile extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                             style: MeloopTypography.lexend(
                               fontSize: 10.5,
-                              color: const Color(0xFF9AA7A7),
+                              color: themeCtrl.cardSubtleMutedColor,
                             ),
                           ),
                         ],
@@ -1355,15 +1395,15 @@ class _SuggestedProfileTile extends StatelessWidget {
                         vertical: 4,
                       ),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFE4F7F3),
+                        color: themeCtrl.softBadgeBgColor,
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Icon(
+                          Icon(
                             Icons.graphic_eq_rounded,
-                            color: Color(0xFF009D83),
+                            color: themeCtrl.softBadgeFgColor,
                             size: 13,
                           ),
                           const SizedBox(width: 4),
@@ -1372,7 +1412,7 @@ class _SuggestedProfileTile extends StatelessWidget {
                             style: MeloopTypography.lexend(
                               fontSize: 11,
                               fontWeight: FontWeight.w600,
-                              color: const Color(0xFF009D83),
+                              color: themeCtrl.softBadgeFgColor,
                             ),
                           ),
                         ],
@@ -1381,7 +1421,7 @@ class _SuggestedProfileTile extends StatelessWidget {
                     const Spacer(),
                     ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF00AF92),
+                        backgroundColor: themeCtrl.primaryColor,
                         foregroundColor: Colors.white,
                         elevation: 0,
                         minimumSize: const Size(0, 32),
@@ -1423,26 +1463,30 @@ class _FramedAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final themeCtrl = MeloopThemeController.instance;
+    final isDark = themeCtrl.isDarkCardStyle;
     return Container(
       width: size,
       height: size,
       padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.14),
-            blurRadius: 4,
-            offset: const Offset(0, 1),
-          ),
-        ],
+        color: isDark ? Colors.white.withValues(alpha: 0.14) : Colors.white,
+        boxShadow: isDark
+            ? null
+            : [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.14),
+                  blurRadius: 4,
+                  offset: const Offset(0, 1),
+                ),
+              ],
       ),
       child: ColoredBox(
-        color: const Color(0xFFDFE4E4),
+        color: themeCtrl.placeholderBgColor,
         child: Icon(
           Icons.person,
           size: size * 0.56,
-          color: const Color(0xFF96A2A2),
+          color: themeCtrl.placeholderIconColor,
         ),
       ),
     );

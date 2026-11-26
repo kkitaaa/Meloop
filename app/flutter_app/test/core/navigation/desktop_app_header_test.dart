@@ -240,6 +240,15 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(DesktopAppHeader), findsOneWidget);
       expect(tester.getTopLeft(find.byType(DesktopAppHeader)), initialTopLeft);
+
+      // Saltar desde Perfil a Amigos debe aterrizar limpio en Amigos (no en Inicio)
+      await tester.tap(find.text('Amigos').first);
+      await tester.pumpAndSettle();
+      final headerOnFriends = tester.widget<DesktopAppHeader>(
+        find.byType(DesktopAppHeader),
+      );
+      expect(headerOnFriends.activeSection, DesktopNavigationSection.friends);
+      expect(find.text('Red de amigos'), findsOneWidget);
     },
   );
 

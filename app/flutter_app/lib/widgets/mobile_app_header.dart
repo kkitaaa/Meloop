@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../services/api_client.dart';
+import '../theme/meloop_theme_controller.dart';
 import 'app_settings_menu.dart';
 import 'notifications_menu.dart';
+import 'paper/stacked_paper_card.dart';
 
 class MobileAppHeader extends StatelessWidget {
   const MobileAppHeader({
@@ -18,13 +20,14 @@ class MobileAppHeader extends StatelessWidget {
   final ApiClient? apiClient;
   final List<Widget> actions;
 
-  static const _accentColor = Color(0xFF1ABC9C);
-
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 55,
-      color: _accentColor,
+    final themeCtrl = MeloopThemeController.instance;
+    return AnimatedBuilder(
+      animation: themeCtrl,
+      builder: (context, _) => Container(
+        height: 55,
+        color: themeCtrl.primaryColor,
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Stack(
         alignment: Alignment.center,
@@ -32,11 +35,7 @@ class MobileAppHeader extends StatelessWidget {
           Positioned.fill(
             child: IgnorePointer(
               child: Center(
-                child: Image.asset(
-                  'assets/imagenes/meloop.png',
-                  height: 24,
-                  fit: BoxFit.contain,
-                ),
+                child: MeloopLogoSticker(height: 26, strokeWidth: 1.6),
               ),
             ),
           ),
@@ -78,6 +77,7 @@ class MobileAppHeader extends StatelessWidget {
           ),
         ],
       ),
+    ),
     );
   }
 }

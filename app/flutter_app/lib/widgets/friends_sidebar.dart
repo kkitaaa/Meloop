@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../features/profile/models/profile_customization.dart';
+import '../theme/meloop_theme_controller.dart';
 import '../theme/meloop_typography.dart';
 import 'paper/stacked_paper_card.dart';
 
@@ -165,20 +167,27 @@ class DesktopFriendsSidebar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _buildOnlineFriendsCard(),
-        const SizedBox(height: 22),
-        _buildRecommendedProfilesCard(),
-      ],
+    final themeCtrl = MeloopThemeController.instance;
+    return AnimatedBuilder(
+      animation: themeCtrl,
+      builder: (context, _) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildOnlineFriendsCard(themeCtrl),
+          const SizedBox(height: 22),
+          _buildRecommendedProfilesCard(),
+        ],
+      ),
     );
   }
 
-  Widget _buildOnlineFriendsCard() {
+  Widget _buildOnlineFriendsCard(MeloopThemeController themeCtrl) {
+    final tint = themeCtrl.colorTheme == MeloopColorTheme.meloopTeal
+        ? const Color(0xFFD9F7F0)
+        : themeCtrl.colorTheme.softCardTint;
     return StackedPaperCard(
       textureAsset: 'assets/textures/paper.png',
-      tintColor: const Color(0xFFD9F7F0),
+      tintColor: tint,
       padding: const EdgeInsets.fromLTRB(16, 18, 16, 16),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -189,14 +198,14 @@ class DesktopFriendsSidebar extends StatelessWidget {
             style: MeloopTypography.lexend(
               fontSize: 16.5,
               fontWeight: FontWeight.w600,
-              color: const Color(0xFF141A1A),
+              color: themeCtrl.cardTitleColor,
             ),
           ),
           const SizedBox(height: 10),
           Divider(
             height: 1,
             thickness: 1,
-            color: Colors.black.withValues(alpha: 0.1),
+            color: themeCtrl.cardDividerColor,
           ),
           const SizedBox(height: 12),
           for (final friend in onlineFriends)
@@ -218,6 +227,7 @@ class DesktopFriendsSidebar extends StatelessWidget {
   }
 
   Widget _buildRecommendedProfilesCard() {
+    final themeCtrl = MeloopThemeController.instance;
     return StackedPaperCard(
       textureAsset: 'assets/textures/paper.png',
       padding: const EdgeInsets.fromLTRB(16, 18, 16, 16),
@@ -230,14 +240,14 @@ class DesktopFriendsSidebar extends StatelessWidget {
             style: MeloopTypography.lexend(
               fontSize: 16,
               fontWeight: FontWeight.w600,
-              color: const Color(0xFF141A1A),
+              color: themeCtrl.cardTitleColor,
             ),
           ),
           const SizedBox(height: 10),
           Divider(
             height: 1,
             thickness: 1,
-            color: Colors.black.withValues(alpha: 0.1),
+            color: themeCtrl.cardDividerColor,
           ),
           const SizedBox(height: 12),
           for (final profile in recommendedProfiles)
@@ -257,7 +267,7 @@ class DesktopFriendsSidebar extends StatelessWidget {
             textAlign: TextAlign.center,
             style: MeloopTypography.lexend(
               fontSize: 11.5,
-              color: const Color(0xFF6B7777),
+              color: themeCtrl.cardMutedColor,
             ),
           ),
           const SizedBox(height: 10),
@@ -288,18 +298,25 @@ class _ProfilePreviewTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final themeCtrl = MeloopThemeController.instance;
+    final isDark = themeCtrl.isDarkCardStyle;
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: themeCtrl.innerTileColor,
         borderRadius: BorderRadius.zero,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.06),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        border: isDark
+            ? Border.all(color: themeCtrl.innerTileBorderColor)
+            : null,
+        boxShadow: isDark
+            ? null
+            : [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.06),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
+                ),
+              ],
       ),
       child: Material(
         color: Colors.transparent,
@@ -309,27 +326,31 @@ class _ProfilePreviewTile extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
             child: Row(
               children: [
-                // Avatar placeholder con marco blanco cuadrado estilo foto
+                // Avatar placeholder con marco cuadrado estilo foto
                 Container(
                   width: 46,
                   height: 46,
                   padding: const EdgeInsets.all(3),
                   decoration: BoxDecoration(
-                    color: Colors.white,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.14),
-                        blurRadius: 4,
-                        offset: const Offset(0, 1),
-                      ),
-                    ],
+                    color: isDark
+                        ? Colors.white.withValues(alpha: 0.14)
+                        : Colors.white,
+                    boxShadow: isDark
+                        ? null
+                        : [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.14),
+                              blurRadius: 4,
+                              offset: const Offset(0, 1),
+                            ),
+                          ],
                   ),
-                  child: const ColoredBox(
-                    color: Color(0xFFDFE4E4),
+                  child: ColoredBox(
+                    color: themeCtrl.placeholderBgColor,
                     child: Icon(
                       Icons.person,
                       size: 28,
-                      color: Color(0xFF9EA7A7),
+                      color: themeCtrl.placeholderIconColor,
                     ),
                   ),
                 ),
@@ -346,7 +367,7 @@ class _ProfilePreviewTile extends StatelessWidget {
                         style: MeloopTypography.lexend(
                           fontSize: 13.5,
                           fontWeight: FontWeight.w600,
-                          color: const Color(0xFF1A2020),
+                          color: themeCtrl.cardTitleColor,
                         ),
                       ),
                       const SizedBox(height: 2),
@@ -356,7 +377,7 @@ class _ProfilePreviewTile extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         style: MeloopTypography.lexend(
                           fontSize: 11,
-                          color: const Color(0xFFA0AAAA),
+                          color: themeCtrl.cardSubtleMutedColor,
                         ),
                       ),
                       Text(
@@ -365,7 +386,7 @@ class _ProfilePreviewTile extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         style: MeloopTypography.lexend(
                           fontSize: 11,
-                          color: const Color(0xFFA0AAAA),
+                          color: themeCtrl.cardSubtleMutedColor,
                         ),
                       ),
                     ],
@@ -400,9 +421,10 @@ class _SidebarActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final accent = MeloopThemeController.instance.primaryColor;
     return ElevatedButton(
       style: ElevatedButton.styleFrom(
-        backgroundColor: const Color(0xFF00AE92),
+        backgroundColor: accent,
         foregroundColor: Colors.white,
         elevation: 0,
         shadowColor: Colors.transparent,

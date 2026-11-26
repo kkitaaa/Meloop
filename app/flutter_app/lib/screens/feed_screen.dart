@@ -17,6 +17,7 @@ import '../features/profile/presentation/profile_screen.dart';
 import '../features/search/presentation/global_search_route.dart';
 import '../services/api_client.dart';
 import '../services/auth_session.dart';
+import '../theme/meloop_theme_controller.dart';
 import '../theme/meloop_typography.dart';
 import '../widgets/app_settings_menu.dart';
 import '../widgets/desktop_app_header.dart';
@@ -71,7 +72,7 @@ class FeedScreenState extends State<FeedScreen> {
         ),
       ];
 
-  final Color _tealAccent = const Color(0xFF1ABC9C);
+  Color get _tealAccent => MeloopThemeController.instance.primaryColor;
 
   late final ApiClient _apiClient;
   late final bool _ownsApiClient;
@@ -336,16 +337,19 @@ class FeedScreenState extends State<FeedScreen> {
     final bool insideDesktopShell = DesktopShellScope.maybeOf(context) != null;
     final bool insideMobileShell = MobileShellScope.maybeOf(context) != null;
 
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: Column(
-        children: [
-          if (!insideDesktopShell && !insideMobileShell)
-            _buildTopBar(isDesktop),
-          Expanded(
-            child: isDesktop ? _buildDesktopLayout() : _buildMobileLayout(),
-          ),
-        ],
+    return AnimatedBuilder(
+      animation: MeloopThemeController.instance,
+      builder: (context, _) => Scaffold(
+        backgroundColor: Colors.transparent,
+        body: Column(
+          children: [
+            if (!insideDesktopShell && !insideMobileShell)
+              _buildTopBar(isDesktop),
+            Expanded(
+              child: isDesktop ? _buildDesktopLayout() : _buildMobileLayout(),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -562,6 +566,7 @@ class FeedScreenState extends State<FeedScreen> {
   Widget _buildPolaroidProfile({double? compactPhotoHeight}) {
     final username = AuthSession.shared.user?.username ?? 'Nombre.de.usuario';
     final gamification = GamificationDemoController.instance;
+    final themeCtrl = MeloopThemeController.instance;
 
     return AnimatedBuilder(
       animation: gamification,
@@ -584,21 +589,21 @@ class FeedScreenState extends State<FeedScreen> {
                         SizedBox(
                           height: compactPhotoHeight,
                           width: double.infinity,
-                          child: const MeloopImagePlaceholder(
+                          child: MeloopImagePlaceholder(
                             iconSize: 42,
-                            backgroundColor: Color(0xFFE7ECEB),
-                            iconColor: Color(0xFF7B8E8C),
-                            borderColor: Color(0xFFD0DADA),
+                            backgroundColor: themeCtrl.placeholderBgColor,
+                            iconColor: themeCtrl.placeholderIconColor,
+                            borderColor: themeCtrl.placeholderBorderColor,
                           ),
                         )
                       else
-                        const AspectRatio(
+                        AspectRatio(
                           aspectRatio: 1.0,
                           child: MeloopImagePlaceholder(
                             iconSize: 48,
-                            backgroundColor: Color(0xFFE7ECEB),
-                            iconColor: Color(0xFF7B8E8C),
-                            borderColor: Color(0xFFD0DADA),
+                            backgroundColor: themeCtrl.placeholderBgColor,
+                            iconColor: themeCtrl.placeholderIconColor,
+                            borderColor: themeCtrl.placeholderBorderColor,
                           ),
                         ),
                       const SizedBox(height: 18),
@@ -612,7 +617,7 @@ class FeedScreenState extends State<FeedScreen> {
                           style: MeloopTypography.username(
                             fontSize: 25,
                             fontWeight: FontWeight.w700,
-                            color: const Color(0xFF1E2525),
+                            color: themeCtrl.cardTitleColor,
                           ),
                         ),
                       ),
@@ -622,7 +627,7 @@ class FeedScreenState extends State<FeedScreen> {
                         textAlign: TextAlign.center,
                         style: MeloopTypography.lexend(
                           fontSize: 15,
-                          color: const Color(0xFF6B7777),
+                          color: themeCtrl.cardMutedColor,
                         ),
                       ),
                     ],
@@ -647,6 +652,9 @@ class FeedScreenState extends State<FeedScreen> {
   }
 
   Widget _buildListeningTo() {
+    final themeCtrl = MeloopThemeController.instance;
+    final trackColor = themeCtrl.pillTrackColor;
+    final darkerTrack = Color.lerp(trackColor, Colors.black, 0.22)!;
     return StackedPaperCard(
       tintColor: const Color(0xFFF6F1D5),
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
@@ -659,30 +667,30 @@ class FeedScreenState extends State<FeedScreen> {
             style: MeloopTypography.lexend(
               fontSize: 16,
               fontWeight: FontWeight.w700,
-              color: const Color(0xFF1A2020),
+              color: themeCtrl.cardTitleColor,
             ),
           ),
           const SizedBox(height: 10),
           Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              gradient: const LinearGradient(
+              gradient: LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
-                colors: [Color(0xFF1D7E78), Color(0xFF135F5C)],
+                colors: [trackColor, darkerTrack],
               ),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Row(
               children: [
-                const MeloopImagePlaceholder(
+                MeloopImagePlaceholder(
                   width: 48,
                   height: 48,
                   iconSize: 22,
-                  borderRadius: BorderRadius.all(Radius.circular(6)),
-                  backgroundColor: Color(0xFF215E5A),
-                  iconColor: Color(0xFFA7D9D4),
-                  borderColor: Color(0xFF2E7873),
+                  borderRadius: const BorderRadius.all(Radius.circular(6)),
+                  backgroundColor: Color.lerp(trackColor, Colors.black, 0.25)!,
+                  iconColor: Colors.white.withValues(alpha: 0.78),
+                  borderColor: Colors.white.withValues(alpha: 0.22),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -758,6 +766,8 @@ class FeedScreenState extends State<FeedScreen> {
 
   Widget _buildLevelCard() {
     final progressController = GamificationDemoController.instance;
+    final themeCtrl = MeloopThemeController.instance;
+    final colorTheme = themeCtrl.colorTheme;
     return AnimatedBuilder(
       animation: progressController,
       builder: (context, _) {
@@ -769,7 +779,7 @@ class FeedScreenState extends State<FeedScreen> {
             : (xp / xpNeeded).clamp(0.0, 1.0).toDouble();
 
         return StackedPaperCard(
-          tintColor: const Color(0xFFDDF5F7),
+          tintColor: colorTheme.xpCardTint,
           padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -777,9 +787,9 @@ class FeedScreenState extends State<FeedScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(
+                  Icon(
                     Icons.star_border_rounded,
-                    color: Color(0xFF158A82),
+                    color: themeCtrl.accentLinkColor,
                     size: 22,
                   ),
                   const SizedBox(width: 6),
@@ -791,7 +801,7 @@ class FeedScreenState extends State<FeedScreen> {
                       style: MeloopTypography.lexend(
                         fontSize: 14.5,
                         fontWeight: FontWeight.w600,
-                        color: const Color(0xFF1B2B2B),
+                        color: themeCtrl.cardTitleColor,
                       ),
                     ),
                   ),
@@ -807,7 +817,9 @@ class FeedScreenState extends State<FeedScreen> {
                     height: 20,
                     width: double.infinity,
                     decoration: BoxDecoration(
-                      color: const Color(0xFF3E8A85),
+                      color: themeCtrl.isDarkCardStyle
+                          ? Colors.white.withValues(alpha: 0.14)
+                          : colorTheme.pillTrack,
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Align(
@@ -817,10 +829,14 @@ class FeedScreenState extends State<FeedScreen> {
                         child: Container(
                           height: 20,
                           decoration: BoxDecoration(
-                            color: const Color(0xFF4BE3C8),
+                            color: colorTheme.headerTop,
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
-                              color: const Color(0xFF0E6C66),
+                              color: Color.lerp(
+                                colorTheme.pillTrack,
+                                Colors.black,
+                                0.18,
+                              )!,
                               width: 1.5,
                             ),
                           ),
@@ -836,7 +852,9 @@ class FeedScreenState extends State<FeedScreen> {
                 style: MeloopTypography.lexend(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
-                  color: const Color(0xFF5FAEA8),
+                  color: themeCtrl.isDarkCardStyle
+                      ? colorTheme.headerTop
+                      : colorTheme.primary,
                 ),
               ),
             ],
@@ -854,6 +872,7 @@ class FeedScreenState extends State<FeedScreen> {
   }
 
   Widget _buildSuggestions() {
+    final themeCtrl = MeloopThemeController.instance;
     return StackedPaperCard(
       padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
       child: Column(
@@ -865,7 +884,7 @@ class FeedScreenState extends State<FeedScreen> {
             style: MeloopTypography.lexend(
               fontSize: 15,
               fontWeight: FontWeight.w700,
-              color: const Color(0xFF1A2020),
+              color: themeCtrl.cardTitleColor,
             ),
           ),
           const SizedBox(height: 14),
@@ -878,7 +897,7 @@ class FeedScreenState extends State<FeedScreen> {
           const SizedBox(height: 6),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF00B298),
+              backgroundColor: _tealAccent,
               foregroundColor: Colors.white,
               elevation: 0,
               padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 10),
@@ -906,22 +925,25 @@ class FeedScreenState extends State<FeedScreen> {
     required String genres,
     required String stats,
   }) {
+    final themeCtrl = MeloopThemeController.instance;
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.72),
-        border: Border.all(color: const Color(0xFFE6ECEB)),
+        color: themeCtrl.isDarkCardStyle
+            ? themeCtrl.innerTileColor
+            : Colors.white.withValues(alpha: 0.72),
+        border: Border.all(color: themeCtrl.innerTileBorderColor),
       ),
       child: Row(
         children: [
-          const MeloopImagePlaceholder(
+          MeloopImagePlaceholder(
             width: 46,
             height: 46,
             iconSize: 20,
-            backgroundColor: Color(0xFFE7ECEB),
-            iconColor: Color(0xFF7B8E8C),
-            borderColor: Color(0xFFD0DADA),
+            backgroundColor: themeCtrl.placeholderBgColor,
+            iconColor: themeCtrl.placeholderIconColor,
+            borderColor: themeCtrl.placeholderBorderColor,
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -935,7 +957,7 @@ class FeedScreenState extends State<FeedScreen> {
                   style: MeloopTypography.lexend(
                     fontSize: 13.5,
                     fontWeight: FontWeight.w600,
-                    color: const Color(0xFF1C2323),
+                    color: themeCtrl.cardTitleColor,
                   ),
                 ),
                 const SizedBox(height: 2),
@@ -945,7 +967,7 @@ class FeedScreenState extends State<FeedScreen> {
                   overflow: TextOverflow.ellipsis,
                   style: MeloopTypography.lexend(
                     fontSize: 10.5,
-                    color: const Color(0xFF7C8888),
+                    color: themeCtrl.cardMutedColor,
                   ),
                 ),
                 Text(
@@ -954,7 +976,7 @@ class FeedScreenState extends State<FeedScreen> {
                   overflow: TextOverflow.ellipsis,
                   style: MeloopTypography.lexend(
                     fontSize: 10,
-                    color: const Color(0xFF9AA5A5),
+                    color: themeCtrl.cardSubtleMutedColor,
                   ),
                 ),
               ],
@@ -1054,6 +1076,7 @@ class FeedScreenState extends State<FeedScreen> {
   Widget _buildFeedHeader({required bool isMobile}) {
     final showCategoryFilters =
         _apiClient.environment == Environment.development;
+    final themeCtrl = MeloopThemeController.instance;
     final titleWidget = Transform.rotate(
       // En Figma +2.66° inclina hacia arriba a la derecha (CCW = negativo en Flutter)
       angle: -2.66 * math.pi / 180.0,
@@ -1061,7 +1084,7 @@ class FeedScreenState extends State<FeedScreen> {
         'Feed',
         style: MeloopTypography.momoDisplay(
           fontSize: isMobile ? 24 : 34,
-          color: const Color(0xFF141919),
+          color: themeCtrl.cardTitleColor,
         ),
       ),
     );
@@ -1083,16 +1106,19 @@ class FeedScreenState extends State<FeedScreen> {
       fontSize: isMobile ? 12.5 : 14,
       horizontalItemPadding: isMobile ? 14 : 20,
       fixedButtonWidth: isMobile ? 96 : 120,
-      pillColor: const Color(0xFF288B83),
+      pillColor: MeloopThemeController.instance.pillTrackColor,
       equalWidths: true,
     );
 
     final writeButton = DecoratedBox(
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
+        gradient: LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [Color(0xFF42D6BE), Color(0xFF0FB39A)],
+          colors: [
+            MeloopThemeController.instance.colorTheme.headerTop,
+            MeloopThemeController.instance.primaryColor,
+          ],
         ),
         borderRadius: BorderRadius.circular(24),
       ),
@@ -1456,7 +1482,7 @@ class _MobileFeedCollapsibleHeader extends StatelessWidget {
                           style: MeloopTypography.username(
                             fontSize: 18.5,
                             fontWeight: FontWeight.w700,
-                            color: const Color(0xFF1E2525),
+                            color: MeloopThemeController.instance.cardTitleColor,
                             height: 1.15,
                           ),
                         ),
@@ -1469,7 +1495,7 @@ class _MobileFeedCollapsibleHeader extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         style: MeloopTypography.lexend(
                           fontSize: 11.5,
-                          color: const Color(0xFF6B7777),
+                          color: MeloopThemeController.instance.cardMutedColor,
                         ),
                       ),
                     ],
@@ -1487,15 +1513,16 @@ class _MobileFeedCollapsibleHeader extends StatelessWidget {
     required double expandedOpacity,
     required double compactOpacity,
   }) {
+    final colorTheme = MeloopThemeController.instance.colorTheme;
     final borderGlowAlpha = 0.55 * compactOpacity;
     return DecoratedBox(
       decoration: BoxDecoration(
         boxShadow: compactOpacity > 0.05
             ? [
                 BoxShadow(
-                  color: const Color(
-                    0xFF4BE3C8,
-                  ).withValues(alpha: 0.24 * compactOpacity),
+                  color: colorTheme.headerTop.withValues(
+                    alpha: 0.24 * compactOpacity,
+                  ),
                   blurRadius: 14 * compactOpacity,
                   offset: const Offset(0, 3),
                 ),
@@ -1504,8 +1531,8 @@ class _MobileFeedCollapsibleHeader extends StatelessWidget {
       ),
       child: StackedPaperCard(
         tintColor: Color.lerp(
-          const Color(0xFFDDF5F7),
-          const Color(0xFFCFF3F6),
+          colorTheme.xpCardTint,
+          colorTheme.softCardTint,
           compactOpacity,
         ),
         backAngleDegrees: 1.3,
@@ -1513,9 +1540,7 @@ class _MobileFeedCollapsibleHeader extends StatelessWidget {
         child: Container(
           decoration: BoxDecoration(
             border: Border.all(
-              color: const Color(
-                0xFF28B5A3,
-              ).withValues(alpha: borderGlowAlpha),
+              color: colorTheme.primary.withValues(alpha: borderGlowAlpha),
               width: 1.5,
             ),
           ),
@@ -1543,9 +1568,9 @@ class _MobileFeedCollapsibleHeader extends StatelessWidget {
                           Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              const Icon(
+                              Icon(
                                 Icons.star_border_rounded,
-                                color: Color(0xFF158A82),
+                                color: colorTheme.pillTrack,
                                 size: 17,
                               ),
                               const SizedBox(width: 4),
@@ -1557,7 +1582,9 @@ class _MobileFeedCollapsibleHeader extends StatelessWidget {
                                   style: MeloopTypography.lexend(
                                     fontSize: 12,
                                     fontWeight: FontWeight.w600,
-                                    color: const Color(0xFF1B2B2B),
+                                    color: MeloopThemeController
+                                        .instance
+                                        .cardTitleColor,
                                   ),
                                 ),
                               ),
@@ -1577,7 +1604,7 @@ class _MobileFeedCollapsibleHeader extends StatelessWidget {
                             style: MeloopTypography.lexend(
                               fontSize: 11,
                               fontWeight: FontWeight.w600,
-                              color: const Color(0xFF4F9F99),
+                              color: colorTheme.primary,
                             ),
                           ),
                         ],
@@ -1599,9 +1626,9 @@ class _MobileFeedCollapsibleHeader extends StatelessWidget {
                         children: [
                           Row(
                             children: [
-                              const Icon(
+                              Icon(
                                 Icons.star_rounded,
-                                color: Color(0xFF10988A),
+                                color: colorTheme.primary,
                                 size: 17,
                               ),
                               const SizedBox(width: 4),
@@ -1613,7 +1640,9 @@ class _MobileFeedCollapsibleHeader extends StatelessWidget {
                                   style: MeloopTypography.lexend(
                                     fontSize: 12,
                                     fontWeight: FontWeight.w700,
-                                    color: const Color(0xFF122828),
+                                    color: MeloopThemeController
+                                        .instance
+                                        .cardTitleColor,
                                   ),
                                 ),
                               ),
@@ -1624,7 +1653,7 @@ class _MobileFeedCollapsibleHeader extends StatelessWidget {
                                   vertical: 2,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFF158A82),
+                                  color: colorTheme.pillTrack,
                                   borderRadius: BorderRadius.circular(12),
                                 ),
                                 child: Text(
@@ -1661,6 +1690,7 @@ class _MobileFeedCollapsibleHeader extends StatelessWidget {
     required double height,
     required bool emphasized,
   }) {
+    final colorTheme = MeloopThemeController.instance.colorTheme;
     return TweenAnimationBuilder<double>(
       tween: Tween<double>(end: fraction),
       duration: const Duration(milliseconds: 420),
@@ -1670,7 +1700,7 @@ class _MobileFeedCollapsibleHeader extends StatelessWidget {
           height: height,
           width: double.infinity,
           decoration: BoxDecoration(
-            color: const Color(0xFF3E8A85),
+            color: colorTheme.pillTrack,
             borderRadius: BorderRadius.circular(height / 2),
           ),
           child: Align(
@@ -1681,14 +1711,14 @@ class _MobileFeedCollapsibleHeader extends StatelessWidget {
                 height: height,
                 decoration: BoxDecoration(
                   gradient: emphasized
-                      ? const LinearGradient(
-                          colors: [Color(0xFF6CF3DC), Color(0xFF2ED4B8)],
+                      ? LinearGradient(
+                          colors: [colorTheme.headerTop, colorTheme.primary],
                         )
                       : null,
-                  color: emphasized ? null : const Color(0xFF4BE3C8),
+                  color: emphasized ? null : colorTheme.headerTop,
                   borderRadius: BorderRadius.circular(height / 2),
                   border: Border.all(
-                    color: const Color(0xFF0E6C66),
+                    color: Color.lerp(colorTheme.pillTrack, Colors.black, 0.18)!,
                     width: 1.4,
                   ),
                 ),
@@ -1701,6 +1731,8 @@ class _MobileFeedCollapsibleHeader extends StatelessWidget {
   }
 
   Widget _buildMobileListeningCard() {
+    final trackColor = MeloopThemeController.instance.pillTrackColor;
+    final darkerTrack = Color.lerp(trackColor, Colors.black, 0.22)!;
     return StackedPaperCard(
       tintColor: const Color(0xFFF6F1D5),
       backAngleDegrees: -1.1,
@@ -1717,7 +1749,7 @@ class _MobileFeedCollapsibleHeader extends StatelessWidget {
             style: MeloopTypography.lexend(
               fontSize: 13,
               fontWeight: FontWeight.w700,
-              color: const Color(0xFF1A2020),
+              color: MeloopThemeController.instance.cardTitleColor,
             ),
           ),
           const SizedBox(height: 6),
@@ -1725,23 +1757,23 @@ class _MobileFeedCollapsibleHeader extends StatelessWidget {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
               decoration: BoxDecoration(
-                gradient: const LinearGradient(
+                gradient: LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
-                  colors: [Color(0xFF1D7E78), Color(0xFF135F5C)],
+                  colors: [trackColor, darkerTrack],
                 ),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Row(
                 children: [
-                  const MeloopImagePlaceholder(
+                  MeloopImagePlaceholder(
                     width: 34,
                     height: 34,
                     iconSize: 16,
-                    borderRadius: BorderRadius.all(Radius.circular(5)),
-                    backgroundColor: Color(0xFF215E5A),
-                    iconColor: Color(0xFFA7D9D4),
-                    borderColor: Color(0xFF2E7873),
+                    borderRadius: const BorderRadius.all(Radius.circular(5)),
+                    backgroundColor: Color.lerp(trackColor, Colors.black, 0.25)!,
+                    iconColor: Colors.white.withValues(alpha: 0.78),
+                    borderColor: Colors.white.withValues(alpha: 0.22),
                   ),
                   const SizedBox(width: 8),
                   Expanded(
