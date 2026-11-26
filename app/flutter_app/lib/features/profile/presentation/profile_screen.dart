@@ -5,6 +5,7 @@ import 'dart:async';
 
 import '../../../core/navigation/artists_and_songs_screen.dart';
 import '../../../core/navigation/desktop_navigation_shell.dart';
+import '../../../core/navigation/responsive_navigation_shell.dart';
 import '../../social/presentation/mutual_friends_row.dart';
 import '../../../screens/friends_screen.dart';
 import '../../../widgets/desktop_app_header.dart';
@@ -439,12 +440,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final bool isDesktop = screenWidth > 900;
     final bool insideDesktopShell =
         widget.insideDesktopShell || DesktopShellScope.maybeOf(context) != null;
+    final bool insideMobileShell = MobileShellScope.maybeOf(context) != null;
 
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: Column(
         children: [
-          if (!insideDesktopShell) _buildTopBar(isDesktop, context),
+          if (!insideDesktopShell && !insideMobileShell)
+            _buildTopBar(isDesktop, context),
           Expanded(
             child: isDesktop ? _buildDesktopLayout() : _buildMobileLayout(),
           ),

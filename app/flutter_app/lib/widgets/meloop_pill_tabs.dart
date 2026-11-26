@@ -15,7 +15,7 @@ class MeloopPillItem<T> {
 ///
 /// Por defecto todos los botones tienen el mismo ancho, calculado a partir de
 /// la etiqueta más larga más margen suficiente.
-class MeloopPillTabs<T> extends StatelessWidget {
+class MeloopPillTabs<T> extends StatefulWidget {
   const MeloopPillTabs({
     super.key,
     required this.items,
@@ -84,76 +84,134 @@ class MeloopPillTabs<T> extends StatelessWidget {
   }
 
   @override
+  State<MeloopPillTabs<T>> createState() => _MeloopPillTabsState<T>();
+}
+
+class _MeloopPillTabsState<T> extends State<MeloopPillTabs<T>> {
+  int _lastValidIndex = 0;
+
+  @override
   Widget build(BuildContext context) {
-    final buttonHeight = height - padding * 2;
+    final buttonHeight = widget.height - widget.padding * 2;
     final double? sharedWidth =
-        fixedButtonWidth ??
-        (equalWidths && items.isNotEmpty
-            ? measureUniformButtonWidth(
+        widget.fixedButtonWidth ??
+        (widget.equalWidths && widget.items.isNotEmpty
+            ? MeloopPillTabs.measureUniformButtonWidth(
                 context: context,
-                labels: items.map((e) => e.label).toList(),
-                fontSize: fontSize,
-                horizontalItemPadding: horizontalItemPadding,
+                labels: widget.items.map((e) => e.label).toList(),
+                fontSize: widget.fontSize,
+                horizontalItemPadding: widget.horizontalItemPadding,
               )
             : null);
 
-    return Container(
-      height: height,
-      padding: EdgeInsets.all(padding),
-      decoration: BoxDecoration(
-        color: pillColor,
-        borderRadius: BorderRadius.circular(height / 2 + 8),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: items.map((item) {
-          final isSelected = item.value == selectedValue;
-          final inner = AnimatedContainer(
-            duration: const Duration(milliseconds: 180),
-            curve: Curves.easeOutCubic,
-            width: sharedWidth,
-            height: buttonHeight,
-            padding: sharedWidth == null
-                ? EdgeInsets.symmetric(horizontal: horizontalItemPadding)
-                : EdgeInsets.zero,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: isSelected ? Colors.white : Colors.transparent,
-              gradient: isSelected
-                  ? const LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [Color(0xFFFFFFFF), Color(0xFFE6E6E6)],
-                    )
-                  : null,
-              borderRadius: BorderRadius.circular(buttonHeight / 2 + 4),
-            ),
-            child: Text(
-              item.label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: MeloopTypography.lexend(
-                color: isSelected ? const Color(0xFF141B1B) : Colors.white,
-                fontSize: fontSize,
-                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-              ),
-            ),
-          );
+    final selectedIndex = widget.selectedValue == null
+        ? -1
+        : widget.items.indexWhere((item) => item.value == widget.selectedValue);
+    if (selectedIndex >= 0) {
+      _lastValidIndex = selectedIndex;
+    }
+    final clampedIndex = _lastValidIndex.clamp(
+      0,
+      widget.items.isEmpty ? 0 : widget.items.length - 1,
+    );
+    final useSlidingIndicator = sharedWidth != null;
 
-          return Semantics(
-            button: true,
-            selected: isSelected,
-            label: item.label,
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: disabled ? null : () => onSelected(item.value),
-                borderRadius: BorderRadius.circular(buttonHeight / 2 + 4),
-                child: inner,
+    return Container(
+      height: widget.height,
+      padding: EdgeInsets.all(widget.padding),
+      decoration: BoxDecoration(
+        color: widget.pillColor,
+        borderRadius: BorderRadius.circular(widget.height / 2 + 8),
+      ),
+      child: Stack(
+        children: [
+          if (useSlidingIndicator)
+            AnimatedPositioned(
+              duration: const Duration(milliseconds: 240),
+              curve: Curves.easeOutCubic,
+              left: clampedIndex * sharedWidth,
+              top: 0,
+              bottom: 0,
+              width: sharedWidth,
+              child: IgnorePointer(
+                child: AnimatedOpacity(
+                  duration: const Duration(milliseconds: 160),
+                  opacity: selectedIndex >= 0 ? 1.0 : 0.0,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [Color(0xFFFFFFFF), Color(0xFFE6E6E6)],
+                      ),
+                      borderRadius: BorderRadius.circular(buttonHeight / 2 + 4),
+                    ),
+                  ),
+                ),
               ),
             ),
-          );
-        }).toList(),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: widget.items.map((item) {
+              final isSelected = item.value == widget.selectedValue;
+              final inner = AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                curve: Curves.easeOutCubic,
+                width: sharedWidth,
+                height: buttonHeight,
+                padding: sharedWidth == null
+                    ? EdgeInsets.symmetric(
+                        horizontal: widget.horizontalItemPadding,
+                      )
+                    : EdgeInsets.zero,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: !useSlidingIndicator && isSelected
+                      ? Colors.white
+                      : Colors.transparent,
+                  gradient: !useSlidingIndicator && isSelected
+                      ? const LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [Color(0xFFFFFFFF), Color(0xFFE6E6E6)],
+                        )
+                      : null,
+                  borderRadius: BorderRadius.circular(buttonHeight / 2 + 4),
+                ),
+                child: AnimatedDefaultTextStyle(
+                  duration: const Duration(milliseconds: 180),
+                  curve: Curves.easeOutCubic,
+                  style: MeloopTypography.lexend(
+                    color: isSelected ? const Color(0xFF141B1B) : Colors.white,
+                    fontSize: widget.fontSize,
+                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+                  ),
+                  child: Text(
+                    item.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              );
+
+              return Semantics(
+                button: true,
+                selected: isSelected,
+                label: item.label,
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: widget.disabled
+                        ? null
+                        : () => widget.onSelected(item.value),
+                    borderRadius: BorderRadius.circular(buttonHeight / 2 + 4),
+                    child: inner,
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ],
       ),
     );
   }

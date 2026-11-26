@@ -255,11 +255,9 @@ class _AuthScreenState extends State<AuthScreen>
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // Fondo radial animado (un solo shader draw en su propio RepaintBoundary
-          // para consumo mínimo de GPU).
-          RepaintBoundary(
-            child: _AnimatedTealRadialBackground(animation: _bgController),
-          ),
+          // Fondo radial animado (un solo shader draw directo al framebuffer sin
+          // asignar un render target MSAA de pantalla completa).
+          _AnimatedTealRadialBackground(animation: _bgController),
 
           // Carátulas con paralaje concentradas en el área visible izquierda,
           // con un leve solapamiento (70px) detrás del borde izquierdo del panel
@@ -273,10 +271,8 @@ class _AuthScreenState extends State<AuthScreen>
                 0.0,
                 screenWidth - (screenWidth * 0.30).clamp(400.0, 560.0) + 70.0,
               ),
-              child: RepaintBoundary(
-                child: ParallaxAlbumCovers(
-                  animate: !_isTestBinding && _assetsReady,
-                ),
+              child: ParallaxAlbumCovers(
+                animate: !_isTestBinding && _assetsReady,
               ),
             ),
 

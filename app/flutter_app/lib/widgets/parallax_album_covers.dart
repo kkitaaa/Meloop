@@ -22,7 +22,7 @@ class ParallaxAlbumCovers extends StatefulWidget {
 
   final bool animate;
 
-  static const int decodeSizePx = 360;
+  static const int decodeSizePx = 280;
 
   // Orden exacto según número de copia en assets/textures/PLACEHOLDER_ALBUMCOVER/
   static const List<String> placeholderAlbumCovers = [
@@ -54,22 +54,42 @@ class ParallaxAlbumCovers extends StatefulWidget {
     'assets/textures/PLACEHOLDER_ALBUMCOVER/image copy 28.png',
   ];
 
-  /// Precarga y decodifica todas las carátulas al mismo tamaño (`360×360`) que
-  /// usa el widget para que aparezcan listas desde el primer cuadro visible.
+  /// Precarga las carátulas en lotes pequeños (de 4 en 4) para evitar picos
+  /// altos de memoria nativa al descomprimir los PNG grandes en paralelo.
   static Future<void> preload(BuildContext context) async {
-    await Future.wait(
-      placeholderAlbumCovers.map(
-        (assetPath) => precacheImage(
-          ResizeImage.resizeIfNeeded(
-            decodeSizePx,
-            decodeSizePx,
-            AssetImage(assetPath),
-          ),
-          context,
-          onError: (_, _) {},
-        ),
-      ),
-    );
+    const batchSize = 4;
+    for (var i = 0; i < placeholderAlbumCovers.length; i += batchSize) {
+      if (!context.mounted) return;
+      final end = math.min(i + batchSize, placeholderAlbumCovers.length);
+      await Future.wait(
+        placeholderAlbumCovers
+            .sublist(i, end)
+            .map(
+              (assetPath) => precacheImage(
+                ResizeImage.resizeIfNeeded(
+                  decodeSizePx,
+                  decodeSizePx,
+                  AssetImage(assetPath),
+                ),
+                context,
+                onError: (_, _) {},
+              ),
+            ),
+      );
+    }
+  }
+
+  /// Libera de `ImageCache` las 26 carátulas del login al entrar a la app para
+  /// no retener RAM innecesaria durante el resto de la sesión.
+  static void evictFromCache() {
+    for (final assetPath in placeholderAlbumCovers) {
+      ResizeImage.resizeIfNeeded(
+        decodeSizePx,
+        decodeSizePx,
+        AssetImage(assetPath),
+      ).evict();
+    }
+    PaintingBinding.instance.imageCache.clearLiveImages();
   }
 
   @override
@@ -89,29 +109,29 @@ class _ParallaxAlbumCoversState extends State<ParallaxAlbumCovers>
     double shadowBlur,
     List<double> laneCenters,
   })>[
-    // Plano 0: Fondo (pequeño-mediano, lento)
+    // Plano 0: Fondo (pequeño-mediano, deriva ambiental muy suave)
     (
       minSize: 170,
       maxSize: 210,
-      speedPxPerSec: 24,
+      speedPxPerSec: 11,
       opacity: 0.78,
       shadowBlur: 12,
       laneCenters: [0.06, 0.27, 0.48, 0.70, 0.91],
     ),
-    // Plano 1: Medio (mediano-grande, velocidad media)
+    // Plano 1: Medio (mediano-grande, velocidad media calma)
     (
       minSize: 240,
       maxSize: 285,
-      speedPxPerSec: 42,
+      speedPxPerSec: 19,
       opacity: 0.92,
       shadowBlur: 18,
       laneCenters: [0.16, 0.39, 0.62, 0.85],
     ),
-    // Plano 2: Primer plano (grande hasta 360px máx, más rápido)
+    // Plano 2: Primer plano (grande, movimiento fluido sin distraer a 60+ fps)
     (
       minSize: 315,
       maxSize: 360,
-      speedPxPerSec: 64,
+      speedPxPerSec: 30,
       opacity: 1.0,
       shadowBlur: 26,
       laneCenters: [0.09, 0.35, 0.57, 0.80],
@@ -153,6 +173,7 @@ class _ParallaxAlbumCoversState extends State<ParallaxAlbumCovers>
   @override
   void dispose() {
     _ticker?.dispose();
+    ParallaxAlbumCovers.evictFromCache();
     super.dispose();
   }
 
@@ -216,10 +237,14 @@ class _ParallaxAlbumCoversState extends State<ParallaxAlbumCovers>
             ParallaxAlbumCovers.placeholderAlbumCovers.length];
     _nextAssetIndex++;
 
-    final double size =
-        (spec.minSize + _random.nextDouble() * (spec.maxSize - spec.minSize))
-            .clamp(spec.minSize, ParallaxAlbumCovers.decodeSizePx.toDouble())
-            .toDouble();
+    // Cuantizamos el tamaño a pasos discretos (múltiplos de 24px) para que Skia
+    // reutilice las mismas máscaras de sombra en GPU en lugar de acumular
+    // cientos de texturas únicas por cada portada que reaparece.
+    final rawSize =
+        spec.minSize + _random.nextDouble() * (spec.maxSize - spec.minSize);
+    final double size = ((rawSize / 24.0).round() * 24.0)
+        .clamp(spec.minSize, 360.0)
+        .toDouble();
 
     final laneIdx =
         forcedLane ??

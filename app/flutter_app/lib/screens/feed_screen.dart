@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import '../config/api_config.dart';
 import '../core/navigation/artists_and_songs_screen.dart';
 import '../core/navigation/desktop_navigation_shell.dart';
+import '../core/navigation/responsive_navigation_shell.dart';
 import '../features/gamification/presentation/gamification_demo_controller.dart';
 import '../features/moderation/data/moderation_models.dart';
 import '../features/moderation/presentation/moderation_queue_screen.dart';
@@ -333,12 +334,14 @@ class FeedScreenState extends State<FeedScreen> {
     final double screenWidth = MediaQuery.sizeOf(context).width;
     final bool isDesktop = screenWidth > 900;
     final bool insideDesktopShell = DesktopShellScope.maybeOf(context) != null;
+    final bool insideMobileShell = MobileShellScope.maybeOf(context) != null;
 
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: Column(
         children: [
-          if (!insideDesktopShell) _buildTopBar(isDesktop),
+          if (!insideDesktopShell && !insideMobileShell)
+            _buildTopBar(isDesktop),
           Expanded(
             child: isDesktop ? _buildDesktopLayout() : _buildMobileLayout(),
           ),

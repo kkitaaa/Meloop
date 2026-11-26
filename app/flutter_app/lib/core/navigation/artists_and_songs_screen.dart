@@ -14,17 +14,20 @@ import '../../widgets/meloop_toast_pill.dart';
 import '../../widgets/mobile_app_header.dart';
 import '../../widgets/paper/stacked_paper_card.dart';
 import 'desktop_navigation_shell.dart';
+import 'responsive_navigation_shell.dart';
 
 enum _MusicFeedTab { recommended, trending, friendsArtists }
 
 class ArtistsAndSongsScreen extends StatefulWidget {
-  const ArtistsAndSongsScreen({super.key});
+  const ArtistsAndSongsScreen({super.key, this.initialQuery});
+
+  final String? initialQuery;
 
   @override
-  State<ArtistsAndSongsScreen> createState() => _ArtistsAndSongsScreenState();
+  State<ArtistsAndSongsScreen> createState() => ArtistsAndSongsScreenState();
 }
 
-class _ArtistsAndSongsScreenState extends State<ArtistsAndSongsScreen> {
+class ArtistsAndSongsScreenState extends State<ArtistsAndSongsScreen> {
   static const Color _tealAccent = Color(0xFF00AF92);
   static const Color _pillTrackColor = Color(0xFF288B83);
   static const int _pageSize = 15; // 3 filas completas de 5 álbumes en desktop
@@ -396,6 +399,25 @@ class _ArtistsAndSongsScreenState extends State<ArtistsAndSongsScreen> {
   void initState() {
     super.initState();
     _gridScrollController.addListener(_onGridScroll);
+    final initial = widget.initialQuery?.trim();
+    if (initial != null && initial.isNotEmpty) {
+      _searchController.text = initial;
+      _query = initial;
+    }
+  }
+
+  void applySearchQuery(String query) {
+    final trimmed = query.trim();
+    setState(() {
+      _activeTab = _MusicFeedTab.recommended;
+      _selectedFriendFilter = null;
+      _searchController.text = trimmed;
+      _query = trimmed;
+      _loadedCount = _pageSize;
+    });
+    if (_gridScrollController.hasClients) {
+      _gridScrollController.jumpTo(0);
+    }
   }
 
   @override
@@ -604,6 +626,8 @@ class _ArtistsAndSongsScreenState extends State<ArtistsAndSongsScreen> {
     final isAndroidMobile =
         !isDesktop && defaultTargetPlatform == TargetPlatform.android;
     final insideDesktopShell = DesktopShellScope.maybeOf(context) != null;
+    final insideMobileShell = MobileShellScope.maybeOf(context) != null;
+    final hideTopBar = insideDesktopShell || insideMobileShell;
 
     if (isDesktop && _activeTab == _MusicFeedTab.friendsArtists) {
       _activeTab = _MusicFeedTab.recommended;
@@ -613,9 +637,9 @@ class _ArtistsAndSongsScreenState extends State<ArtistsAndSongsScreen> {
       backgroundColor: Colors.transparent,
       body: Column(
         children: [
-          if (!insideDesktopShell && isAndroidMobile)
+          if (!hideTopBar && isAndroidMobile)
             MobileAppHeader(onSearchTap: () => openGlobalSearch(context))
-          else if (!insideDesktopShell && isDesktop)
+          else if (!hideTopBar && isDesktop)
             DesktopAppHeader(
               activeSection: DesktopNavigationSection.artists,
               onHomeTap: () => navigateToDesktopHome(context),
@@ -630,7 +654,7 @@ class _ArtistsAndSongsScreenState extends State<ArtistsAndSongsScreen> {
               ),
               onSearchTap: () => openGlobalSearch(context),
             )
-          else if (!insideDesktopShell)
+          else if (!hideTopBar)
             Container(
               height: 55,
               color: _tealAccent,
@@ -1491,7 +1515,7 @@ class _AlbumVinylCardState extends State<_AlbumVinylCard> {
                     ],
                   ),
                 ),
-                const SizedBox(height: 8),
+                SizedBox(height: widget.matchedSong != null ? 5 : 8),
                 SizedBox(
                   width: coverSize + (widget.enableVinylHover ? 16 : 0),
                   child: Text(
@@ -1502,11 +1526,11 @@ class _AlbumVinylCardState extends State<_AlbumVinylCard> {
                       fontSize: 13,
                       fontWeight: FontWeight.w700,
                       color: const Color(0xFF182222),
-                      height: 1.2,
+                      height: 1.15,
                     ),
                   ),
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: 1),
                 SizedBox(
                   width: coverSize + (widget.enableVinylHover ? 16 : 0),
                   child: Text(
@@ -1517,21 +1541,25 @@ class _AlbumVinylCardState extends State<_AlbumVinylCard> {
                       fontSize: 11.5,
                       fontWeight: FontWeight.w500,
                       color: const Color(0xFF6B7B7B),
+                      height: 1.15,
                     ),
                   ),
                 ),
                 if (widget.matchedSong != null) ...[
-                  const SizedBox(height: 2),
-                  SizedBox(
-                    width: coverSize + (widget.enableVinylHover ? 16 : 0),
-                    child: Text(
-                      '♪ ${widget.matchedSong}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: MeloopTypography.lexend(
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w600,
-                        color: const Color(0xFF009B82),
+                  const SizedBox(height: 1),
+                  Flexible(
+                    child: SizedBox(
+                      width: coverSize + (widget.enableVinylHover ? 16 : 0),
+                      child: Text(
+                        '♪ ${widget.matchedSong}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: MeloopTypography.lexend(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w600,
+                          color: const Color(0xFF009B82),
+                          height: 1.15,
+                        ),
                       ),
                     ),
                   ),

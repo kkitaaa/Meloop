@@ -1,37 +1,51 @@
-import 'dart:async';
-
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_app/core/navigation/artists_and_songs_screen.dart';
 import 'package:flutter_app/core/navigation/desktop_navigation_shell.dart';
-import 'package:flutter_app/screens/friends_screen.dart';
-import 'package:flutter_app/features/music/presentation/music_track_detail_screen.dart';
-import 'package:flutter_app/features/music/presentation/music_track_tile.dart';
+import 'package:flutter_app/core/navigation/responsive_navigation_shell.dart';
+import 'package:flutter_app/features/gamification/presentation/gamification_demo_controller.dart';
 import 'package:flutter_app/features/profile/presentation/profile_screen.dart';
 import 'package:flutter_app/models/global_search.dart';
 import 'package:flutter_app/models/music_track.dart';
+import 'package:flutter_app/screens/friends_screen.dart';
 import 'package:flutter_app/services/api_client.dart';
+import 'package:flutter_app/theme/meloop_typography.dart';
 import 'package:flutter_app/widgets/desktop_app_header.dart';
+import 'package:flutter_app/widgets/meloop_pill_tabs.dart';
+import 'package:flutter_app/widgets/meloop_toast_pill.dart';
+import 'package:flutter_app/widgets/paper/stacked_paper_card.dart';
 import 'package:flutter_app/widgets/post_card.dart';
 
 enum _SearchSource { users, posts, music }
 
+enum _DesktopLeftTab { all, posts, music }
+
+enum _CompactSearchTab { posts, music, users }
+
 class GlobalSearchScreen extends StatefulWidget {
   final ApiClient? apiClient;
   final TextEditingController? externalQueryController;
+  final Listenable? externalSubmitTrigger;
+  final MobileShellController? mobileShellController;
 
   const GlobalSearchScreen({
     super.key,
     this.apiClient,
     this.externalQueryController,
+    this.externalSubmitTrigger,
+    this.mobileShellController,
   });
 
   @override
   State<GlobalSearchScreen> createState() => _GlobalSearchScreenState();
 }
 
-class _GlobalSearchScreenState extends State<GlobalSearchScreen>
-    with SingleTickerProviderStateMixin {
+class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
+  static const Color _tealAccent = Color(0xFF00AF92);
+  static const Color _pillTrackColor = Color(0xFF288B83);
+  static const Color _inkDark = Color(0xFF182828);
+  static const Color _inkMuted = Color(0xFF6B807D);
+
   static const _filters = <String, String>{
     'Texto': 'text',
     'Canción': 'song',
@@ -43,10 +57,11 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen>
   late final bool _ownsQueryController;
   final List<String> _recentSearches = [];
   final Map<_SearchSource, CancelToken> _cancelTokens = {};
-  late final TabController _tabController;
   late final ApiClient _apiClient;
   late final bool _ownsApiClient;
-  Timer? _debounce;
+
+  _DesktopLeftTab _desktopLeftTab = _DesktopLeftTab.all;
+  _CompactSearchTab _compactTab = _CompactSearchTab.posts;
 
   List<SearchUser> _users = const [];
   List<SearchPost> _posts = const [];
@@ -63,6 +78,7 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen>
   final Set<String> _sendingRequests = {};
   String _postFilter = 'text';
   String _activeQuery = '';
+  bool _showMinLengthHint = false;
 
   @override
   void initState() {
@@ -72,50 +88,76 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen>
     _ownsQueryController = widget.externalQueryController == null;
     _queryController =
         widget.externalQueryController ?? TextEditingController();
-    _tabController = TabController(length: 3, vsync: this);
-    _tabController.addListener(_onTabChanged);
     _queryController.addListener(_onQueryChanged);
+    widget.externalSubmitTrigger?.addListener(_onExternalSubmit);
+
+    final initialQuery = _queryController.text.trim();
+    if (initialQuery.length >= 2) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _queryController.text.trim() == initialQuery) {
+          _searchAll(initialQuery);
+        }
+      });
+    }
   }
 
-  void _onTabChanged() {
-    if (mounted) setState(() {});
+  @override
+  void didUpdateWidget(covariant GlobalSearchScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.externalSubmitTrigger != widget.externalSubmitTrigger) {
+      oldWidget.externalSubmitTrigger?.removeListener(_onExternalSubmit);
+      widget.externalSubmitTrigger?.addListener(_onExternalSubmit);
+    }
   }
 
   @override
   void dispose() {
-    _debounce?.cancel();
     for (final token in _cancelTokens.values) {
       token.cancel('La búsqueda cambió.');
     }
+    widget.externalSubmitTrigger?.removeListener(_onExternalSubmit);
     _queryController.removeListener(_onQueryChanged);
     if (_ownsQueryController) _queryController.dispose();
-    _tabController.removeListener(_onTabChanged);
-    _tabController.dispose();
     if (_ownsApiClient) _apiClient.close();
     super.dispose();
   }
 
+  void _onExternalSubmit() {
+    _submitSearch();
+  }
+
   void _onQueryChanged() {
     final query = _queryController.text.trim();
-    _debounce?.cancel();
-    _cancelPendingRequests();
-    if (query.length < 2) {
+    if (query.isEmpty) {
+      _cancelPendingRequests();
       setState(() {
         _activeQuery = '';
+        _showMinLengthHint = false;
         _clearResults();
       });
       return;
     }
-    setState(() {
-      _activeQuery = '';
-      _clearResults();
-    });
+    if (_showMinLengthHint && query.length >= 2) {
+      setState(() => _showMinLengthHint = false);
+      return;
+    }
+    setState(() {});
+  }
 
-    _debounce = Timer(const Duration(milliseconds: 400), () {
-      if (mounted && query == _queryController.text.trim()) {
-        _searchAll(query);
-      }
-    });
+  void _submitSearch([String? rawQuery]) {
+    final query = (rawQuery ?? _queryController.text).trim();
+    if (query.length < 2) {
+      _cancelPendingRequests();
+      setState(() {
+        _activeQuery = '';
+        _showMinLengthHint = query.isNotEmpty;
+        _clearResults();
+      });
+      return;
+    }
+    _cancelPendingRequests();
+    setState(() => _showMinLengthHint = false);
+    _searchAll(query);
   }
 
   void _cancelPendingRequests() {
@@ -159,6 +201,12 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen>
     _recentSearches.remove(query);
     _recentSearches.insert(0, query);
     if (_recentSearches.length > 5) _recentSearches.removeLast();
+  }
+
+  void _applyRecentQuery(String query) {
+    _queryController.text = query;
+    _queryController.selection = TextSelection.collapsed(offset: query.length);
+    _submitSearch(query);
   }
 
   Future<void> _searchUsers(String query, CancelToken token) async {
@@ -258,8 +306,8 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen>
     }
   }
 
-  Future<void> _changePostFilter(String? filter) async {
-    if (filter == null || filter == _postFilter) return;
+  Future<void> _changePostFilter(String filter) async {
+    if (filter == _postFilter) return;
     setState(() => _postFilter = filter);
     if (_activeQuery.length < 2) return;
     _cancelTokens[_SearchSource.posts]?.cancel('Cambió el filtro.');
@@ -294,23 +342,591 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen>
             .toList();
         _sendingRequests.remove(user.id);
       });
+      showMeloopToastPill(
+        context,
+        message: 'Solicitud enviada a ${user.name}',
+        icon: Icons.person_add_alt_1_rounded,
+      );
     } on ApiException catch (error) {
       if (!mounted) return;
       setState(() => _sendingRequests.remove(user.id));
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('No se pudo enviar la solicitud: ${error.message}'),
-        ),
+      showMeloopToastPill(
+        context,
+        message: 'No se pudo enviar la solicitud: ${error.message}',
+        icon: Icons.error_outline_rounded,
       );
     }
   }
 
-  Widget _buildSourceTab(_SearchSource source) {
-    final error = _errors[source];
-    if (_loading[source] == true) {
-      return const Center(
-        child: CircularProgressIndicator(color: Color(0xFF1ABC9C)),
+  /// Abre la pestaña de "Artistas y canciones" con el término buscado para ver
+  /// el detalle completo del álbum, canciones y acciones.
+  void _openInArtistsTab(String? query) {
+    final normalized = query?.trim();
+    final desktopShell = DesktopShellScope.maybeOf(context);
+    if (desktopShell != null) {
+      desktopShell.openArtists(initialQuery: normalized);
+      return;
+    }
+    final mobileShell =
+        widget.mobileShellController ?? MobileShellScope.maybeOf(context);
+    if (mobileShell != null) {
+      Navigator.of(context).maybePop();
+      mobileShell.openArtists(initialQuery: normalized);
+      return;
+    }
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => ArtistsAndSongsScreen(initialQuery: normalized),
+      ),
+    );
+  }
+
+  /// Abre la pestaña de "Amigos" con el nombre buscado para gestionar amistad
+  /// o ver el detalle de ese usuario.
+  void _openInFriendsTab(String? query) {
+    final normalized = query?.trim();
+    final desktopShell = DesktopShellScope.maybeOf(context);
+    if (desktopShell != null) {
+      desktopShell.openFriends(initialQuery: normalized);
+      return;
+    }
+    final mobileShell =
+        widget.mobileShellController ?? MobileShellScope.maybeOf(context);
+    if (mobileShell != null) {
+      Navigator.of(context).maybePop();
+      mobileShell.openFriends(initialQuery: normalized);
+      return;
+    }
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => FriendsScreen(initialQuery: normalized),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDesktop = MediaQuery.sizeOf(context).width > 900;
+    final insideDesktopShell = DesktopShellScope.maybeOf(context) != null;
+
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      appBar: insideDesktopShell ? null : _buildBrandedAppBar(isDesktop),
+      body: SafeArea(
+        top: false,
+        child: isDesktop
+            ? _buildDesktopLayout(insideDesktopShell: insideDesktopShell)
+            : _buildCompactLayout(),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // ESCRITORIO WIDESCREEN: 2 hojas consistentes con Inicio / Amigos / Artistas
+  // ---------------------------------------------------------------------------
+  Widget _buildDesktopLayout({required bool insideDesktopShell}) {
+    final gamification = GamificationDemoController.instance;
+    final hasSubmittedQuery = _activeQuery.isNotEmpty;
+
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 1460),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(28, 22, 28, 24),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                flex: 64,
+                child: TapeCornerOverlay(
+                  leftWidth: 148,
+                  rightWidth: 132,
+                  child: StackedPaperCard(
+                    textureAsset: 'assets/textures/paper.png',
+                    backAngleDegrees: -1.15,
+                    padding: const EdgeInsets.fromLTRB(26, 22, 26, 18),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _buildDesktopLeftHeader(
+                          hasSubmittedQuery: hasSubmittedQuery,
+                        ),
+                        if (hasSubmittedQuery &&
+                            (_desktopLeftTab == _DesktopLeftTab.all ||
+                                _desktopLeftTab == _DesktopLeftTab.posts)) ...[
+                          const SizedBox(height: 12),
+                          _buildPostFilterChips(),
+                        ],
+                        const SizedBox(height: 14),
+                        const Divider(height: 1, color: Color(0xFFE0E8E6)),
+                        const SizedBox(height: 10),
+                        Expanded(
+                          child: hasSubmittedQuery
+                              ? _buildDesktopLeftContent()
+                              : _buildRecentSearches(isDesktop: true),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 28),
+              Expanded(
+                flex: 36,
+                child: AnimatedBuilder(
+                  animation: gamification,
+                  builder: (context, _) => Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Positioned.fill(
+                        child: StackedPaperCard(
+                          textureAsset: 'assets/textures/paper.png',
+                          tintColor: const Color(0xFFF2FAF8),
+                          backAngleDegrees: 1.25,
+                          padding: const EdgeInsets.fromLTRB(22, 26, 22, 18),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              _buildDesktopFriendsHeader(
+                                hasSubmittedQuery: hasSubmittedQuery,
+                              ),
+                              const SizedBox(height: 12),
+                              const Divider(
+                                height: 1,
+                                color: Color(0xFFD5E6E3),
+                              ),
+                              const SizedBox(height: 10),
+                              Expanded(
+                                child: hasSubmittedQuery
+                                    ? _buildUsersList(isDesktop: true)
+                                    : _buildFriendsIdleCard(),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        top: -18,
+                        left: 0,
+                        right: 0,
+                        child: Center(
+                          child: CustomizablePin(
+                            color: gamification.activePinColor,
+                            size: 46,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDesktopLeftHeader({required bool hasSubmittedQuery}) {
+    final postsCount = _posts.length;
+    final musicCount = _tracks.length;
+    final typed = _queryController.text.trim();
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Transform.rotate(
+                angle: -0.025,
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Publicaciones y música',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: MeloopTypography.momoDisplay(
+                    fontSize: 27,
+                    color: _inkDark,
+                    letterSpacing: -0.3,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                hasSubmittedQuery
+                    ? 'Resultados para «$_activeQuery» · $postsCount publicaciones · $musicCount canciones'
+                    : _showMinLengthHint
+                    ? 'Escribe al menos 2 caracteres y presiona Enter para buscar'
+                    : typed.length >= 2
+                    ? 'Presiona Enter para buscar «$typed»'
+                    : 'Búsqueda rápida · Escribe y presiona Enter para buscar',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: MeloopTypography.lexend(
+                  fontSize: 12.5,
+                  color: _showMinLengthHint
+                      ? const Color(0xFFB4690E)
+                      : _inkMuted,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 14),
+        MeloopPillTabs<_DesktopLeftTab>(
+          items: const [
+            MeloopPillItem(value: _DesktopLeftTab.all, label: 'Todo'),
+            MeloopPillItem(
+              value: _DesktopLeftTab.posts,
+              label: 'Publicaciones',
+            ),
+            MeloopPillItem(value: _DesktopLeftTab.music, label: 'Música'),
+          ],
+          selectedValue: _desktopLeftTab,
+          onSelected: (tab) => setState(() => _desktopLeftTab = tab),
+          height: 40,
+          padding: 3.5,
+          fontSize: 12.5,
+          horizontalItemPadding: 14,
+          fixedButtonWidth: 112,
+          pillColor: _pillTrackColor,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDesktopFriendsHeader({required bool hasSubmittedQuery}) {
+    return Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Amigos y personas',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: MeloopTypography.lexend(
+                  fontSize: 19,
+                  fontWeight: FontWeight.w700,
+                  color: _inkDark,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                hasSubmittedQuery
+                    ? '${_users.length} perfiles encontrados'
+                    : 'Toca un perfil para verlo en la pestaña Amigos',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: MeloopTypography.lexend(fontSize: 12, color: _inkMuted),
+              ),
+            ],
+          ),
+        ),
+        TextButton(
+          onPressed: () => _openInFriendsTab(
+            _activeQuery.isNotEmpty ? _activeQuery : null,
+          ),
+          style: TextButton.styleFrom(
+            foregroundColor: const Color(0xFF16877F),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Ir a Amigos',
+                style: MeloopTypography.lexend(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(width: 4),
+              const Icon(Icons.arrow_forward_rounded, size: 15),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDesktopLeftContent() {
+    switch (_desktopLeftTab) {
+      case _DesktopLeftTab.posts:
+        return _buildPostsList();
+      case _DesktopLeftTab.music:
+        return _buildMusicList();
+      case _DesktopLeftTab.all:
+        return ListView(
+          padding: const EdgeInsets.only(top: 4, bottom: 20),
+          children: [
+            _buildCombinedSectionHeader(
+              icon: Icons.album_rounded,
+              title: 'Canciones y artistas',
+              trailingLabel: 'Ver todo en Artistas',
+              onTrailingTap: () => _openInArtistsTab(_activeQuery),
+            ),
+            const SizedBox(height: 8),
+            _buildInlineMusicSection(),
+            const SizedBox(height: 20),
+            _buildCombinedSectionHeader(
+              icon: Icons.article_outlined,
+              title: 'Publicaciones',
+              subtitle: 'Puedes dar me gusta, comentar y leer aquí mismo',
+            ),
+            const SizedBox(height: 10),
+            _buildInlinePostsSection(),
+          ],
+        );
+    }
+  }
+
+  Widget _buildCombinedSectionHeader({
+    required IconData icon,
+    required String title,
+    String? subtitle,
+    String? trailingLabel,
+    VoidCallback? onTrailingTap,
+  }) {
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: const Color(0xFF16877F)),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: MeloopTypography.lexend(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: _inkDark,
+                ),
+              ),
+              if (subtitle != null)
+                Text(
+                  subtitle,
+                  style: MeloopTypography.lexend(
+                    fontSize: 11.5,
+                    color: _inkMuted,
+                  ),
+                ),
+            ],
+          ),
+        ),
+        if (trailingLabel != null && onTrailingTap != null)
+          TextButton(
+            onPressed: onTrailingTap,
+            style: TextButton.styleFrom(
+              foregroundColor: const Color(0xFF16877F),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  trailingLabel,
+                  style: MeloopTypography.lexend(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                const Icon(Icons.arrow_forward_rounded, size: 14),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildInlineMusicSection() {
+    final error = _errors[_SearchSource.music];
+    if (_loading[_SearchSource.music] == true) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 20),
+        child: Center(
+          child: SizedBox(
+            width: 24,
+            height: 24,
+            child: CircularProgressIndicator(
+              strokeWidth: 2.4,
+              color: _tealAccent,
+            ),
+          ),
+        ),
       );
+    }
+    if (error != null) {
+      return _buildCompactErrorBanner(
+        message: error,
+        onRetry: () => _retry(_SearchSource.music),
+      );
+    }
+    if (_tracks.isEmpty) {
+      return _buildCompactEmptyBanner(
+        'No encontramos canciones para «$_activeQuery».',
+        actionLabel: 'Buscar en Artistas y canciones',
+        onAction: () => _openInArtistsTab(_activeQuery),
+      );
+    }
+    final preview = _tracks.take(4).toList();
+    return Column(
+      children: [
+        for (final track in preview)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: _buildMusicQuickCard(track),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildInlinePostsSection() {
+    final error = _errors[_SearchSource.posts];
+    if (_loading[_SearchSource.posts] == true) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 28),
+        child: Center(
+          child: CircularProgressIndicator(color: _tealAccent),
+        ),
+      );
+    }
+    if (error != null) {
+      return _buildCompactErrorBanner(
+        message: error,
+        onRetry: () => _retry(_SearchSource.posts),
+      );
+    }
+    if (_posts.isEmpty) {
+      return _buildCompactEmptyBanner(
+        'Sin publicaciones para «$_activeQuery». Prueba cambiar el filtro.',
+      );
+    }
+    return Column(
+      children: [
+        for (final post in _posts)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 14),
+            child: _buildInteractivePostCard(post),
+          ),
+      ],
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // COMPACTO / ANDROID: hoja estilo papel sin alterar contratos de test
+  // ---------------------------------------------------------------------------
+  Widget _buildCompactLayout() {
+    final hasSubmittedQuery = _activeQuery.isNotEmpty;
+
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 880),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: const Color(0xFFFAFBF9),
+              border: Border.all(color: const Color(0xFFDCE7E5)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.14),
+                  blurRadius: 14,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
+                  child: _buildSearchInput(),
+                ),
+                if (_showMinLengthHint)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'Escribe al menos 2 caracteres para buscar.',
+                        style: MeloopTypography.lexend(
+                          fontSize: 12,
+                          color: const Color(0xFFB4690E),
+                        ),
+                      ),
+                    ),
+                  ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Center(
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: MeloopPillTabs<_CompactSearchTab>(
+                        items: const [
+                          MeloopPillItem(
+                            value: _CompactSearchTab.posts,
+                            label: 'Publicaciones',
+                          ),
+                          MeloopPillItem(
+                            value: _CompactSearchTab.music,
+                            label: 'Música',
+                          ),
+                          MeloopPillItem(
+                            value: _CompactSearchTab.users,
+                            label: 'Usuarios',
+                          ),
+                        ],
+                        selectedValue: _compactTab,
+                        onSelected: (tab) => setState(() => _compactTab = tab),
+                        height: 40,
+                        padding: 3.5,
+                        fontSize: 12.5,
+                        horizontalItemPadding: 14,
+                        fixedButtonWidth: 112,
+                        pillColor: _pillTrackColor,
+                      ),
+                    ),
+                  ),
+                ),
+                if (hasSubmittedQuery && _compactTab == _CompactSearchTab.posts)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+                    child: _buildPostFilterChips(),
+                  ),
+                const SizedBox(height: 10),
+                const Divider(height: 1, color: Color(0xFFE3ECEA)),
+                Expanded(
+                  child: hasSubmittedQuery
+                      ? switch (_compactTab) {
+                          _CompactSearchTab.posts => _buildPostsList(),
+                          _CompactSearchTab.music => _buildMusicList(),
+                          _CompactSearchTab.users => _buildUsersList(
+                            isDesktop: false,
+                          ),
+                        }
+                      : _buildRecentSearches(isDesktop: false),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // LISTAS DE RESULTADOS
+  // ---------------------------------------------------------------------------
+  Widget _buildPostsList() {
+    final error = _errors[_SearchSource.posts];
+    if (_loading[_SearchSource.posts] == true) {
+      return const Center(child: CircularProgressIndicator(color: _tealAccent));
     }
     if (error != null) {
       return Center(
@@ -319,76 +935,404 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen>
           title: 'No pudimos conectar',
           message: error,
           action: OutlinedButton.icon(
-            onPressed: () => _retry(source),
+            onPressed: () => _retry(_SearchSource.posts),
             icon: const Icon(Icons.refresh),
             label: const Text('Reintentar'),
           ),
         ),
       );
     }
-    if (_hasResults[source] != true) {
+    if (_hasResults[_SearchSource.posts] != true) {
       return const _StateCard(
         icon: Icons.travel_explore_rounded,
         title: 'Todo empieza con una búsqueda',
         message: 'Encuentra personas, publicaciones y música en Meloop.',
       );
     }
+    if (_posts.isEmpty) return _emptyResults();
 
-    switch (source) {
-      case _SearchSource.users:
-        if (_users.isEmpty) return _emptyResults();
-        return ListView.builder(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          itemCount: _users.length,
-          itemBuilder: (context, index) => _buildUserTile(_users[index]),
-        );
-      case _SearchSource.posts:
-        if (_posts.isEmpty) return _emptyResults();
-        return ListView.builder(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-          itemCount: _posts.length,
-          itemBuilder: (context, index) => Card(
-            margin: const EdgeInsets.only(bottom: 16),
-            color: Colors.white,
-            elevation: 1,
-            shadowColor: const Color(0x140D5C5E),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(18),
-              side: const BorderSide(color: Color(0xFFE7EEEC)),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: PostCard(
-                postData: _posts[index].cardData,
-                tealAccent: const Color(0xFF1ABC9C),
-                apiClient: _apiClient,
-                compact: true,
-              ),
-            ),
+    return ListView.builder(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
+      itemCount: _posts.length,
+      itemBuilder: (context, index) => Padding(
+        padding: const EdgeInsets.only(bottom: 14),
+        child: _buildInteractivePostCard(_posts[index]),
+      ),
+    );
+  }
+
+  Widget _buildInteractivePostCard(SearchPost post) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: const Color(0xFFE1EAE8)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
           ),
-        );
-      case _SearchSource.music:
-        if (_tracks.isEmpty) return _emptyResults();
-        return ListView.builder(
-          itemCount: _tracks.length,
-          itemBuilder: (context, index) {
-            final track = _tracks[index];
-            return MusicTrackTile(
-              track: track,
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute<void>(
-                  builder: (_) => MusicDetailScreen(
-                    type: track.type,
-                    spotifyId: track.id,
-                    apiClient: _apiClient,
+        ],
+      ),
+      padding: const EdgeInsets.all(14),
+      child: PostCard(
+        postData: post.cardData,
+        tealAccent: _tealAccent,
+        apiClient: _apiClient,
+        compact: true,
+      ),
+    );
+  }
+
+  Widget _buildMusicList() {
+    final error = _errors[_SearchSource.music];
+    if (_loading[_SearchSource.music] == true) {
+      return const Center(child: CircularProgressIndicator(color: _tealAccent));
+    }
+    if (error != null) {
+      return Center(
+        child: _StateCard(
+          icon: Icons.cloud_off_rounded,
+          title: 'No pudimos conectar',
+          message: error,
+          action: OutlinedButton.icon(
+            onPressed: () => _retry(_SearchSource.music),
+            icon: const Icon(Icons.refresh),
+            label: const Text('Reintentar'),
+          ),
+        ),
+      );
+    }
+    if (_hasResults[_SearchSource.music] != true) {
+      return const _StateCard(
+        icon: Icons.music_note_rounded,
+        title: 'Encuentra música al instante',
+        message: 'Toca una canción o artista para abrirlo en Artistas y canciones.',
+      );
+    }
+    if (_tracks.isEmpty) {
+      return Center(
+        child: _StateCard(
+          icon: Icons.search_off_rounded,
+          title: 'Sin resultados para «$_activeQuery»',
+          message: 'Prueba buscarlo directamente en Artistas y canciones.',
+          action: OutlinedButton.icon(
+            onPressed: () => _openInArtistsTab(_activeQuery),
+            icon: const Icon(Icons.graphic_eq_rounded, size: 18),
+            label: const Text('Abrir Artistas y canciones'),
+          ),
+        ),
+      );
+    }
+
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
+      itemCount: _tracks.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 8),
+      itemBuilder: (context, index) => _buildMusicQuickCard(_tracks[index]),
+    );
+  }
+
+  Widget _buildMusicQuickCard(MusicTrack track) {
+    final subtitleParts = <String>[
+      if (track.artist.trim().isNotEmpty) track.artist.trim(),
+      if (track.type.trim().isNotEmpty && track.type != 'track')
+        track.type.trim(),
+    ];
+    final targetQuery = track.title.trim().isNotEmpty
+        ? track.title.trim()
+        : track.artist.trim();
+
+    return Material(
+      color: Colors.white,
+      child: InkWell(
+        onTap: () => _openInArtistsTab(targetQuery),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            border: Border.all(color: const Color(0xFFE0EAE8)),
+          ),
+          child: Row(
+            children: [
+              if (track.artworkUrl != null && track.artworkUrl!.isNotEmpty)
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(2),
+                  child: Image.network(
+                    track.artworkUrl!,
+                    width: 46,
+                    height: 46,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => const MeloopImagePlaceholder(
+                      width: 46,
+                      height: 46,
+                      iconSize: 20,
+                      borderColor: null,
+                    ),
                   ),
+                )
+              else
+                const MeloopImagePlaceholder(
+                  width: 46,
+                  height: 46,
+                  iconSize: 20,
+                  borderColor: null,
+                ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      track.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: MeloopTypography.lexend(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: _inkDark,
+                      ),
+                    ),
+                    if (subtitleParts.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitleParts.join(' · '),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: MeloopTypography.lexend(
+                          fontSize: 12,
+                          color: _inkMuted,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
-            );
-          },
-        );
+              const SizedBox(width: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEAF7F4),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Ver en música',
+                      style: MeloopTypography.lexend(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: const Color(0xFF0D5C5E),
+                      ),
+                    ),
+                    const SizedBox(width: 3),
+                    const Icon(
+                      Icons.arrow_forward_rounded,
+                      size: 13,
+                      color: Color(0xFF0D5C5E),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildUsersList({required bool isDesktop}) {
+    final error = _errors[_SearchSource.users];
+    if (_loading[_SearchSource.users] == true) {
+      return const Center(child: CircularProgressIndicator(color: _tealAccent));
     }
+    if (error != null) {
+      return Center(
+        child: _StateCard(
+          icon: Icons.cloud_off_rounded,
+          title: 'No pudimos conectar',
+          message: error,
+          action: OutlinedButton.icon(
+            onPressed: () => _retry(_SearchSource.users),
+            icon: const Icon(Icons.refresh),
+            label: const Text('Reintentar'),
+          ),
+        ),
+      );
+    }
+    if (_hasResults[_SearchSource.users] != true) {
+      return _buildFriendsIdleCard();
+    }
+    if (_users.isEmpty) {
+      return Center(
+        child: _StateCard(
+          icon: Icons.person_search_rounded,
+          title: 'Sin personas para «$_activeQuery»',
+          message: 'Explora sugerencias y solicitudes en la pestaña Amigos.',
+          action: OutlinedButton.icon(
+            onPressed: () => _openInFriendsTab(_activeQuery),
+            icon: const Icon(Icons.people_outline_rounded, size: 18),
+            label: const Text('Ir a Amigos'),
+          ),
+        ),
+      );
+    }
+
+    return ListView.separated(
+      padding: EdgeInsets.fromLTRB(isDesktop ? 0 : 12, 8, isDesktop ? 0 : 12, 24),
+      itemCount: _users.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 8),
+      itemBuilder: (context, index) => _buildUserCard(_users[index]),
+    );
+  }
+
+  Widget _buildUserCard(SearchUser user) {
+    final status = user.friendStatus.toLowerCase();
+    final isFriend = status == 'friends' || status == 'accepted';
+    final isPending = status == 'pending' || status == 'pendiente';
+    final isSending = _sendingRequests.contains(user.id);
+
+    return Material(
+      color: Colors.white,
+      child: InkWell(
+        onTap: () => _openInFriendsTab(user.name),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            border: Border.all(color: const Color(0xFFDCEAE7)),
+          ),
+          child: Row(
+            children: [
+              if (user.avatarUrl != null && user.avatarUrl!.isNotEmpty)
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    border: Border.all(color: const Color(0xFFD0DFDC)),
+                  ),
+                  child: Image.network(
+                    user.avatarUrl!,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => const MeloopImagePlaceholder(
+                      width: 44,
+                      height: 44,
+                      iconSize: 20,
+                    ),
+                  ),
+                )
+              else
+                const MeloopImagePlaceholder(
+                  width: 44,
+                  height: 44,
+                  iconSize: 20,
+                ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      user.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: MeloopTypography.lexend(
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.w700,
+                        color: _inkDark,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.stars_rounded,
+                          size: 14,
+                          color: Color(0xFFD49D26),
+                        ),
+                        const SizedBox(width: 4),
+                        Flexible(
+                          child: Text(
+                            'Nivel ${user.level}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: MeloopTypography.lexend(
+                              fontSize: 12,
+                              color: _inkMuted,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              OutlinedButton(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: isFriend || isPending
+                      ? const Color(0xFF56716D)
+                      : const Color(0xFF0D5C5E),
+                  backgroundColor: isFriend || isPending
+                      ? const Color(0xFFF0F5F4)
+                      : const Color(0xFFE9F8F5),
+                  side: BorderSide(
+                    color: isFriend || isPending
+                        ? const Color(0xFFDDE7E5)
+                        : const Color(0xFFBDE9E1),
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
+                  minimumSize: const Size(86, 34),
+                ),
+                onPressed: isFriend || isPending || isSending
+                    ? null
+                    : () => _sendFriendRequest(user),
+                child: isSending
+                    ? const SizedBox(
+                        width: 15,
+                        height: 15,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Text(
+                        isFriend
+                            ? 'Amigos'
+                            : isPending
+                            ? 'Pendiente'
+                            : 'Agregar',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: MeloopTypography.lexend(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFriendsIdleCard() {
+    return Center(
+      child: _StateCard(
+        icon: Icons.people_alt_outlined,
+        title: 'Busca amigos rápidamente',
+        message:
+            'Escribe un nombre para encontrar personas o abre tu red completa en Amigos.',
+        action: OutlinedButton.icon(
+          onPressed: () => _openInFriendsTab(null),
+          icon: const Icon(Icons.arrow_forward_rounded, size: 16),
+          label: const Text('Explorar Amigos'),
+        ),
+      ),
+    );
   }
 
   Widget _emptyResults() => Center(
@@ -399,112 +1343,68 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen>
     ),
   );
 
-  Widget _buildUserTile(SearchUser user) {
-    final status = user.friendStatus.toLowerCase();
-    final isFriend = status == 'friends' || status == 'accepted';
-    final isPending = status == 'pending' || status == 'pendiente';
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      elevation: 0,
-      color: Colors.white,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: const BorderSide(color: Color(0xFFE7EEEC)),
+  Widget _buildCompactErrorBanner({
+    required String message,
+    required VoidCallback onRetry,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF8EE),
+        border: Border.all(color: const Color(0xFFF3DEC0)),
       ),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
-        leading: Container(
-          padding: const EdgeInsets.all(2),
-          decoration: const BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: LinearGradient(
-              colors: [Color(0xFF1ABC9C), Color(0xFF80DED0)],
-            ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.cloud_off_rounded,
+            size: 18,
+            color: Color(0xFFB4690E),
           ),
-          child: CircleAvatar(
-            radius: 23,
-            backgroundColor: const Color(0xFFEAF7F4),
-            backgroundImage: user.avatarUrl == null
-                ? null
-                : NetworkImage(user.avatarUrl!),
-            child: user.avatarUrl == null
-                ? const Icon(Icons.person_rounded, color: Color(0xFF0D5C5E))
-                : null,
-          ),
-        ),
-        title: Text(
-          user.name,
-          style: const TextStyle(
-            color: Color(0xFF183D3B),
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        subtitle: Row(
-          children: [
-            const Icon(Icons.stars_rounded, size: 15, color: Color(0xFFD49D26)),
-            const SizedBox(width: 4),
-            Text(
-              'Nivel ${user.level}',
-              style: const TextStyle(color: Color(0xFF70827F), fontSize: 12),
-            ),
-          ],
-        ),
-        onTap: () => Navigator.push(
-          context,
-          MaterialPageRoute<void>(
-            builder: (_) => ProfileScreen(
-              username: user.name,
-              userId: user.id,
-              apiClient: _apiClient,
-            ),
-          ),
-        ),
-        trailing: SizedBox(
-          width: 112,
-          child: OutlinedButton(
-            style: OutlinedButton.styleFrom(
-              foregroundColor: isFriend || isPending
-                  ? const Color(0xFF56716D)
-                  : const Color(0xFF0D5C5E),
-              backgroundColor: isFriend || isPending
-                  ? const Color(0xFFF0F5F4)
-                  : const Color(0xFFE9F8F5),
-              side: BorderSide(
-                color: isFriend || isPending
-                    ? const Color(0xFFDDE7E5)
-                    : const Color(0xFFBDE9E1),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              message,
+              style: MeloopTypography.lexend(
+                fontSize: 12.5,
+                color: const Color(0xFF6B4210),
               ),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 8),
             ),
-            onPressed:
-                isFriend || isPending || _sendingRequests.contains(user.id)
-                ? null
-                : () => _sendFriendRequest(user),
-            child: _sendingRequests.contains(user.id)
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : Text(
-                    isFriend
-                        ? 'Amigos'
-                        : isPending
-                        ? 'Pendiente'
-                        : 'Agregar',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
           ),
-        ),
+          TextButton(onPressed: onRetry, child: const Text('Reintentar')),
+        ],
       ),
     );
   }
 
-  Widget _buildRecentSearches() {
+  Widget _buildCompactEmptyBanner(
+    String message, {
+    String? actionLabel,
+    VoidCallback? onAction,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF6FAF9),
+        border: Border.all(color: const Color(0xFFE0ECEA)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.search_off_rounded, size: 18, color: _inkMuted),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              message,
+              style: MeloopTypography.lexend(fontSize: 12.5, color: _inkMuted),
+            ),
+          ),
+          if (actionLabel != null && onAction != null)
+            TextButton(onPressed: onAction, child: Text(actionLabel)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRecentSearches({required bool isDesktop}) {
     if (_recentSearches.isEmpty) {
       return const _StateCard(
         icon: Icons.manage_search_rounded,
@@ -512,63 +1412,67 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen>
         message: 'Tus búsquedas recientes aparecerán aquí.',
       );
     }
+
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+      padding: EdgeInsets.fromLTRB(isDesktop ? 0 : 16, 8, isDesktop ? 0 : 16, 20),
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(4, 8, 4, 12),
+          padding: const EdgeInsets.fromLTRB(2, 4, 2, 10),
           child: Row(
             children: [
-              const Icon(Icons.history_rounded, color: Color(0xFF0D5C5E)),
+              const Icon(
+                Icons.history_rounded,
+                size: 18,
+                color: Color(0xFF0D5C5E),
+              ),
               const SizedBox(width: 8),
-              const Text(
+              Text(
                 'Búsquedas recientes',
-                style: TextStyle(
-                  color: Color(0xFF183D3B),
-                  fontSize: 16,
+                style: MeloopTypography.lexend(
+                  color: _inkDark,
+                  fontSize: 14.5,
                   fontWeight: FontWeight.w700,
                 ),
               ),
               const Spacer(),
               Text(
                 '${_recentSearches.length}/5',
-                style: const TextStyle(color: Color(0xFF80918E), fontSize: 12),
+                style: MeloopTypography.lexend(color: _inkMuted, fontSize: 12),
               ),
             ],
           ),
         ),
         for (final query in _recentSearches)
-          Card(
-            elevation: 0,
-            color: Colors.white,
-            margin: const EdgeInsets.only(bottom: 8),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
-              side: const BorderSide(color: Color(0xFFE7EEEC)),
-            ),
-            child: ListTile(
-              leading: const Icon(
-                Icons.history_rounded,
-                color: Color(0xFF79918D),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Material(
+              color: Colors.white,
+              shape: const RoundedRectangleBorder(
+                side: BorderSide(color: Color(0xFFE2ECEA)),
               ),
-              title: Text(
-                query,
-                style: const TextStyle(
-                  color: Color(0xFF294441),
-                  fontWeight: FontWeight.w600,
+              child: ListTile(
+                dense: true,
+                leading: const Icon(
+                  Icons.history_rounded,
+                  size: 18,
+                  color: Color(0xFF79918D),
                 ),
-              ),
-              onTap: () {
-                _queryController.text = query;
-                _queryController.selection = TextSelection.collapsed(
-                  offset: query.length,
-                );
-              },
-              trailing: IconButton(
-                tooltip: 'Quitar búsqueda reciente',
-                icon: const Icon(Icons.close, size: 18),
-                color: const Color(0xFF80918E),
-                onPressed: () => setState(() => _recentSearches.remove(query)),
+                title: Text(
+                  query,
+                  style: MeloopTypography.lexend(
+                    color: _inkDark,
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                onTap: () => _applyRecentQuery(query),
+                trailing: IconButton(
+                  tooltip: 'Quitar búsqueda reciente',
+                  icon: const Icon(Icons.close, size: 17),
+                  color: _inkMuted,
+                  onPressed: () =>
+                      setState(() => _recentSearches.remove(query)),
+                ),
               ),
             ),
           ),
@@ -576,10 +1480,123 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen>
     );
   }
 
-  PreferredSizeWidget _buildBrandedAppBar() {
-    if (MediaQuery.sizeOf(context).width > 900) {
+  Widget _buildPostFilterChips() {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          Text(
+            'Filtrar blogs:',
+            style: MeloopTypography.lexend(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: _inkMuted,
+            ),
+          ),
+          const SizedBox(width: 8),
+          for (final entry in _filters.entries) ...[
+            Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: ChoiceChip(
+                label: Text(
+                  entry.key,
+                  style: MeloopTypography.lexend(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: _postFilter == entry.value ? Colors.white : _inkDark,
+                  ),
+                ),
+                selected: _postFilter == entry.value,
+                selectedColor: _tealAccent,
+                backgroundColor: const Color(0xFFF0F6F5),
+                showCheckmark: false,
+                side: BorderSide(
+                  color: _postFilter == entry.value
+                      ? _tealAccent
+                      : const Color(0xFFD5E4E1),
+                ),
+                visualDensity: VisualDensity.compact,
+                onSelected: (_) => _changePostFilter(entry.value),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSearchInput() {
+    return Row(
+      children: [
+        Expanded(
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: const Color(0xFFD8E6E4)),
+            ),
+            child: TextField(
+              controller: _queryController,
+              textInputAction: TextInputAction.search,
+              onSubmitted: _submitSearch,
+              style: MeloopTypography.lexend(fontSize: 14, color: _inkDark),
+              decoration: InputDecoration(
+                hintText: 'Publicaciones, canciones o amigos…',
+                hintStyle: MeloopTypography.lexend(
+                  color: _inkMuted,
+                  fontSize: 13.5,
+                ),
+                prefixIcon: const Icon(
+                  Icons.search_rounded,
+                  color: Color(0xFF16877F),
+                  size: 20,
+                ),
+                suffixIcon: _queryController.text.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: 'Limpiar búsqueda',
+                        icon: const Icon(Icons.close_rounded, size: 19),
+                        color: _inkMuted,
+                        onPressed: () => _queryController.clear(),
+                      ),
+                border: InputBorder.none,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        FilledButton(
+          onPressed: _submitSearch,
+          style: FilledButton.styleFrom(
+            backgroundColor: _tealAccent,
+            foregroundColor: Colors.white,
+            elevation: 0,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(22),
+            ),
+          ),
+          child: Text(
+            'Buscar',
+            style: MeloopTypography.lexend(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: Colors.white,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  PreferredSizeWidget _buildBrandedAppBar(bool isDesktop) {
+    if (isDesktop) {
       return PreferredSize(
-        preferredSize: const Size.fromHeight(82),
+        preferredSize: const Size.fromHeight(84),
         child: DesktopAppHeader(
           activeSection: DesktopNavigationSection.none,
           onHomeTap: () => navigateToDesktopHome(context),
@@ -595,6 +1612,7 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen>
           ),
           searchOpen: true,
           searchController: _queryController,
+          onSearchSubmitted: _submitSearch,
           onSearchBack: () => navigateToDesktopHome(context),
         ),
       );
@@ -642,21 +1660,9 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen>
       child: Container(
         height: 55,
         color: const Color(0xFF1ABC9C),
-        padding: const EdgeInsets.symmetric(horizontal: 24),
+        padding: const EdgeInsets.symmetric(horizontal: 20),
         child: Row(
           children: [
-            IconButton(
-              tooltip: 'Volver',
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(),
-              onPressed: () => Navigator.maybePop(context),
-              icon: const Icon(
-                Icons.arrow_back_rounded,
-                color: Colors.white,
-                size: 20,
-              ),
-            ),
-            const SizedBox(width: 16),
             IconButton(
               tooltip: 'Volver',
               padding: EdgeInsets.zero,
@@ -674,191 +1680,18 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen>
               height: 24,
               fit: BoxFit.contain,
             ),
-            const SizedBox(width: 24),
-            const Text(
-              'Búsqueda global',
-              style: TextStyle(
+            const SizedBox(width: 18),
+            Text(
+              'Búsqueda rápida',
+              style: MeloopTypography.lexend(
                 color: Colors.white,
-                fontSize: 13,
+                fontSize: 13.5,
                 fontWeight: FontWeight.w600,
               ),
             ),
             const Spacer(),
             const Icon(Icons.graphic_eq_rounded, color: Colors.white, size: 20),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSearchInput() {
-    return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE7EEEC)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x120D5C5E),
-            blurRadius: 14,
-            offset: Offset(0, 4),
-          ),
-        ],
-      ),
-      child: TextField(
-        controller: _queryController,
-        textInputAction: TextInputAction.search,
-        decoration: InputDecoration(
-          hintText: 'Personas, publicaciones, canciones…',
-          hintStyle: const TextStyle(color: Color(0xFF8A9B98), fontSize: 14),
-          prefixIcon: const Icon(
-            Icons.search_rounded,
-            color: Color(0xFF0D5C5E),
-          ),
-          suffixIcon: _queryController.text.isEmpty
-              ? null
-              : IconButton(
-                  tooltip: 'Limpiar búsqueda',
-                  icon: const Icon(Icons.close_rounded),
-                  color: const Color(0xFF718480),
-                  onPressed: () => _queryController.clear(),
-                ),
-          filled: true,
-          fillColor: const Color(0xFFF5F9F8),
-          contentPadding: const EdgeInsets.symmetric(vertical: 14),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide.none,
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide.none,
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: Color(0xFF1ABC9C), width: 1.4),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTabs() {
-    return Container(
-      padding: const EdgeInsets.all(5),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF5F8F7),
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: TabBar(
-        controller: _tabController,
-        dividerColor: Colors.transparent,
-        indicatorSize: TabBarIndicatorSize.tab,
-        indicator: BoxDecoration(
-          color: const Color(0xFF1ABC9C),
-          borderRadius: BorderRadius.circular(11),
-        ),
-        labelColor: Colors.white,
-        unselectedLabelColor: const Color(0xFF667C78),
-        labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-        tabs: const [
-          Tab(
-            icon: Icon(Icons.people_alt_outlined, size: 18),
-            text: 'Usuarios',
-          ),
-          Tab(
-            icon: Icon(Icons.article_outlined, size: 18),
-            text: 'Publicaciones',
-          ),
-          Tab(icon: Icon(Icons.music_note_rounded, size: 18), text: 'Música'),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPostFilter() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE2ECE9)),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          value: _postFilter,
-          icon: const Icon(Icons.keyboard_arrow_down_rounded),
-          borderRadius: BorderRadius.circular(12),
-          items: _filters.entries
-              .map(
-                (entry) => DropdownMenuItem(
-                  value: entry.value,
-                  child: Text(entry.key),
-                ),
-              )
-              .toList(),
-          onChanged: _changePostFilter,
-        ),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final queryTooShort = _queryController.text.trim().length < 2;
-    final isDesktop = MediaQuery.sizeOf(context).width > 900;
-    final insideDesktopShell = DesktopShellScope.maybeOf(context) != null;
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      appBar: insideDesktopShell ? null : _buildBrandedAppBar(),
-      body: SafeArea(
-        top: false,
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 920),
-              child: Container(
-                color: Colors.white,
-                child: Column(
-                  children: [
-                    if (!isDesktop)
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(24, 20, 24, 12),
-                        child: _buildSearchInput(),
-                      ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 24),
-                      child: _buildTabs(),
-                    ),
-                    if (!queryTooShort &&
-                        _tabController.index == 1 &&
-                        _activeQuery.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(24, 10, 24, 0),
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: _buildPostFilter(),
-                        ),
-                      ),
-                    Expanded(
-                      child: queryTooShort
-                          ? _buildRecentSearches()
-                          : TabBarView(
-                              controller: _tabController,
-                              children: [
-                                _buildSourceTab(_SearchSource.users),
-                                _buildSourceTab(_SearchSource.posts),
-                                _buildSourceTab(_SearchSource.music),
-                              ],
-                            ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
         ),
       ),
     );
@@ -882,34 +1715,33 @@ class _StateCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(20),
         child: Container(
-          constraints: const BoxConstraints(maxWidth: 380),
+          constraints: const BoxConstraints(maxWidth: 360),
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(22),
-            border: Border.all(color: const Color(0xFFE4ECEA)),
+            border: Border.all(color: const Color(0xFFE0EAE8)),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Container(
-                height: 52,
-                width: 52,
+                height: 48,
+                width: 48,
                 decoration: BoxDecoration(
                   color: const Color(0xFFE8F7F3),
-                  borderRadius: BorderRadius.circular(20),
+                  borderRadius: BorderRadius.circular(14),
                 ),
-                child: Icon(icon, color: const Color(0xFF0D7771), size: 30),
+                child: Icon(icon, color: const Color(0xFF0D7771), size: 26),
               ),
               const SizedBox(height: 12),
               Text(
                 title,
                 textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: Color(0xFF183D3B),
-                  fontSize: 16,
+                style: MeloopTypography.lexend(
+                  color: const Color(0xFF183D3B),
+                  fontSize: 15,
                   fontWeight: FontWeight.w700,
                 ),
               ),
@@ -917,9 +1749,9 @@ class _StateCard extends StatelessWidget {
               Text(
                 message,
                 textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: Color(0xFF788A86),
-                  fontSize: 13,
+                style: MeloopTypography.lexend(
+                  color: const Color(0xFF788A86),
+                  fontSize: 12.5,
                   height: 1.45,
                 ),
               ),

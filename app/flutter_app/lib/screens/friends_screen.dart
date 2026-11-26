@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../core/navigation/artists_and_songs_screen.dart';
 import '../core/navigation/desktop_navigation_shell.dart';
+import '../core/navigation/responsive_navigation_shell.dart';
 import '../features/gamification/presentation/gamification_demo_controller.dart';
 import '../features/profile/presentation/profile_screen.dart';
 import '../features/search/presentation/global_search_route.dart';
@@ -18,13 +19,15 @@ import '../widgets/paper/stacked_paper_card.dart';
 enum _FriendsTab { friends, requests, suggestions }
 
 class FriendsScreen extends StatefulWidget {
-  const FriendsScreen({super.key});
+  const FriendsScreen({super.key, this.initialQuery});
+
+  final String? initialQuery;
 
   @override
-  State<FriendsScreen> createState() => _FriendsScreenState();
+  State<FriendsScreen> createState() => FriendsScreenState();
 }
 
-class _FriendsScreenState extends State<FriendsScreen> {
+class FriendsScreenState extends State<FriendsScreen> {
   static const Color _tealAccent = Color(0xFF00AF92);
   static const Color _pillTrackColor = Color(0xFF288B83);
 
@@ -120,6 +123,26 @@ class _FriendsScreenState extends State<FriendsScreen> {
       compatibility: 68,
     ),
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    final initial = widget.initialQuery?.trim();
+    if (initial != null && initial.isNotEmpty) {
+      _searchController.text = initial;
+      _searchQuery = initial;
+    }
+  }
+
+  void applySearchQuery(String query) {
+    final trimmed = query.trim();
+    setState(() {
+      _activeTab = _FriendsTab.friends;
+      _onlyOnline = false;
+      _searchController.text = trimmed;
+      _searchQuery = trimmed;
+    });
+  }
 
   @override
   void dispose() {
@@ -286,6 +309,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
     final double screenWidth = MediaQuery.sizeOf(context).width;
     final bool isDesktop = screenWidth > 900;
     final bool insideDesktopShell = DesktopShellScope.maybeOf(context) != null;
+    final bool insideMobileShell = MobileShellScope.maybeOf(context) != null;
 
     // En escritorio la columna derecha muestra "Perfiles que te podrían interesar",
     // así que si el usuario venía de la pestaña móvil "Sugeridos" volvemos a "Amigos".
@@ -297,7 +321,8 @@ class _FriendsScreenState extends State<FriendsScreen> {
       backgroundColor: Colors.transparent,
       body: Column(
         children: [
-          if (!insideDesktopShell) _buildTopBar(isDesktop, context),
+          if (!insideDesktopShell && !insideMobileShell)
+            _buildTopBar(isDesktop, context),
           Expanded(
             child: isDesktop ? _buildDesktopLayout() : _buildMobileLayout(),
           ),

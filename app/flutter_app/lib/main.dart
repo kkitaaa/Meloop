@@ -15,6 +15,11 @@ import 'widgets/desktop_viewport_scaler.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Limita la caché de bitmaps decodificados para reducir el uso de RAM en
+  // escritorio/móvil (por defecto Flutter reserva hasta 100 MB / 1000 entradas).
+  PaintingBinding.instance.imageCache
+    ..maximumSize = 80
+    ..maximumSizeBytes = 48 << 20;
   await AuthSession.shared.restore();
   runApp(const MeloopApp());
 }
@@ -141,20 +146,37 @@ class _MeloopPageTransitionsBuilder extends PageTransitionsBuilder {
     Animation<double> secondaryAnimation,
     Widget child,
   ) {
-    final curvedAnimation = CurvedAnimation(
+    final enterCurve = CurvedAnimation(
       parent: animation,
-      curve: Curves.easeOutCubic,
-      reverseCurve: Curves.easeInCubic,
+      curve: const Interval(0.32, 1.0, curve: Curves.easeOutCubic),
+      reverseCurve: const Interval(0.0, 0.65, curve: Curves.easeInCubic),
+    );
+    final exitOpacity = Tween<double>(begin: 1.0, end: 0.0).animate(
+      CurvedAnimation(
+        parent: secondaryAnimation,
+        curve: const Interval(0.0, 0.42, curve: Curves.easeOut),
+        reverseCurve: const Interval(0.52, 1.0, curve: Curves.easeIn),
+      ),
     );
 
-    return FadeTransition(
-      opacity: curvedAnimation,
-      child: SlideTransition(
-        position: Tween<Offset>(
-          begin: const Offset(0.035, 0),
-          end: Offset.zero,
-        ).animate(curvedAnimation),
-        child: child,
+    return AnimatedBuilder(
+      animation: secondaryAnimation,
+      builder: (context, innerChild) {
+        final hiddenByUpperRoute = secondaryAnimation.value >= 0.44;
+        return Offstage(
+          offstage: hiddenByUpperRoute,
+          child: FadeTransition(opacity: exitOpacity, child: innerChild),
+        );
+      },
+      child: FadeTransition(
+        opacity: enterCurve,
+        child: SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0.025, 0),
+            end: Offset.zero,
+          ).animate(enterCurve),
+          child: child,
+        ),
       ),
     );
   }

@@ -34,6 +34,40 @@ class StackedPaperCard extends StatefulWidget {
   final double? backAngleDegrees;
   final double paperShadowBlur;
 
+  /// Ancho de decodificación en memoria para las texturas de papel.
+  /// Reduce `paper.png` (1341×1739, ~9 MB RGBA) a un tamaño óptimo para GPU
+  /// sin pérdida visual de grano, eliminando pausas al cambiar de pestaña.
+  static int? cacheWidthForTexture(String assetPath) {
+    if (assetPath.endsWith('paper.png') &&
+        !assetPath.endsWith('photopaper.png')) {
+      return 540;
+    }
+    if (assetPath.endsWith('photopaper.png')) {
+      return 360;
+    }
+    return null;
+  }
+
+  /// Precarga las texturas base del tablero de papel una sola vez al iniciar
+  /// el shell principal para evitar decodificación síncrona al navegar.
+  static Future<void> preloadTextures(BuildContext context) async {
+    const assets = <String>[
+      'assets/textures/paper.png',
+      'assets/textures/photopaper.png',
+      'assets/textures/pin.png',
+      'assets/textures/tape.png',
+    ];
+    await Future.wait(
+      assets.map((asset) {
+        final cacheWidth = cacheWidthForTexture(asset);
+        final provider = cacheWidth != null
+            ? ResizeImage.resizeIfNeeded(cacheWidth, null, AssetImage(asset))
+            : AssetImage(asset) as ImageProvider;
+        return precacheImage(provider, context, onError: (_, _) {});
+      }),
+    );
+  }
+
   @override
   State<StackedPaperCard> createState() => _StackedPaperCardState();
 }
@@ -70,7 +104,7 @@ class _StackedPaperCardState extends State<StackedPaperCard> {
           child: IgnorePointer(
             child: Transform.rotate(
               angle: _backAngleRadians,
-              filterQuality: FilterQuality.high,
+              filterQuality: FilterQuality.medium,
               child: _PaperSheetSurface(
                 textureAsset: widget.textureAsset,
                 tintColor: backTint,
@@ -147,7 +181,7 @@ class PhotoPaperSheetStack extends StatelessWidget {
                 offset: const Offset(3, 6),
                 child: Transform.rotate(
                   angle: 2.1 * math.pi / 180.0,
-                  filterQuality: FilterQuality.high,
+                  filterQuality: FilterQuality.medium,
                   child: _PaperSheetSurface(
                     textureAsset: texture,
                     tintColor: deepBackTint,
@@ -165,7 +199,7 @@ class PhotoPaperSheetStack extends StatelessWidget {
               offset: const Offset(-2, 3),
               child: Transform.rotate(
                 angle: -1.65 * math.pi / 180.0,
-                filterQuality: FilterQuality.high,
+                filterQuality: FilterQuality.medium,
                 child: _PaperSheetSurface(
                   textureAsset: texture,
                   tintColor: midBackTint,
@@ -202,25 +236,17 @@ class _PaperSheetSurface extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final paperContent = Stack(
-      fit: StackFit.passthrough,
-      children: [
-        Positioned.fill(
-          child: IgnorePointer(
-            child: Image.asset(
-              textureAsset,
-              fit: BoxFit.fill,
-              isAntiAlias: true,
-              filterQuality: FilterQuality.high,
-              color: tintColor,
-              colorBlendMode: tintColor != null ? BlendMode.multiply : null,
-              errorBuilder: (context, error, stackTrace) =>
-                  ColoredBox(color: tintColor ?? const Color(0xFFF9FAF9)),
-            ),
-          ),
-        ),
-        ?child,
-      ],
+    final cacheWidth = StackedPaperCard.cacheWidthForTexture(textureAsset);
+    final backgroundTexture = Image.asset(
+      textureAsset,
+      cacheWidth: cacheWidth,
+      fit: BoxFit.fill,
+      isAntiAlias: true,
+      filterQuality: FilterQuality.medium,
+      color: tintColor,
+      colorBlendMode: tintColor != null ? BlendMode.multiply : null,
+      errorBuilder: (context, error, stackTrace) =>
+          ColoredBox(color: tintColor ?? const Color(0xFFF9FAF9)),
     );
 
     if (antiAliasedEdge) {
@@ -242,12 +268,20 @@ class _PaperSheetSurface extends StatelessWidget {
           clipBehavior: Clip.antiAlias,
           child: ColoredBox(
             color: tintColor ?? const Color(0xFFF9FAF9),
-            child: paperContent,
+            child: Stack(
+              fit: StackFit.passthrough,
+              children: [
+                Positioned.fill(child: IgnorePointer(child: backgroundTexture)),
+                ?child,
+              ],
+            ),
           ),
         ),
       );
     }
 
+    // Dibujamos directo al framebuffer sin RepaintBoundary de pantalla completa
+    // para evitar asignar render targets MSAA (15-40 MB por hoja en Windows).
     return Container(
       decoration: BoxDecoration(
         color: tintColor ?? const Color(0xFFF9FAF9),
@@ -260,7 +294,13 @@ class _PaperSheetSurface extends StatelessWidget {
           ),
         ],
       ),
-      child: paperContent,
+      child: Stack(
+        fit: StackFit.passthrough,
+        children: [
+          Positioned.fill(child: IgnorePointer(child: backgroundTexture)),
+          ?child,
+        ],
+      ),
     );
   }
 }
@@ -286,7 +326,7 @@ class CustomizablePin extends StatelessWidget {
       height: size,
       fit: BoxFit.contain,
       isAntiAlias: true,
-      filterQuality: FilterQuality.high,
+      filterQuality: FilterQuality.medium,
       errorBuilder: (context, error, stackTrace) => Icon(
         Icons.push_pin_rounded,
         size: size * 0.65,
@@ -296,22 +336,24 @@ class CustomizablePin extends StatelessWidget {
 
     final targetColor = color;
     if (targetColor == null || _isDefaultRed(targetColor)) {
-      return IgnorePointer(child: pinImage);
+      return RepaintBoundary(child: IgnorePointer(child: pinImage));
     }
 
     final targetHsl = HSLColor.fromColor(targetColor);
     final hueDeltaDeg = targetHsl.hue - _basePinHue;
     final saturationScale = (targetHsl.saturation / 0.78).clamp(0.15, 1.35);
 
-    return IgnorePointer(
-      child: ColorFiltered(
-        colorFilter: ColorFilter.matrix(
-          _buildHueSaturationMatrix(
-            hueDegrees: hueDeltaDeg,
-            saturation: saturationScale,
+    return RepaintBoundary(
+      child: IgnorePointer(
+        child: ColorFiltered(
+          colorFilter: ColorFilter.matrix(
+            _buildHueSaturationMatrix(
+              hueDegrees: hueDeltaDeg,
+              saturation: saturationScale,
+            ),
           ),
+          child: pinImage,
         ),
-        child: pinImage,
       ),
     );
   }
@@ -555,45 +597,47 @@ class MeloopLogoSticker extends StatelessWidget {
       );
     });
 
-    return Stack(
-      alignment: Alignment.center,
-      children: [
-        ImageFiltered(
-          imageFilter: ui.ImageFilter.blur(
-            sigmaX: 0.55,
-            sigmaY: 0.55,
-            tileMode: TileMode.decal,
-          ),
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              for (final offset in outlineOffsets)
-                Transform.translate(
-                  offset: offset,
-                  filterQuality: FilterQuality.medium,
-                  child: Image.asset(
-                    'assets/imagenes/meloop.png',
-                    height: height,
-                    cacheHeight: decodedHeight,
-                    fit: BoxFit.contain,
-                    isAntiAlias: true,
+    return RepaintBoundary(
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          ImageFiltered(
+            imageFilter: ui.ImageFilter.blur(
+              sigmaX: 0.55,
+              sigmaY: 0.55,
+              tileMode: TileMode.decal,
+            ),
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                for (final offset in outlineOffsets)
+                  Transform.translate(
+                    offset: offset,
                     filterQuality: FilterQuality.medium,
-                    color: Colors.white,
-                    colorBlendMode: BlendMode.srcIn,
+                    child: Image.asset(
+                      'assets/imagenes/meloop.png',
+                      height: height,
+                      cacheHeight: decodedHeight,
+                      fit: BoxFit.contain,
+                      isAntiAlias: true,
+                      filterQuality: FilterQuality.medium,
+                      color: Colors.white,
+                      colorBlendMode: BlendMode.srcIn,
+                    ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
-        ),
-        Image.asset(
-          'assets/imagenes/meloop.png',
-          height: height,
-          cacheHeight: decodedHeight,
-          fit: BoxFit.contain,
-          isAntiAlias: true,
-          filterQuality: FilterQuality.medium,
-        ),
-      ],
+          Image.asset(
+            'assets/imagenes/meloop.png',
+            height: height,
+            cacheHeight: decodedHeight,
+            fit: BoxFit.contain,
+            isAntiAlias: true,
+            filterQuality: FilterQuality.medium,
+          ),
+        ],
+      ),
     );
   }
 }

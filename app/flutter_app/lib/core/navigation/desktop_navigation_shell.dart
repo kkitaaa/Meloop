@@ -9,7 +9,9 @@ import '../../screens/friends_screen.dart';
 import '../../services/api_client.dart';
 import '../../theme/meloop_typography.dart';
 import '../../widgets/desktop_app_header.dart';
+import '../../widgets/paper/stacked_paper_card.dart';
 import 'artists_and_songs_screen.dart';
+import 'sliding_tab_stack.dart';
 
 /// Controlador de navegación global del shell de escritorio.
 /// Mantiene la barra superior (`DesktopAppHeader`) fija e inamovible en todas
@@ -21,8 +23,8 @@ abstract class DesktopShellController {
   TextEditingController get searchController;
 
   void goHome();
-  void openFriends();
-  void openArtists();
+  void openFriends({String? initialQuery});
+  void openArtists({String? initialQuery});
   void openProfile({
     String? username,
     String? userId,
@@ -74,15 +76,29 @@ class DesktopNavigationShell extends StatefulWidget {
 class _DesktopNavigationShellState extends State<DesktopNavigationShell>
     implements DesktopShellController {
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
+  final GlobalKey<FriendsScreenState> _friendsKey =
+      GlobalKey<FriendsScreenState>();
+  final GlobalKey<ArtistsAndSongsScreenState> _artistsKey =
+      GlobalKey<ArtistsAndSongsScreenState>();
   final TextEditingController _searchController = TextEditingController();
+  final ValueNotifier<int> _searchSubmitNonce = ValueNotifier<int>(0);
+  final ValueNotifier<int> _primaryTabIndex = ValueNotifier<int>(0);
+
   late final ApiClient _apiClient = widget.apiClient ?? ApiClient();
   late final bool _ownsApiClient = widget.apiClient == null;
   late final _ShellNavigatorObserver _routeObserver = _ShellNavigatorObserver(
     onRouteStackChanged: _handleRouteStackChanged,
   );
+  late final Widget _homeTab = FeedScreen(
+    apiClient: _apiClient,
+    userRole: widget.userRole,
+  );
+  String? _friendsInitialQuery;
+  String? _artistsInitialQuery;
 
   DesktopNavigationSection _activeSection = DesktopNavigationSection.home;
   bool _searchOpen = false;
+  bool _texturesPreloaded = false;
 
   @override
   DesktopNavigationSection get activeSection => _activeSection;
@@ -100,20 +116,40 @@ class _DesktopNavigationShellState extends State<DesktopNavigationShell>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_texturesPreloaded) {
+      _texturesPreloaded = true;
+      StackedPaperCard.preloadTextures(context);
+    }
+  }
+
+  @override
   void dispose() {
     if (identical(DesktopNavigationShell.activeController, this)) {
       DesktopNavigationShell.activeController = null;
     }
+    _primaryTabIndex.dispose();
+    _searchSubmitNonce.dispose();
     _searchController.dispose();
     if (_ownsApiClient) _apiClient.close();
     super.dispose();
+  }
+
+  DesktopNavigationSection _sectionForPrimaryIndex(int index) {
+    return switch (index) {
+      0 => DesktopNavigationSection.home,
+      1 => DesktopNavigationSection.friends,
+      2 => DesktopNavigationSection.artists,
+      _ => DesktopNavigationSection.home,
+    };
   }
 
   void _handleRouteStackChanged(Route<dynamic>? currentRoute) {
     if (!mounted || currentRoute is! PageRoute) return;
     final name = currentRoute.settings.name;
     final nextSection = currentRoute.isFirst
-        ? DesktopNavigationSection.home
+        ? _sectionForPrimaryIndex(_primaryTabIndex.value)
         : switch (name) {
             '/home' || '/' => DesktopNavigationSection.home,
             '/friends' => DesktopNavigationSection.friends,
@@ -132,42 +168,63 @@ class _DesktopNavigationShellState extends State<DesktopNavigationShell>
     }
   }
 
-  @override
-  void goHome() {
+  void _selectPrimaryTab(int index, {VoidCallback? onReady}) {
+    final targetSection = _sectionForPrimaryIndex(index);
+    final nav = _navigatorKey.currentState;
+    final wasOnSubRoute = nav != null && nav.canPop();
+
     setState(() {
-      _activeSection = DesktopNavigationSection.home;
+      _activeSection = targetSection;
       _searchOpen = false;
     });
-    _navigatorKey.currentState?.popUntil((route) => route.isFirst);
+
+    if (wasOnSubRoute) {
+      nav.popUntil((route) => route.isFirst);
+    }
+    _primaryTabIndex.value = index;
+
+    if (onReady != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        onReady();
+      });
+    }
   }
 
   @override
-  void openFriends() {
-    if (_activeSection == DesktopNavigationSection.friends && !_searchOpen) {
-      return;
-    }
-    setState(() {
-      _activeSection = DesktopNavigationSection.friends;
-      _searchOpen = false;
-    });
-    _replaceSectionRoute(
-      name: '/friends',
-      builder: (_) => const FriendsScreen(),
+  void goHome() {
+    _selectPrimaryTab(0);
+  }
+
+  @override
+  void openFriends({String? initialQuery}) {
+    final trimmedQuery = initialQuery?.trim();
+    _friendsInitialQuery = trimmedQuery != null && trimmedQuery.isNotEmpty
+        ? trimmedQuery
+        : null;
+    _selectPrimaryTab(
+      1,
+      onReady: _friendsInitialQuery != null
+          ? () => _friendsKey.currentState?.applySearchQuery(
+              _friendsInitialQuery!,
+            )
+          : null,
     );
   }
 
   @override
-  void openArtists() {
-    if (_activeSection == DesktopNavigationSection.artists && !_searchOpen) {
-      return;
-    }
-    setState(() {
-      _activeSection = DesktopNavigationSection.artists;
-      _searchOpen = false;
-    });
-    _replaceSectionRoute(
-      name: '/artists',
-      builder: (_) => const ArtistsAndSongsScreen(),
+  void openArtists({String? initialQuery}) {
+    final trimmedQuery = initialQuery?.trim();
+    _artistsInitialQuery = trimmedQuery != null && trimmedQuery.isNotEmpty
+        ? trimmedQuery
+        : null;
+    _selectPrimaryTab(
+      2,
+      onReady: _artistsInitialQuery != null
+          ? () => _artistsKey.currentState?.applySearchQuery(
+              _artistsInitialQuery!,
+            )
+          : null,
     );
   }
 
@@ -195,6 +252,10 @@ class _DesktopNavigationShellState extends State<DesktopNavigationShell>
     );
   }
 
+  void _submitSearch(String _) {
+    _searchSubmitNonce.value++;
+  }
+
   @override
   void openSearch() {
     if (_searchOpen) return;
@@ -209,11 +270,27 @@ class _DesktopNavigationShellState extends State<DesktopNavigationShell>
             GlobalSearchScreen(
               apiClient: _apiClient,
               externalQueryController: _searchController,
+              externalSubmitTrigger: _searchSubmitNonce,
             ),
-        transitionDuration: const Duration(milliseconds: 180),
-        reverseTransitionDuration: const Duration(milliseconds: 140),
-        transitionsBuilder: (context, animation, secondaryAnimation, child) =>
-            FadeTransition(opacity: animation, child: child),
+        transitionDuration: const Duration(milliseconds: 340),
+        reverseTransitionDuration: const Duration(milliseconds: 280),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          // Espera a que la pestaña inferior se desvanezca primero (0.0 -> 0.44)
+          // y recién entonces revela la búsqueda sobre el fondo limpio.
+          final fadeIn = CurvedAnimation(
+            parent: animation,
+            curve: const Interval(0.44, 1.0, curve: Curves.easeOutCubic),
+            reverseCurve: const Interval(0.48, 1.0, curve: Curves.easeInCubic),
+          );
+          final slide = Tween<Offset>(
+            begin: const Offset(0, 0.022),
+            end: Offset.zero,
+          ).animate(fadeIn);
+          return FadeTransition(
+            opacity: fadeIn,
+            child: SlideTransition(position: slide, child: child),
+          );
+        },
       ),
     );
   }
@@ -221,8 +298,12 @@ class _DesktopNavigationShellState extends State<DesktopNavigationShell>
   @override
   void closeSearch() {
     if (_searchOpen) {
-      setState(() => _searchOpen = false);
       final nav = _navigatorKey.currentState;
+      final restoredSection = _sectionForPrimaryIndex(_primaryTabIndex.value);
+      setState(() {
+        _searchOpen = false;
+        _activeSection = restoredSection;
+      });
       if (nav != null && nav.canPop()) {
         nav.pop();
       } else {
@@ -276,10 +357,16 @@ class _DesktopNavigationShellState extends State<DesktopNavigationShell>
         settings: RouteSettings(name: name),
         pageBuilder: (context, animation, secondaryAnimation) =>
             builder(context),
-        transitionDuration: const Duration(milliseconds: 160),
-        reverseTransitionDuration: Duration.zero,
+        transitionDuration: const Duration(milliseconds: 220),
+        reverseTransitionDuration: const Duration(milliseconds: 180),
         transitionsBuilder: (context, animation, secondaryAnimation, child) =>
-            FadeTransition(opacity: animation, child: child),
+            FadeTransition(
+              opacity: CurvedAnimation(
+                parent: animation,
+                curve: Curves.easeOutCubic,
+              ),
+              child: child,
+            ),
       ),
       (route) => route.isFirst,
     );
@@ -317,6 +404,7 @@ class _DesktopNavigationShellState extends State<DesktopNavigationShell>
                 apiClient: _apiClient,
                 searchOpen: _searchOpen,
                 searchController: _searchController,
+                onSearchSubmitted: _submitSearch,
                 onSearchBack: closeSearch,
               ),
               Expanded(
@@ -327,12 +415,66 @@ class _DesktopNavigationShellState extends State<DesktopNavigationShell>
                     onGenerateRoute: (settings) => PageRouteBuilder<void>(
                       settings: const RouteSettings(name: '/home'),
                       pageBuilder: (context, animation, secondaryAnimation) =>
-                          FeedScreen(
-                            apiClient: _apiClient,
-                            userRole: widget.userRole,
+                          ValueListenableBuilder<int>(
+                            valueListenable: _primaryTabIndex,
+                            builder: (context, index, _) => SlidingTabStack(
+                              currentIndex: index,
+                              children: [
+                                _homeTab,
+                                FriendsScreen(
+                                  key: _friendsKey,
+                                  initialQuery: _friendsInitialQuery,
+                                ),
+                                ArtistsAndSongsScreen(
+                                  key: _artistsKey,
+                                  initialQuery: _artistsInitialQuery,
+                                ),
+                              ],
+                            ),
                           ),
                       transitionDuration: Duration.zero,
                       reverseTransitionDuration: Duration.zero,
+                      transitionsBuilder:
+                          (context, animation, secondaryAnimation, child) {
+                            // Cuando se abre Búsqueda, Perfil o una subpantalla,
+                            // primero desvanecemos y ocultamos la pestaña base
+                            // para que nunca se vea detrás de la nueva pantalla.
+                            final fadeOut = Tween<double>(
+                              begin: 1.0,
+                              end: 0.0,
+                            ).animate(
+                              CurvedAnimation(
+                                parent: secondaryAnimation,
+                                curve: const Interval(
+                                  0.0,
+                                  0.44,
+                                  curve: Curves.easeOut,
+                                ),
+                                reverseCurve: const Interval(
+                                  0.0,
+                                  0.48,
+                                  curve: Curves.easeIn,
+                                ),
+                              ),
+                            );
+                            return AnimatedBuilder(
+                              animation: secondaryAnimation,
+                              builder: (context, innerChild) {
+                                final hidden = secondaryAnimation.value >= 0.45;
+                                return Offstage(
+                                  offstage: hidden,
+                                  child: IgnorePointer(
+                                    ignoring: secondaryAnimation.value > 0.05,
+                                    child: FadeTransition(
+                                      opacity: fadeOut,
+                                      child: innerChild,
+                                    ),
+                                  ),
+                                );
+                              },
+                              child: child,
+                            );
+                          },
                     ),
                   ),
                 ),

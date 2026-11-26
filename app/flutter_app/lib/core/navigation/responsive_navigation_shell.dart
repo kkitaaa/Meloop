@@ -1,12 +1,45 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../../services/api_client.dart';
 import '../../features/moderation/data/moderation_models.dart';
+import '../../features/moderation/presentation/moderation_queue_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
+import '../../features/search/presentation/global_search_route.dart';
 import '../../screens/feed_screen.dart';
 import '../../screens/friends_screen.dart';
+import '../../services/api_client.dart';
+import '../../widgets/mobile_app_header.dart';
+import '../../widgets/paper/stacked_paper_card.dart';
 import 'artists_and_songs_screen.dart';
+import 'sliding_tab_stack.dart';
+
+/// Controlador compartido del shell móvil/Android para mantener una sola barra
+/// superior fija mientras las pestañas deslizan suavemente debajo, y permitir
+/// que pantallas como Búsqueda global salten directo a Amigos o Artistas.
+abstract class MobileShellController {
+  int get selectedIndex;
+
+  void goHome();
+  void openFriends({String? initialQuery});
+  void openArtists({String? initialQuery});
+  void openProfile();
+}
+
+class MobileShellScope extends InheritedWidget {
+  const MobileShellScope({
+    super.key,
+    required this.controller,
+    required super.child,
+  });
+
+  final MobileShellController controller;
+
+  static MobileShellController? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<MobileShellScope>()?.controller;
+
+  @override
+  bool updateShouldNotify(MobileShellScope oldWidget) => true;
+}
 
 class ResponsiveNavigationShell extends StatefulWidget {
   const ResponsiveNavigationShell({
@@ -23,22 +56,78 @@ class ResponsiveNavigationShell extends StatefulWidget {
       _ResponsiveNavigationShellState();
 }
 
-class _ResponsiveNavigationShellState extends State<ResponsiveNavigationShell> {
+class _ResponsiveNavigationShellState extends State<ResponsiveNavigationShell>
+    implements MobileShellController {
   static const _accentColor = Color(0xFF00AF92);
   int _selectedIndex = 0;
+  bool _texturesPreloaded = false;
   late final ApiClient _apiClient = widget.apiClient ?? ApiClient();
   late final bool _ownsApiClient = widget.apiClient == null;
   final GlobalKey<FeedScreenState> _feedKey = GlobalKey<FeedScreenState>();
+  final GlobalKey<FriendsScreenState> _friendsKey =
+      GlobalKey<FriendsScreenState>();
+  final GlobalKey<ArtistsAndSongsScreenState> _artistsKey =
+      GlobalKey<ArtistsAndSongsScreenState>();
 
   late final List<Widget> _screens = [
     FeedScreen(key: _feedKey, apiClient: _apiClient, userRole: widget.userRole),
-    const FriendsScreen(),
-    const ArtistsAndSongsScreen(),
+    FriendsScreen(key: _friendsKey),
+    ArtistsAndSongsScreen(key: _artistsKey),
     ProfileScreen(apiClient: _apiClient),
   ];
 
+  @override
+  int get selectedIndex => _selectedIndex;
+
+  @override
+  void goHome() => setState(() => _selectedIndex = 0);
+
+  @override
+  void openFriends({String? initialQuery}) {
+    setState(() => _selectedIndex = 1);
+    final trimmed = initialQuery?.trim();
+    if (trimmed != null && trimmed.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _friendsKey.currentState?.applySearchQuery(trimmed);
+      });
+    }
+  }
+
+  @override
+  void openArtists({String? initialQuery}) {
+    setState(() => _selectedIndex = 2);
+    final trimmed = initialQuery?.trim();
+    if (trimmed != null && trimmed.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _artistsKey.currentState?.applySearchQuery(trimmed);
+      });
+    }
+  }
+
+  @override
+  void openProfile() => setState(() => _selectedIndex = 3);
+
   Future<void> _createBlog() async {
     await _feedKey.currentState?.createPost();
+  }
+
+  void _openModerationQueue() {
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => ModerationQueueScreen(role: widget.userRole),
+      ),
+    );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_texturesPreloaded) {
+      _texturesPreloaded = true;
+      StackedPaperCard.preloadTextures(context);
+    }
   }
 
   @override
@@ -50,59 +139,79 @@ class _ResponsiveNavigationShellState extends State<ResponsiveNavigationShell> {
   @override
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
+    final canModerate = widget.userRole != ModerationRole.user;
 
-    return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: const SystemUiOverlayStyle(
-        statusBarColor: Color(0xFF248686),
-        statusBarIconBrightness: Brightness.light,
-      ),
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
-        extendBody: true,
-        body: SafeArea(
-          bottom: false,
-          child: IndexedStack(index: _selectedIndex, children: _screens),
+    return MobileShellScope(
+      controller: this,
+      child: AnnotatedRegion<SystemUiOverlayStyle>(
+        value: const SystemUiOverlayStyle(
+          statusBarColor: Color(0xFF248686),
+          statusBarIconBrightness: Brightness.light,
         ),
-        bottomNavigationBar: Container(
-          height: bottomInset + 132,
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [Color(0x00000000), Color(0x88000000)],
+        child: Scaffold(
+          backgroundColor: Colors.transparent,
+          extendBody: true,
+          body: SafeArea(
+            bottom: false,
+            child: Column(
+              children: [
+                Builder(
+                  builder: (headerContext) => MobileAppHeader(
+                    onSearchTap: () => openGlobalSearch(headerContext),
+                    onModerationTap: canModerate ? _openModerationQueue : null,
+                    apiClient: _apiClient,
+                  ),
+                ),
+                Expanded(
+                  child: SlidingTabStack(
+                    currentIndex: _selectedIndex,
+                    children: _screens,
+                  ),
+                ),
+              ],
             ),
           ),
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              Positioned(
-                left: 14,
-                right: 14,
-                bottom: bottomInset + 10,
-                height: 52,
-                child: _buildNavigationPill(),
+          bottomNavigationBar: Container(
+            height: bottomInset + 132,
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [Color(0x00000000), Color(0x88000000)],
               ),
-              Positioned(
-                right: 24,
-                bottom: bottomInset + 72,
-                child: Material(
-                  color: const Color(0xFF50DDC7),
-                  shape: const CircleBorder(),
-                  elevation: 8,
-                  shadowColor: Colors.black.withValues(alpha: 0.3),
-                  child: IconButton(
-                    tooltip: 'Crear blog',
-                    onPressed: _createBlog,
-                    icon: const Icon(Icons.edit_note, color: Colors.white),
-                    iconSize: 26,
-                    constraints: const BoxConstraints.tightFor(
-                      width: 56,
-                      height: 56,
+            ),
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Positioned(
+                  left: 14,
+                  right: 14,
+                  bottom: bottomInset + 10,
+                  height: 52,
+                  child: _buildNavigationPill(),
+                ),
+                Positioned(
+                  right: 24,
+                  bottom: bottomInset + 72,
+                  child: Material(
+                    color: const Color(0xFF50DDC7),
+                    shape: const CircleBorder(),
+                    elevation: 8,
+                    shadowColor: Colors.black.withValues(alpha: 0.3),
+                    child: IconButton(
+                      tooltip: 'Crear blog',
+                      onPressed: _createBlog,
+                      icon: const Icon(Icons.edit_note, color: Colors.white),
+                      iconSize: 26,
+                      constraints: const BoxConstraints.tightFor(
+                        width: 56,
+                        height: 56,
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -145,8 +254,8 @@ class _ResponsiveNavigationShellState extends State<ResponsiveNavigationShell> {
                 borderRadius: BorderRadius.circular(26),
                 onTap: () => setState(() => _selectedIndex = index),
                 child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 180),
-                  curve: Curves.easeOut,
+                  duration: const Duration(milliseconds: 220),
+                  curve: Curves.easeOutCubic,
                   height: 42,
                   decoration: BoxDecoration(
                     color: isSelected

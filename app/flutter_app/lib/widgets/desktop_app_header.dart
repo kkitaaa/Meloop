@@ -1,3 +1,6 @@
+import 'dart:math' as math;
+import 'dart:ui' show lerpDouble;
+
 import 'package:flutter/material.dart';
 
 import '../core/navigation/desktop_navigation_shell.dart';
@@ -63,6 +66,7 @@ class DesktopAppHeader extends StatelessWidget {
     this.searchOpen = false,
     this.searchController,
     this.onSearchChanged,
+    this.onSearchSubmitted,
     this.onSearchBack,
   });
 
@@ -78,6 +82,7 @@ class DesktopAppHeader extends StatelessWidget {
   final bool searchOpen;
   final TextEditingController? searchController;
   final ValueChanged<String>? onSearchChanged;
+  final ValueChanged<String>? onSearchSubmitted;
   final VoidCallback? onSearchBack;
 
   static const _headerGradient = LinearGradient(
@@ -193,7 +198,8 @@ class DesktopAppHeader extends StatelessWidget {
                 ],
               ),
 
-              // Botones de navegación centrados exactamente en la barra
+              // Botones de navegación centrados + barra de búsqueda unificada con
+              // transición fluida (sin saltos ni desaparición brusca de la lupa)
               Center(
                 child: Transform.scale(
                   scale: navScale,
@@ -203,33 +209,21 @@ class DesktopAppHeader extends StatelessWidget {
                     onHomeTap: onHomeTap,
                     onFriendsTap: onFriendsTap,
                     onArtistsTap: onArtistsTap,
+                    onSearchTap: onSearchTap,
                     searchOpen: searchOpen,
                     searchController: searchController,
                     onSearchChanged: onSearchChanged,
+                    onSearchSubmitted: onSearchSubmitted,
                     onSearchBack: onSearchBack,
                     pillColor: _pillColor,
                     fontSize: _navFontSize,
                     horizontalItemPadding: _navHorizontalPadding,
                     outerPadding: _navOuterPadding,
+                    searchGap: _searchGap,
+                    searchButtonSize: _searchButtonSize,
                   ),
                 ),
               ),
-
-              // Botón de búsqueda pegado a la derecha de la píldora centrada
-              if (!searchOpen && onSearchTap != null)
-                Positioned(
-                  left: constraints.maxWidth / 2 + scaledNavHalf + _searchGap,
-                  top: 0,
-                  bottom: 0,
-                  child: Center(
-                    child: _HeaderCircleButton(
-                      tooltip: 'Búsqueda global',
-                      onPressed: onSearchTap,
-                      icon: Icons.search_rounded,
-                      color: _pillColor,
-                    ),
-                  ),
-                ),
             ],
           );
         },
@@ -250,8 +244,12 @@ class _DesktopHeaderNavAndSearch extends StatefulWidget {
     required this.fontSize,
     required this.horizontalItemPadding,
     required this.outerPadding,
+    required this.searchGap,
+    required this.searchButtonSize,
+    this.onSearchTap,
     this.searchController,
     this.onSearchChanged,
+    this.onSearchSubmitted,
     this.onSearchBack,
   });
 
@@ -260,71 +258,168 @@ class _DesktopHeaderNavAndSearch extends StatefulWidget {
   final VoidCallback onHomeTap;
   final VoidCallback onFriendsTap;
   final VoidCallback onArtistsTap;
+  final VoidCallback? onSearchTap;
   final bool searchOpen;
   final TextEditingController? searchController;
   final ValueChanged<String>? onSearchChanged;
+  final ValueChanged<String>? onSearchSubmitted;
   final VoidCallback? onSearchBack;
   final Color pillColor;
   final double fontSize;
   final double horizontalItemPadding;
   final double outerPadding;
+  final double searchGap;
+  final double searchButtonSize;
 
   @override
   State<_DesktopHeaderNavAndSearch> createState() =>
       _DesktopHeaderNavAndSearchState();
 }
 
-class _DesktopHeaderNavAndSearchState
-    extends State<_DesktopHeaderNavAndSearch> {
-  late bool _searchOpen;
+class _DesktopHeaderNavAndSearchState extends State<_DesktopHeaderNavAndSearch>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final FocusNode _searchFocusNode;
 
   @override
   void initState() {
     super.initState();
-    _searchOpen = widget.searchOpen;
+    _searchFocusNode = FocusNode();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 260),
+      reverseDuration: const Duration(milliseconds: 220),
+      value: widget.searchOpen ? 1.0 : 0.0,
+    );
+    if (widget.searchOpen) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && widget.searchOpen) {
+          _searchFocusNode.requestFocus();
+        }
+      });
+    }
   }
 
   @override
   void didUpdateWidget(covariant _DesktopHeaderNavAndSearch oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.searchOpen != widget.searchOpen) {
-      _searchOpen = widget.searchOpen;
+      if (widget.searchOpen) {
+        _controller.forward();
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && widget.searchOpen) {
+            _searchFocusNode.requestFocus();
+          }
+        });
+      } else {
+        _searchFocusNode.unfocus();
+        _controller.reverse();
+      }
     }
   }
 
-  void _closeSearch() {
-    if (!_searchOpen) {
+  @override
+  void dispose() {
+    _searchFocusNode.dispose();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _handleCircleButtonTap() {
+    if (widget.searchOpen) {
+      _searchFocusNode.unfocus();
+      _controller.reverse();
       widget.onSearchBack?.call();
-      return;
+    } else {
+      widget.onSearchTap?.call();
     }
-    setState(() => _searchOpen = false);
-    Future<void>.delayed(const Duration(milliseconds: 220), () {
-      if (mounted && !_searchOpen) {
-        widget.onSearchBack?.call();
-      }
-    });
   }
 
   @override
   Widget build(BuildContext context) {
-    // Altura fija (50) para que SizeTransition(axis: Axis.horizontal), que
-    // alinea verticalmente a top (-1.0), nunca desplace la píldora hacia arriba.
+    final hasSearchAction = widget.onSearchTap != null || widget.searchOpen;
+    final sideSlot = hasSearchAction
+        ? widget.searchGap + widget.searchButtonSize
+        : 0.0;
+    final totalWidth = widget.navigationWidth + sideSlot * 2;
+
     return SizedBox(
+      width: totalWidth,
       height: 50,
-      child: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 240),
-        switchInCurve: Curves.easeOutCubic,
-        switchOutCurve: Curves.easeInCubic,
-        transitionBuilder: (child, animation) => FadeTransition(
-          opacity: animation,
-          child: SizeTransition(
-            axis: Axis.horizontal,
-            axisAlignment: 1,
-            sizeFactor: animation,
-            child: child,
-          ),
-        ),
-        child: _searchOpen ? _buildSearchBar() : _buildNavigationPill(),
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, _) {
+          final t = Curves.easeOutCubic.transform(_controller.value);
+          final navOpacity = (1.0 - t * 1.65).clamp(0.0, 1.0);
+          final navScale = lerpDouble(1.0, 0.96, t)!;
+          final navShiftX = lerpDouble(0.0, -14.0, t)!;
+
+          final searchOpacity = ((t - 0.05) * 1.45).clamp(0.0, 1.0);
+          final searchWidthFactor = lerpDouble(0.14, 1.0, t)!.clamp(0.0, 1.0);
+
+          return Stack(
+            alignment: Alignment.center,
+            children: [
+              // Píldora de navegación exactamente centrada en la barra
+              Positioned(
+                left: sideSlot,
+                width: widget.navigationWidth,
+                top: 0,
+                bottom: 0,
+                child: IgnorePointer(
+                  ignoring: t > 0.35,
+                  child: Opacity(
+                    opacity: navOpacity,
+                    child: Transform.translate(
+                      offset: Offset(navShiftX, 0),
+                      child: Transform.scale(
+                        scale: navScale,
+                        child: _buildNavigationPill(),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
+              // Barra de búsqueda desplegándose desde la lupa hacia la izquierda
+              if (_controller.value > 0.01)
+                Positioned(
+                  left: sideSlot,
+                  width: widget.navigationWidth,
+                  top: 2,
+                  bottom: 2,
+                  child: IgnorePointer(
+                    ignoring: !widget.searchOpen && t < 0.5,
+                    child: Opacity(
+                      opacity: searchOpacity,
+                      child: Align(
+                        alignment: Alignment.centerRight,
+                        child: FractionallySizedBox(
+                          widthFactor: searchWidthFactor,
+                          child: _buildSearchBar(),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+
+              // Botón circular fijo a la derecha (lupa <-> flecha volver)
+              if (hasSearchAction)
+                Positioned(
+                  right: 0,
+                  top: 1,
+                  bottom: 1,
+                  width: widget.searchButtonSize,
+                  child: _MorphingSearchCircleButton(
+                    progress: t,
+                    isSearchOpen: widget.searchOpen,
+                    color: widget.pillColor,
+                    onPressed: _handleCircleButtonTap,
+                  ),
+                ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -372,53 +467,135 @@ class _DesktopHeaderNavAndSearchState
   }
 
   Widget _buildSearchBar() {
-    return SizedBox(
+    final controller = widget.searchController;
+    return Container(
       key: const ValueKey('nav-bar-search-row'),
-      width: widget.navigationWidth + 60,
-      height: 50,
+      height: 46,
+      alignment: Alignment.center,
+      padding: const EdgeInsets.only(left: 18, right: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(26),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.10),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
       child: Row(
         children: [
+          IconButton(
+            tooltip: 'Buscar',
+            onPressed: () =>
+                widget.onSearchSubmitted?.call(controller?.text ?? ''),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints.tightFor(width: 30, height: 30),
+            icon: const Icon(
+              Icons.search_rounded,
+              color: Color(0xFF16877F),
+              size: 21,
+            ),
+          ),
+          const SizedBox(width: 6),
           Expanded(
-            child: Container(
-              height: 46,
-              alignment: Alignment.center,
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(26),
+            child: TextField(
+              controller: controller,
+              focusNode: _searchFocusNode,
+              onChanged: widget.onSearchChanged,
+              onSubmitted: widget.onSearchSubmitted,
+              textInputAction: TextInputAction.search,
+              style: MeloopTypography.lexend(
+                fontSize: 14.5,
+                color: const Color(0xFF1A2424),
               ),
-              child: TextField(
-                controller: widget.searchController,
-                onChanged: widget.onSearchChanged,
-                autofocus: true,
-                textInputAction: TextInputAction.search,
-                style: MeloopTypography.lexend(
-                  fontSize: 15,
-                  color: const Color(0xFF1A2424),
+              decoration: InputDecoration(
+                hintText:
+                    'Buscar publicaciones, canciones o amigos (Enter)...',
+                hintStyle: MeloopTypography.lexend(
+                  fontSize: 13.5,
+                  color: const Color(0xFF7D908E),
                 ),
-                decoration: InputDecoration(
-                  hintText: 'Buscar en Meloop...',
-                  hintStyle: MeloopTypography.lexend(
-                    fontSize: 14,
-                    color: const Color(0xFF7D908E),
-                  ),
-                  icon: const Icon(
-                    Icons.search_rounded,
-                    color: Color(0xFF16877F),
-                    size: 22,
-                  ),
-                  border: InputBorder.none,
-                  isDense: true,
-                ),
+                border: InputBorder.none,
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(vertical: 10),
               ),
             ),
           ),
-          const SizedBox(width: 10),
-          _HeaderCircleButton(
-            tooltip: 'Volver',
-            onPressed: _closeSearch,
-            icon: Icons.arrow_back_rounded,
-            color: widget.pillColor,
+          if (controller != null)
+            ValueListenableBuilder<TextEditingValue>(
+              valueListenable: controller,
+              builder: (context, value, _) {
+                if (value.text.isEmpty) return const SizedBox(width: 6);
+                return IconButton(
+                  tooltip: 'Limpiar búsqueda',
+                  onPressed: controller.clear,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints.tightFor(
+                    width: 32,
+                    height: 32,
+                  ),
+                  icon: const Icon(
+                    Icons.close_rounded,
+                    size: 18,
+                    color: Color(0xFF6B807D),
+                  ),
+                );
+              },
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MorphingSearchCircleButton extends StatelessWidget {
+  const _MorphingSearchCircleButton({
+    required this.progress,
+    required this.isSearchOpen,
+    required this.color,
+    required this.onPressed,
+  });
+
+  final double progress;
+  final bool isSearchOpen;
+  final Color color;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final searchOpacity = (1.0 - progress * 2.0).clamp(0.0, 1.0);
+    final backOpacity = ((progress - 0.45) * 1.9).clamp(0.0, 1.0);
+
+    return IconButton(
+      tooltip: isSearchOpen ? 'Volver' : 'Búsqueda global',
+      onPressed: onPressed,
+      constraints: const BoxConstraints.tightFor(width: 48, height: 48),
+      padding: EdgeInsets.zero,
+      style: IconButton.styleFrom(
+        backgroundColor: color,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        shadowColor: Colors.transparent,
+        shape: const CircleBorder(),
+      ),
+      icon: Stack(
+        alignment: Alignment.center,
+        children: [
+          Opacity(
+            opacity: searchOpacity,
+            child: Transform.rotate(
+              angle: progress * math.pi * 0.35,
+              child: const Icon(Icons.search_rounded, size: 25),
+            ),
+          ),
+          Opacity(
+            opacity: backOpacity,
+            child: Transform.rotate(
+              angle: (1.0 - progress) * -math.pi * 0.35,
+              child: const Icon(Icons.arrow_back_rounded, size: 24),
+            ),
           ),
         ],
       ),
@@ -842,38 +1019,6 @@ class _HeaderProfileDropdown extends StatelessWidget {
           borderColor: null,
         ),
       ),
-    );
-  }
-}
-
-class _HeaderCircleButton extends StatelessWidget {
-  const _HeaderCircleButton({
-    required this.tooltip,
-    required this.onPressed,
-    required this.icon,
-    required this.color,
-  });
-
-  final String tooltip;
-  final VoidCallback? onPressed;
-  final IconData icon;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return IconButton(
-      tooltip: tooltip,
-      onPressed: onPressed,
-      constraints: const BoxConstraints.tightFor(width: 48, height: 48),
-      padding: EdgeInsets.zero,
-      style: IconButton.styleFrom(
-        backgroundColor: color,
-        foregroundColor: Colors.white,
-        elevation: 0,
-        shadowColor: Colors.transparent,
-        shape: const CircleBorder(),
-      ),
-      icon: Icon(icon, size: 26),
     );
   }
 }
