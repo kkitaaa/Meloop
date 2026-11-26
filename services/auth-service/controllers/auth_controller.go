@@ -151,6 +151,26 @@ func (ctrl *AuthController) Validate(c *gin.Context) {
 	httpcall(c, http.StatusOK, user)
 }
 
+func (ctrl *AuthController) Refresh(c *gin.Context) {
+	tokenValue, exists := c.Get("session_token")
+	token, isString := tokenValue.(string)
+	if !exists || !isString || token == "" {
+		httpresponse.UnauthorizedGin(c, "No se encontró sesión activa")
+		return
+	}
+
+	res, err := ctrl.authService.RefreshSession(c.Request.Context(), token)
+	if err != nil {
+		if errors.Is(err, services.ErrInvalidSession) {
+			httpresponse.UnauthorizedGin(c, "Sesión inválida o expirada")
+			return
+		}
+		httpresponse.InternalErrorGin(c)
+		return
+	}
+	httpresponse.SuccessGin(c, http.StatusOK, res)
+}
+
 // ChangePassword maneja la petición de cambio de contraseña (POST /auth/change-password)
 func (ctrl *AuthController) ChangePassword(c *gin.Context) {
 	userVal, exists := c.Get("user")

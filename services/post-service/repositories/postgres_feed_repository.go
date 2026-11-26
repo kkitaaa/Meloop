@@ -32,6 +32,12 @@ func (r *PostgresFeedRepository) GetMainFeed(userID string, limit, offset int) (
 			u.username as author_username, 
 			'' as author_avatar, -- Placeholder: No hay avatar en la tabla USUARIO actual
 			COALESCE(l.likes_count, 0) as likes_count,
+			EXISTS (
+				SELECT 1 FROM INTERACCION il
+				WHERE il.id_publicacion = p.id_publicacion
+					AND il.id_usuario = ?
+					AND il.tipo = 'like'
+			) as is_liked,
 			COALESCE(c.comments_count, 0) as comments_count
 		FROM PUBLICACION p
 		JOIN USUARIO u ON p.id_usuario = u.id_usuario
@@ -50,12 +56,17 @@ func (r *PostgresFeedRepository) GetMainFeed(userID string, limit, offset int) (
 			 FROM CONFIGURACION_PRIVACIDAD cp
 			 WHERE cp.id_usuario = p.id_usuario)
 		)
-		-- AND p.id_usuario NOT IN (SELECT id_bloqueado FROM BLOQUEO...) (Falta definir en BD)
+		AND NOT EXISTS (
+			SELECT 1 FROM BLOQUEO b
+			WHERE (b.id_usuario_bloqueador = ? AND b.id_usuario_bloqueado = p.id_usuario)
+			   OR (b.id_usuario_bloqueado = ? AND b.id_usuario_bloqueador = p.id_usuario)
+		)
 		ORDER BY p.fecha_creacion DESC
 		LIMIT ? OFFSET ?
 	`
 
-	err := r.db.Raw(query, userID, limit, offset).Scan(&feed).Error
+	// Mostramos publicaciones permitidas por privacidad, excepto las de usuarios bloqueados.
+	err := r.db.Raw(query, userID, userID, userID, userID, limit, offset).Scan(&feed).Error
 	if err != nil {
 		return nil, err
 	}

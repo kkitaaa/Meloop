@@ -33,9 +33,11 @@ func (m *mockPrivacyRepository) CreateDefault(ctx context.Context, userID string
 		VisibilidadPerfil:           models.VisibilidadPublico,
 		VisibilidadPublicaciones:    models.VisibilidadPublico,
 		VisibilidadInteracciones:    models.VisibilidadPublico,
+		VisibilidadAmigos:           models.VisibilidadPublico,
 		RecepcionMensajes:           models.RecepcionAmigos,
 		RecepcionSolicitudesAmistad: models.RecepcionTodos,
 	}
+
 	if m.configs == nil {
 		m.configs = make(map[string]*models.ConfiguracionPrivacidad)
 	}
@@ -77,6 +79,7 @@ func TestGetPrivacy_Exitoso(t *testing.T) {
 	userRepo := &mockUserRepository{
 		users: map[string]*models.Usuario{"usr-1": user},
 	}
+
 	privacyRepo := &mockPrivacyRepository{
 		configs: map[string]*models.ConfiguracionPrivacidad{
 			"usr-1": {
@@ -293,5 +296,37 @@ func TestUpdatePrivacy_AislamientoEntreUsuarios(t *testing.T) {
 	cfg2, _ := svc.GetPrivacy(context.Background(), "usr-2")
 	if cfg2.VisibilidadPerfil != models.VisibilidadPublico {
 		t.Errorf("violación de aislamiento: usr-2 fue alterado al modificar usr-1")
+	}
+}
+
+func TestUpdatePrivacy_FriendListVisibility(t *testing.T) {
+	userRepo := &mockUserRepository{
+		users: map[string]*models.Usuario{
+			"usr-1": {IDUsuario: "usr-1", Username: "alan"},
+		},
+	}
+	privacyRepo := &mockPrivacyRepository{
+		configs: map[string]*models.ConfiguracionPrivacidad{
+			"usr-1": {
+				IDUsuario:         "usr-1",
+				VisibilidadAmigos: models.VisibilidadPublico,
+				VisibilidadPerfil: models.VisibilidadPublico,
+			},
+		},
+	}
+	svc := services.NewPrivacyService(privacyRepo, userRepo)
+	visibility := models.VisibilidadPrivado
+
+	result, err := svc.UpdatePrivacy(context.Background(), "usr-1", &models.UpdatePrivacyRequest{
+		VisibilidadAmigos: &visibility,
+	})
+	if err != nil {
+		t.Fatalf("se esperaba actualizar visibilidad_amigos, se obtuvo: %v", err)
+	}
+	if result.VisibilidadAmigos != models.VisibilidadPrivado {
+		t.Fatalf("visibilidad_amigos = %q, want %q", result.VisibilidadAmigos, models.VisibilidadPrivado)
+	}
+	if privacyRepo.configs["usr-1"].VisibilidadPerfil != models.VisibilidadPublico {
+		t.Fatal("la actualización de visibilidad_amigos no debe modificar otras preferencias")
 	}
 }

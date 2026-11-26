@@ -437,13 +437,9 @@ func (r *postgresProfileRepository) GetFullProfileData(ctx context.Context, user
 		data.InformacionMusical = musicPrefs
 	}
 
-	// 4. Consultar estadísticas consolidadas (publicaciones y amigos aceptados)
-	queryStats := `
-		SELECT 
-			COALESCE((SELECT COUNT(*) FROM PUBLICACION WHERE id_usuario = $1), 0),
-			COALESCE((SELECT COUNT(*) FROM AMISTAD WHERE (id_usuario_1 = $1 OR id_usuario_2 = $1) AND estado = 'ACEPTADA'), 0)
-	`
-	_ = r.pool.QueryRow(ctx, queryStats, userID).Scan(&data.Estadisticas.Publicaciones, &data.Estadisticas.Amigos)
+	// Los conteos de amistad son propiedad de social-service y no se consultan desde esta base.
+	queryPublications := `SELECT COUNT(*) FROM PUBLICACION WHERE id_usuario = $1`
+	_ = r.pool.QueryRow(ctx, queryPublications, userID).Scan(&data.Estadisticas.Publicaciones)
 
 	return &data, nil
 }

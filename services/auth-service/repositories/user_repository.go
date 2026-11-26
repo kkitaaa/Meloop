@@ -19,6 +19,7 @@ type UserRepository interface {
 	GetByEmail(ctx context.Context, email string) (*models.Usuario, error)
 	Create(ctx context.Context, user *models.Usuario) error
 	UpdatePassword(ctx context.Context, id string, passwordHash string) error
+	UpdateLastLogin(ctx context.Context, id string) error
 }
 
 type postgresUserRepository struct {
@@ -125,8 +126,8 @@ func (r *postgresUserRepository) Create(ctx context.Context, user *models.Usuari
 	}
 
 	query := `
-		INSERT INTO USUARIO (id_usuario, username, correo, contrasena_hash, id_nivel, experiencia)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		INSERT INTO USUARIO (id_usuario, username, correo, contrasena_hash, id_nivel, experiencia, fecha_creacion)
+		VALUES ($1, $2, $3, $4, $5, $6, NOW())
 		RETURNING id_usuario::text
 	`
 	err := r.pool.QueryRow(
@@ -154,4 +155,23 @@ func (r *postgresUserRepository) UpdatePassword(ctx context.Context, id string, 
 	`
 	_, err := r.pool.Exec(ctx, query, passwordHash, id)
 	return err
+}
+
+func (r *postgresUserRepository) UpdateLastLogin(ctx context.Context, id string) error {
+	if r.pool == nil {
+		return errors.New("database connection pool is not initialized")
+	}
+	result, err := r.pool.Exec(ctx, `
+		UPDATE USUARIO
+		SET fecha_ultimo_login = NOW()
+		WHERE id_usuario = $1`,
+		id,
+	)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() == 0 {
+		return errors.New("user not found")
+	}
+	return nil
 }

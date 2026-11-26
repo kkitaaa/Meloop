@@ -63,6 +63,22 @@ func (client *MLClient) Ready(ctx context.Context) error {
 }
 
 func (client *MLClient) Predict(ctx context.Context, request models.RecommendationRequest) (models.RecommendationResponse, error) {
+	if request.Preferences == nil {
+		request.Preferences = []string{}
+	}
+	if request.Profile.Genres == nil {
+		request.Profile.Genres = []string{}
+	}
+	if request.Profile.Artists == nil {
+		request.Profile.Artists = []string{}
+	}
+	if request.Profile.Songs == nil {
+		request.Profile.Songs = []string{}
+	}
+	if request.Interactions == nil {
+		request.Interactions = []models.Interaction{}
+	}
+
 	body, err := json.Marshal(request)
 	if err != nil {
 		return models.RecommendationResponse{}, fmt.Errorf("encode ML request: %w", err)
@@ -132,7 +148,7 @@ func (client *MLClient) doWithRetry(ctx context.Context, method, url string, bod
 			if readErr != nil {
 				lastErr = fmt.Errorf("read ML response: %w", readErr)
 			} else if response.StatusCode != http.StatusOK {
-				lastErr = fmt.Errorf("ML service returned status %d", response.StatusCode)
+				lastErr = mlStatusError(response.StatusCode, responseBody)
 				if response.StatusCode < http.StatusInternalServerError && response.StatusCode != http.StatusTooManyRequests {
 					return nil, lastErr
 				}
@@ -155,6 +171,33 @@ func (client *MLClient) doWithRetry(ctx context.Context, method, url string, bod
 		}
 	}
 	return nil, fmt.Errorf("ML request failed after %d attempts: %w", mlRetryCount+1, lastErr)
+}
+
+func mlStatusError(status int, responseBody []byte) error {
+	message := fmt.Sprintf("ML service returned status %d", status)
+	if status != http.StatusUnprocessableEntity {
+		return errors.New(message)
+	}
+
+	var response struct {
+		Detail []struct {
+			Type string `json:"type"`
+			Loc  []any  `json:"loc"`
+		} `json:"detail"`
+	}
+	if err := json.Unmarshal(responseBody, &response); err != nil || len(response.Detail) == 0 {
+		return errors.New(message)
+	}
+
+	issues := make([]string, 0, len(response.Detail))
+	for _, detail := range response.Detail {
+		location := make([]string, len(detail.Loc))
+		for index, part := range detail.Loc {
+			location[index] = fmt.Sprint(part)
+		}
+		issues = append(issues, fmt.Sprintf("%s (%s)", strings.Join(location, "."), detail.Type))
+	}
+	return fmt.Errorf("%s: validation failed at %s", message, strings.Join(issues, ", "))
 }
 
 func (breaker *mlCircuitBreaker) allow() bool {

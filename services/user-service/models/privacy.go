@@ -21,6 +21,7 @@ type ConfiguracionPrivacidad struct {
 	VisibilidadPerfil           string `json:"visibilidad_perfil"`
 	VisibilidadPublicaciones    string `json:"visibilidad_publicaciones"`
 	VisibilidadInteracciones    string `json:"visibilidad_interacciones"`
+	VisibilidadAmigos           string `json:"visibilidad_amigos"`
 	RecepcionMensajes           string `json:"recepcion_mensajes"`
 	RecepcionSolicitudesAmistad string `json:"recepcion_solicitudes_amistad"`
 }
@@ -30,6 +31,7 @@ type UpdatePrivacyRequest struct {
 	VisibilidadPerfil           *string `json:"visibilidad_perfil"`
 	VisibilidadPublicaciones    *string `json:"visibilidad_publicaciones"`
 	VisibilidadInteracciones    *string `json:"visibilidad_interacciones"`
+	VisibilidadAmigos           *string `json:"visibilidad_amigos"`
 	RecepcionMensajes           *string `json:"recepcion_mensajes"`
 	RecepcionSolicitudesAmistad *string `json:"recepcion_solicitudes_amistad"`
 	RecepcionSolicitudes        *string `json:"recepcion_solicitudes"` // Alias para compatibilidad
@@ -49,6 +51,7 @@ type PrivacyResponse struct {
 	VisibilidadPerfil           string `json:"visibilidad_perfil"`
 	VisibilidadPublicaciones    string `json:"visibilidad_publicaciones"`
 	VisibilidadInteracciones    string `json:"visibilidad_interacciones"`
+	VisibilidadAmigos           string `json:"visibilidad_amigos"`
 	RecepcionMensajes           string `json:"recepcion_mensajes"`
 	RecepcionSolicitudesAmistad string `json:"recepcion_solicitudes_amistad"`
 }

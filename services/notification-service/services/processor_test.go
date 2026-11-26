@@ -42,8 +42,37 @@ func TestProcessPostLikedResolvesPostOwner(t *testing.T) {
 	if notification.Recipient != "post-owner" || notification.Type != "post.liked" || notification.EventID != "event-1" {
 		t.Fatalf("unexpected notification: %+v", notification)
 	}
+	if notification.PreferenceType != "LIKE" {
+		t.Fatalf("preference type = %q, want LIKE", notification.PreferenceType)
+	}
 	if notification.Actor == nil || *notification.Actor != "liker" {
 		t.Fatalf("actor = %v, want liker", notification.Actor)
+	}
+}
+
+func TestPreferenceTypeMapsAllSupportedEvents(t *testing.T) {
+	tests := map[string]string{
+		eventPostLiked:        "LIKE",
+		eventCommentCreated:   "COMENTARIO",
+		eventCommentCommented: "COMENTARIO",
+		eventCommentReplied:   "RESPUESTA",
+		eventFriendRequested:  "SOLICITUD_AMISTAD",
+		eventFriendAccepted:   "SOLICITUD_AMISTAD_ACEPTADA",
+		eventMessageSent:      "MENSAJE",
+		eventReportCreated:    "ACCION_MODERACION",
+		eventModerationAction: "ACCION_MODERACION",
+		eventUserLevelUp:      "SUBIDA_NIVEL",
+		eventRewardUnlocked:   "RECOMPENSA_DESBLOQUEADA",
+	}
+	for eventType, want := range tests {
+		if got := preferenceType(eventType); got != want {
+			t.Errorf("preferenceType(%q) = %q, want %q", eventType, got, want)
+		}
+	}
+	for eventType := range supportedEvents {
+		if preferenceType(eventType) == "" {
+			t.Errorf("supported event %q has no notification preference mapping", eventType)
+		}
 	}
 }
 

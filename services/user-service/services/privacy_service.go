@@ -113,6 +113,18 @@ func (s *privacyService) UpdatePrivacy(ctx context.Context, userID string, req *
 		*req.VisibilidadInteracciones = val
 	}
 
+	if req.VisibilidadAmigos != nil {
+		val := strings.ToUpper(strings.TrimSpace(*req.VisibilidadAmigos))
+		if !isValidVisibility(val) {
+			return nil, &ValidationError{
+				Field:   "visibilidad_amigos",
+				Issue:   "invalid_value",
+				Message: "Valor no permitido para visibilidad_amigos. Valores válidos: PUBLICO, AMIGOS, PRIVADO",
+			}
+		}
+		*req.VisibilidadAmigos = val
+	}
+
 	if req.RecepcionMensajes != nil {
 		val := strings.ToUpper(strings.TrimSpace(*req.RecepcionMensajes))
 		if !isValidReception(val) {
@@ -149,6 +161,7 @@ func (s *privacyService) UpdatePrivacy(ctx context.Context, userID string, req *
 			VisibilidadPerfil:           models.VisibilidadPublico,
 			VisibilidadPublicaciones:    models.VisibilidadPublico,
 			VisibilidadInteracciones:    models.VisibilidadPublico,
+			VisibilidadAmigos:           models.VisibilidadPublico,
 			RecepcionMensajes:           models.RecepcionAmigos,
 			RecepcionSolicitudesAmistad: models.RecepcionTodos,
 		}
@@ -163,6 +176,9 @@ func (s *privacyService) UpdatePrivacy(ctx context.Context, userID string, req *
 	}
 	if req.VisibilidadInteracciones != nil {
 		current.VisibilidadInteracciones = *req.VisibilidadInteracciones
+	}
+	if req.VisibilidadAmigos != nil {
+		current.VisibilidadAmigos = *req.VisibilidadAmigos
 	}
 	if req.RecepcionMensajes != nil {
 		current.RecepcionMensajes = *req.RecepcionMensajes
@@ -194,6 +210,7 @@ func toPrivacyResponse(c *models.ConfiguracionPrivacidad) *models.PrivacyRespons
 		VisibilidadPerfil:           c.VisibilidadPerfil,
 		VisibilidadPublicaciones:    c.VisibilidadPublicaciones,
 		VisibilidadInteracciones:    c.VisibilidadInteracciones,
+		VisibilidadAmigos:           c.VisibilidadAmigos,
 		RecepcionMensajes:           c.RecepcionMensajes,
 		RecepcionSolicitudesAmistad: c.RecepcionSolicitudesAmistad,
 	}

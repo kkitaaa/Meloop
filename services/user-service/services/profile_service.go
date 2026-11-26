@@ -32,6 +32,7 @@ type profileService struct {
 	userRepo      repositories.UserRepository
 	privacyRepo   repositories.PrivacyRepository
 	mediaVerifier MediaVerifier
+	friendCounter SocialFriendCounter
 }
 
 // NewProfileService crea una nueva instancia de ProfileService
@@ -45,12 +46,45 @@ func NewProfileService(
 	if len(privacyRepo) > 0 {
 		privRepo = privacyRepo[0]
 	}
+	return newProfileService(profileRepo, userRepo, mediaVerifier, privRepo, nil)
+}
+
+func newProfileService(
+	profileRepo repositories.ProfileRepository,
+	userRepo repositories.UserRepository,
+	mediaVerifier MediaVerifier,
+	privacyRepo repositories.PrivacyRepository,
+	friendCounter SocialFriendCounter,
+) *profileService {
 	return &profileService{
 		profileRepo:   profileRepo,
 		userRepo:      userRepo,
-		privacyRepo:   privRepo,
+		privacyRepo:   privacyRepo,
 		mediaVerifier: mediaVerifier,
+		friendCounter: friendCounter,
 	}
+}
+
+func NewProfileServiceWithFriendCounter(
+	profileRepo repositories.ProfileRepository,
+	userRepo repositories.UserRepository,
+	mediaVerifier MediaVerifier,
+	privacyRepo repositories.PrivacyRepository,
+	friendCounter SocialFriendCounter,
+) ProfileService {
+	return newProfileService(profileRepo, userRepo, mediaVerifier, privacyRepo, friendCounter)
+}
+
+func (s *profileService) loadFriendsCount(ctx context.Context, data *models.UserProfileData) error {
+	if s.friendCounter == nil {
+		return nil
+	}
+	count, err := s.friendCounter.GetFriendsCount(ctx, data.IDUsuario)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrSocialCounterUnavailable, err)
+	}
+	data.Estadisticas.Amigos = count
+	return nil
 }
 
 // GetOwnProfile recupera la información completa del perfil propio del usuario autenticado (RF-06 / RNF-11)
@@ -65,6 +99,9 @@ func (s *profileService) GetOwnProfile(ctx context.Context, userID string) (*mod
 	}
 	if data == nil {
 		return nil, ErrUserNotFound
+	}
+	if err := s.loadFriendsCount(ctx, data); err != nil {
+		return nil, err
 	}
 
 	insignias := data.Insignias
@@ -197,6 +234,10 @@ func (s *profileService) GetThirdPartyProfile(ctx context.Context, requestingUse
 			EsAmigo:       isFriend,
 			PerfilPrivado: true,
 		}, nil
+	}
+
+	if err := s.loadFriendsCount(ctx, data); err != nil {
+		return nil, err
 	}
 
 	canViewPublications, err := s.profileRepo.CanViewVisibility(

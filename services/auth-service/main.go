@@ -28,6 +28,8 @@ func main() {
 		defer dbPool.Close()
 		logConnectionResult(logger, "database", nil)
 	}
+	defer dbPool.Close()
+	logger.Info("database_connected")
 
 	rdbClient, err := repositories.InitRedis(ctx, cfg.RedisURL)
 	if err != nil {
@@ -36,6 +38,8 @@ func main() {
 		defer rdbClient.Close()
 		logConnectionResult(logger, "redis", nil)
 	}
+	defer rdbClient.Close()
+	logger.Info("redis_connected")
 
 	sessionRepo := repositories.NewSessionRepository(rdbClient)
 	userRepo := repositories.NewUserRepository(dbPool)
@@ -61,6 +65,7 @@ func main() {
 	{
 		protected.POST("/auth/logout", authCtrl.Logout)
 		protected.GET("/auth/validate", authCtrl.Validate)
+		protected.POST("/auth/refresh", authCtrl.Refresh)
 		protected.POST("/auth/change-password", authCtrl.ChangePassword)
 		protected.PATCH("/auth/password", authCtrl.ChangePassword)
 	}

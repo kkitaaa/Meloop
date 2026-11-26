@@ -23,6 +23,7 @@ var (
 	ErrUsernameExists     = errors.New("USERNAME_EXISTS")
 	ErrEmailExists        = errors.New("EMAIL_EXISTS")
 	ErrInvalidCredentials = errors.New("INVALID_CREDENTIALS")
+	ErrInvalidSession     = errors.New("INVALID_SESSION")
 	ErrTooManyAttempts    = errors.New("TOO_MANY_ATTEMPTS")
 	ErrTokenNotFound      = errors.New("TOKEN_NOT_FOUND")
 	ErrTokenExpired       = errors.New("TOKEN_EXPIRED")
@@ -44,6 +45,7 @@ type AuthService interface {
 	Login(ctx context.Context, req *models.LoginRequest) (*models.LoginResponse, error)
 	Logout(ctx context.Context, token string) error
 	ValidateSession(ctx context.Context, token string) (*models.SessionUser, error)
+	RefreshSession(ctx context.Context, token string) (*models.LoginResponse, error)
 	ChangePassword(ctx context.Context, userID string, req *models.ChangePasswordRequest) error
 	RequestPasswordRecovery(ctx context.Context, req *models.PasswordRecoveryRequest) error
 	ResetPassword(ctx context.Context, req *models.ResetPasswordRequest) error
@@ -236,6 +238,10 @@ func (s *authService) Login(ctx context.Context, req *models.LoginRequest) (*mod
 	delete(s.failedLogins, emailKey)
 	s.failedMu.Unlock()
 
+	if err := s.repo.UpdateLastLogin(ctx, usuario.IDUsuario); err != nil {
+		return nil, fmt.Errorf("failed to update last login: %w", err)
+	}
+
 	token, err := generateSessionToken()
 
 	if err != nil {
@@ -271,16 +277,47 @@ func (s *authService) Logout(ctx context.Context, token string) error {
 
 func (s *authService) ValidateSession(ctx context.Context, token string) (*models.SessionUser, error) {
 	if token == "" {
-		return nil, errors.New("empty session token")
+		return nil, ErrInvalidSession
 	}
 	user, err := s.sessionRepo.Get(ctx, token)
 	if err != nil {
 		return nil, err
 	}
 	if user == nil {
-		return nil, errors.New("session invalid or expired")
+		return nil, ErrInvalidSession
 	}
 	return user, nil
+}
+
+func (s *authService) RefreshSession(
+	ctx context.Context,
+	token string,
+) (*models.LoginResponse, error) {
+	if token == "" {
+		return nil, ErrInvalidSession
+	}
+
+	user, err := s.sessionRepo.Get(ctx, token)
+	if err != nil {
+		return nil, err
+	}
+	if user == nil {
+		return nil, ErrInvalidSession
+	}
+
+	renewed, err := s.sessionRepo.Renew(ctx, token, user.ID, s.config.SessionTTL)
+	if err != nil {
+		return nil, err
+	}
+	if !renewed {
+		return nil, ErrInvalidSession
+	}
+
+	return &models.LoginResponse{
+		SessionToken: token,
+		ExpiresIn:    int(s.config.SessionTTL.Seconds()),
+		User:         *user,
+	}, nil
 }
 
 func generateSessionToken() (string, error) {
