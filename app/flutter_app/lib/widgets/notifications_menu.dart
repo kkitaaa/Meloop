@@ -9,6 +9,8 @@ import '../features/notifications/state/notification_controller.dart';
 import '../features/profile/presentation/profile_screen.dart';
 import '../features/posts/post_detail_screen.dart';
 import '../screens/friends_screen.dart';
+import '../theme/meloop_typography.dart';
+import 'paper/stacked_paper_card.dart';
 
 class NotificationsMenu extends StatefulWidget {
   const NotificationsMenu({super.key});
@@ -37,7 +39,10 @@ class _NotificationsMenuState extends State<NotificationsMenu> {
         controller: _menuController,
         style: const MenuStyle(
           padding: WidgetStatePropertyAll(EdgeInsets.zero),
-          elevation: WidgetStatePropertyAll(12),
+          elevation: WidgetStatePropertyAll(0),
+          backgroundColor: WidgetStatePropertyAll(Colors.transparent),
+          surfaceTintColor: WidgetStatePropertyAll(Colors.transparent),
+          shadowColor: WidgetStatePropertyAll(Colors.transparent),
         ),
         menuChildren: [
           SizedBox(
@@ -99,46 +104,50 @@ class _NotificationsMenuState extends State<NotificationsMenu> {
 
     return SizedBox(
       height: _showSettings ? 390 : 360,
-      child: Material(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(10),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
-              child: Row(
-                children: [
-                  Text(
-                    _showSettings ? 'Preferencias' : 'Notificaciones',
-                    style: const TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.bold,
+      child: PhotoPaperSheetStack(
+        sheetCount: 1,
+        shadowBlur: 18,
+        child: Material(
+          color: Colors.transparent,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
+                child: Row(
+                  children: [
+                    Text(
+                      _showSettings ? 'Preferencias' : 'Notificaciones',
+                      style: MeloopTypography.lexend(
+                        fontSize: 16.5,
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFF182222),
+                      ),
                     ),
-                  ),
-                  const Spacer(),
-                  IconButton(
-                    tooltip: _showSettings
-                        ? 'Ver notificaciones'
-                        : 'Configurar notificaciones',
-                    icon: Icon(
-                      _showSettings ? Icons.arrow_back : Icons.tune,
-                      color: const Color(0xFF1E7E70),
+                    const Spacer(),
+                    IconButton(
+                      tooltip: _showSettings
+                          ? 'Ver notificaciones'
+                          : 'Configurar notificaciones',
+                      icon: Icon(
+                        _showSettings ? Icons.arrow_back : Icons.tune,
+                        color: const Color(0xFF1E7E70),
+                      ),
+                      onPressed: () =>
+                          setState(() => _showSettings = !_showSettings),
                     ),
-                    onPressed: () =>
-                        setState(() => _showSettings = !_showSettings),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-            const Divider(height: 1),
-            if (_showSettings)
-              Expanded(child: _settingsPanel(notifications))
-            else
-              Expanded(
-                child: _notificationsList(context, items, notifications),
-              ),
-          ],
+              Divider(height: 1, color: Colors.black.withValues(alpha: 0.10)),
+              if (_showSettings)
+                Expanded(child: _settingsPanel(notifications))
+              else
+                Expanded(
+                  child: _notificationsList(context, items, notifications),
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -249,7 +258,9 @@ class _NotificationsMenuState extends State<NotificationsMenu> {
           child: InkWell(
             onTap: () => _openNotification(context, group, notifications),
             child: Container(
-              color: group.isRead ? Colors.white : const Color(0xFFE9F8F5),
+              color: group.isRead
+                  ? Colors.transparent
+                  : const Color(0x99DDF6F2),
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               child: Stack(
                 children: [

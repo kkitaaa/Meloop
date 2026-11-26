@@ -55,7 +55,30 @@ class _MeloopAppState extends State<MeloopApp> {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         primaryColor: const Color(0xFF11B49F),
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFF00AF92),
+          primary: const Color(0xFF00AF92),
+          surface: Colors.white,
+          surfaceContainerLowest: Colors.white,
+          surfaceContainerLow: const Color(0xFFFAFAFA),
+          surfaceContainer: Colors.white,
+          surfaceContainerHigh: Colors.white,
+          surfaceContainerHighest: const Color(0xFFF2F6F5),
+          surfaceTint: Colors.transparent,
+        ),
         scaffoldBackgroundColor: Colors.transparent,
+        popupMenuTheme: const PopupMenuThemeData(
+          color: Colors.white,
+          surfaceTintColor: Colors.transparent,
+        ),
+        dialogTheme: const DialogThemeData(
+          backgroundColor: Colors.white,
+          surfaceTintColor: Colors.transparent,
+        ),
+        cardTheme: const CardThemeData(
+          color: Colors.white,
+          surfaceTintColor: Colors.transparent,
+        ),
         textTheme: MeloopTypography.lexendTextTheme(),
         pageTransitionsTheme: const PageTransitionsTheme(
           builders: {

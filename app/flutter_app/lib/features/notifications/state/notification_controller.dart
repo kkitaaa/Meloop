@@ -11,7 +11,7 @@ class NotificationController extends ChangeNotifier
   NotificationController({
     required this.repository,
     this.pollInterval = const Duration(minutes: 1),
-    this.bannerDuration = const Duration(seconds: 5),
+    this.bannerDuration = const Duration(seconds: 6),
     AudioPlayer? audioPlayer,
     this.playSound = true,
   }) : _ownsAudioPlayer = audioPlayer == null && playSound,

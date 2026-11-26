@@ -93,6 +93,96 @@ class _StackedPaperCardState extends State<StackedPaperCard> {
   }
 }
 
+/// Pila configurable de 1 a 3 hojas de papel fotográfico
+/// (`assets/textures/photopaper.png`):
+/// - `sheetCount == 1`: una sola hoja limpia sin hojas traseras.
+/// - `sheetCount == 2`: una hoja trasera ligeramente rotada + hoja frontal.
+/// - `sheetCount >= 3`: dos hojas traseras escalonadas + hoja frontal (máx. 3).
+class PhotoPaperSheetStack extends StatelessWidget {
+  const PhotoPaperSheetStack({
+    super.key,
+    required this.child,
+    this.sheetCount = 1,
+    this.padding = EdgeInsets.zero,
+    this.tintColor,
+    this.shadowBlur = 14,
+  });
+
+  final Widget child;
+  final int sheetCount;
+  final EdgeInsetsGeometry padding;
+  final Color? tintColor;
+  final double shadowBlur;
+
+  @override
+  Widget build(BuildContext context) {
+    final clampedCount = sheetCount.clamp(1, 3);
+    const texture = 'assets/textures/photopaper.png';
+    final midBackTint = tintColor != null
+        ? Color.lerp(tintColor, const Color(0xFFD6D2C4), 0.12)
+        : const Color(0xFFECEEED);
+    final deepBackTint = tintColor != null
+        ? Color.lerp(tintColor, const Color(0xFFC8C5B8), 0.18)
+        : const Color(0xFFE3E7E6);
+
+    final frontSheet = _PaperSheetSurface(
+      textureAsset: texture,
+      tintColor: tintColor,
+      shadowBlur: shadowBlur * 0.85,
+      shadowAlpha: 0.20,
+      child: Padding(padding: padding, child: child),
+    );
+
+    if (clampedCount == 1) {
+      return frontSheet;
+    }
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        if (clampedCount >= 3)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: Transform.translate(
+                offset: const Offset(3, 6),
+                child: Transform.rotate(
+                  angle: 2.1 * math.pi / 180.0,
+                  filterQuality: FilterQuality.high,
+                  child: _PaperSheetSurface(
+                    textureAsset: texture,
+                    tintColor: deepBackTint,
+                    shadowBlur: shadowBlur,
+                    shadowAlpha: 0.20,
+                    antiAliasedEdge: true,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        Positioned.fill(
+          child: IgnorePointer(
+            child: Transform.translate(
+              offset: const Offset(-2, 3),
+              child: Transform.rotate(
+                angle: -1.65 * math.pi / 180.0,
+                filterQuality: FilterQuality.high,
+                child: _PaperSheetSurface(
+                  textureAsset: texture,
+                  tintColor: midBackTint,
+                  shadowBlur: shadowBlur,
+                  shadowAlpha: 0.22,
+                  antiAliasedEdge: true,
+                ),
+              ),
+            ),
+          ),
+        ),
+        frontSheet,
+      ],
+    );
+  }
+}
+
 class _PaperSheetSurface extends StatelessWidget {
   const _PaperSheetSurface({
     required this.textureAsset,
