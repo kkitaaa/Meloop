@@ -16,6 +16,7 @@ import (
 	"github.com/meloop/auth-service/config"
 	"github.com/meloop/auth-service/models"
 	"github.com/meloop/auth-service/repositories"
+	"github.com/meloop/services/common/authz"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -28,6 +29,7 @@ var (
 	ErrTokenNotFound      = errors.New("TOKEN_NOT_FOUND")
 	ErrTokenExpired       = errors.New("TOKEN_EXPIRED")
 	ErrTokenAlreadyUsed   = errors.New("TOKEN_ALREADY_USED")
+	ErrUserNotFound       = repositories.ErrUserNotFound
 )
 
 type ValidationError struct {
@@ -45,6 +47,7 @@ type AuthService interface {
 	Login(ctx context.Context, req *models.LoginRequest) (*models.LoginResponse, error)
 	Logout(ctx context.Context, token string) error
 	ValidateSession(ctx context.Context, token string) (*models.SessionUser, error)
+	GetRoleByID(ctx context.Context, userID string) (string, error)
 	RefreshSession(ctx context.Context, token string) (*models.LoginResponse, error)
 	ChangePassword(ctx context.Context, userID string, req *models.ChangePasswordRequest) error
 	RequestPasswordRecovery(ctx context.Context, req *models.PasswordRecoveryRequest) error
@@ -287,6 +290,29 @@ func (s *authService) ValidateSession(ctx context.Context, token string) (*model
 		return nil, ErrInvalidSession
 	}
 	return user, nil
+}
+
+// GetRoleByID consulta el rol vigente en PostgreSQL y devuelve solo valores
+// canónicos. Los roles desconocidos se traducen a cadena vacía para no
+// conceder permisos.
+func (s *authService) GetRoleByID(ctx context.Context, userID string) (string, error) {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return "", nil
+	}
+	if s.repo == nil {
+		return "", errors.New("user repository is not initialized")
+	}
+
+	rawRole, err := s.repo.GetRoleByID(ctx, userID)
+	if err != nil {
+		return "", err
+	}
+	role, ok := authz.NormalizeRole(rawRole)
+	if !ok {
+		return "", nil
+	}
+	return role, nil
 }
 
 func (s *authService) RefreshSession(

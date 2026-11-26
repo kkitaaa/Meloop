@@ -13,6 +13,7 @@ import (
 	"github.com/meloop/auth-service/config"
 	"github.com/meloop/auth-service/controllers"
 	"github.com/meloop/auth-service/models"
+	"github.com/meloop/auth-service/repositories"
 	"github.com/meloop/auth-service/services"
 )
 
@@ -22,6 +23,7 @@ type MockUserRepository struct {
 	GetByIDFunc         func(ctx context.Context, id string) (*models.Usuario, error)
 	GetByUsernameFunc   func(ctx context.Context, username string) (*models.Usuario, error)
 	GetByEmailFunc      func(ctx context.Context, email string) (*models.Usuario, error)
+	GetRoleByIDFunc     func(ctx context.Context, id string) (string, error)
 	CreateFunc          func(ctx context.Context, user *models.Usuario) error
 	UpdatePasswordFunc  func(ctx context.Context, id string, passwordHash string) error
 	UpdateLastLoginFunc func(ctx context.Context, id string) error
@@ -67,6 +69,18 @@ func (m *MockUserRepository) GetByEmail(ctx context.Context, email string) (*mod
 		}
 	}
 	return nil, nil
+}
+
+func (m *MockUserRepository) GetRoleByID(ctx context.Context, id string) (string, error) {
+	if m.GetRoleByIDFunc != nil {
+		return m.GetRoleByIDFunc(ctx, id)
+	}
+	for _, u := range m.Users {
+		if u.IDUsuario == id {
+			return "usuario", nil
+		}
+	}
+	return "", repositories.ErrUserNotFound
 }
 
 func (m *MockUserRepository) Create(ctx context.Context, user *models.Usuario) error {
