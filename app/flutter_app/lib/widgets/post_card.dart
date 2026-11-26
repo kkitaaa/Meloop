@@ -1,39 +1,263 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 
 import '../../features/comments/presentation/comments_screen.dart';
+import '../../features/moderation/data/moderation_models.dart';
+import '../../features/moderation/presentation/report_sheet.dart';
 import '../../features/profile/presentation/profile_screen.dart';
-import '../features/profile/presentation/post_editor_dialog.dart';
-import 'post_interactions/post_interaction_bar.dart';
+import '../../features/music/presentation/music_track_detail_screen.dart';
+import '../features/posts/presentation/post_editor_dialog.dart';
+import '../features/posts/presentation/share_post_sheet.dart';
+import '../services/api_client.dart';
+import 'post_audio_controls.dart';
+import 'post_interactions/post_interaction.dart';
+import '../services/post_audio_playback.dart';
 
-class PostCard extends StatelessWidget {
+class PostCard extends StatefulWidget {
   final Map<String, dynamic> postData;
   final Color tealAccent;
   final Color textColor;
+  final bool compact;
+  final PostAudioPlaybackController? audioPlaybackController;
+  final ApiClient? apiClient;
+  final PostInteractionService? interactionService;
+  final VoidCallback? onUnsave;
+  final VoidCallback?
+  onDelete; // Callback para eliminar de la vista sin recargar
 
   const PostCard({
     super.key,
     required this.postData,
     required this.tealAccent,
+    this.audioPlaybackController,
+    this.apiClient,
+    this.interactionService,
+    this.onUnsave,
+    this.compact = false,
     this.textColor = Colors.black87,
+    this.onDelete,
   });
 
   @override
-  Widget build(BuildContext context) {
-    final String user = postData["user"] ?? "Usuario";
-    final String time = postData["time"] ?? "Hace un momento";
-    final String content = postData["content"] ?? "";
-    final String? imageUrl = postData["image_url"];
-    final String? audioTitle = postData["song"];
-    final String? artistName = postData["artist"];
-    final int likes = postData["likes"] ?? 0;
-    final int comments = postData["comments"] ?? 0;
+  State<PostCard> createState() => _PostCardState();
+}
 
-    // --- Variables de lógica de negocio (RN-11, RF-17) ---
-    // En producción esto viene del backend (JSON)
+class _PostCardState extends State<PostCard> {
+  late final ApiClient _apiClient;
+  late final bool _ownsApiClient;
+  late final PostInteractionService _interactionService;
+  bool _isSaved = false;
+  bool _isSaving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _ownsApiClient = widget.apiClient == null;
+    _apiClient = widget.apiClient ?? ApiClient();
+    _interactionService =
+        widget.interactionService ?? ApiPostInteractionService(_apiClient);
+    _isSaved = widget.postData['is_saved'] == true;
+  }
+
+  @override
+  void dispose() {
+    if (_ownsApiClient) _apiClient.close();
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant PostCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.postData != widget.postData) {
+      _isSaved = widget.postData['is_saved'] == true;
+    }
+  }
+
+  Future<void> _toggleSaved(String postId) async {
+    setState(() => _isSaving = true);
+    try {
+      if (_isSaved) {
+        await _apiClient.removeSavedPost(postId);
+      } else {
+        await _apiClient.savePost(postId);
+      }
+      if (!mounted) return;
+      final saved = !_isSaved;
+      setState(() {
+        _isSaved = saved;
+        _isSaving = false;
+        widget.postData['is_saved'] = saved;
+      });
+      if (!saved) widget.onUnsave?.call();
+      _showActionMessage(
+        saved ? 'Publicación guardada.' : 'Publicación quitada de Guardados.',
+      );
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      setState(() => _isSaving = false);
+      _showActionMessage(error.message);
+    }
+  }
+
+  Future<void> _sharePost(String postId) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => SharePostSheet(apiClient: _apiClient, postId: postId),
+    );
+  }
+
+  void _showActionMessage(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: widget.tealAccent),
+    );
+  }
+
+  void _showDeleteConfirmation(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        bool isDeleting = false;
+
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              backgroundColor: Colors.white,
+              title: const Text(
+                "Eliminar publicación",
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              content: const Text(
+                "¿Estás seguro de que deseas eliminar esta publicación? Esta acción no se puede deshacer y se borrará del servidor.",
+                style: TextStyle(fontSize: 14),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: isDeleting
+                      ? null
+                      : () => Navigator.pop(dialogContext),
+                  child: const Text(
+                    "Cancelar",
+                    style: TextStyle(color: Colors.grey),
+                  ),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.redAccent,
+                    elevation: 0,
+                  ),
+                  onPressed: isDeleting
+                      ? null
+                      : () async {
+                          setState(() => isDeleting = true);
+
+                          // Simulación de petición HTTP DELETE al API Gateway
+                          await Future.delayed(const Duration(seconds: 1));
+
+                          if (!context.mounted) return;
+                          Navigator.pop(dialogContext); // Cierra el modal
+
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                "Publicación eliminada correctamente.",
+                              ),
+                              backgroundColor: Colors.redAccent,
+                              duration: Duration(seconds: 2),
+                            ),
+                          );
+
+                          // Ejecuta el callback para quitar la card de la lista local
+                          if (widget.onDelete != null) {
+                            widget.onDelete!();
+                          }
+                        },
+                  child: isDeleting
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2,
+                          ),
+                        )
+                      : const Text(
+                          "Eliminar",
+                          style: TextStyle(color: Colors.white),
+                        ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final String user = widget.postData["user"] ?? "Usuario";
+    final Object? authorIdData = widget.postData["user_id"];
+    final String? authorId = authorIdData is String ? authorIdData : null;
+    final String time = widget.postData["time"] ?? "Hace un momento";
+    final String content = widget.postData["content"] ?? "";
+    final String? imageUrl = widget.postData["image_url"];
+    final Object? imageBytesData = widget.postData["image_bytes"];
+    final Uint8List? imageBytes = imageBytesData is Uint8List
+        ? imageBytesData
+        : null;
+    final ImageProvider? imageProvider = imageBytes != null
+        ? MemoryImage(imageBytes)
+        : imageUrl != null && imageUrl.isNotEmpty
+        ? NetworkImage(imageUrl)
+        : null;
+    final String? audioTitle = widget.postData["song"];
+    final String? artistName = widget.postData["artist"];
+    final Object? songIdData =
+        widget.postData["song_id"] ??
+        widget.postData["spotify_track_id"] ??
+        widget.postData["track_id"];
+    final String? songSpotifyId = songIdData is String && songIdData.isNotEmpty
+        ? songIdData
+        : null;
+    final Object? audioBytesData = widget.postData["audio_bytes"];
+    final Uint8List? audioBytes = audioBytesData is Uint8List
+        ? audioBytesData
+        : null;
+    final String? audioUrl = widget.postData["audio_url"] is String
+        ? widget.postData["audio_url"] as String
+        : null;
+    final String audioName = widget.postData["audio_name"] is String
+        ? widget.postData["audio_name"] as String
+        : '';
+    final bool hasAudioAttachment =
+        (audioBytes?.isNotEmpty ?? false) || (audioUrl?.isNotEmpty ?? false);
+    final String? audioDisplayTitle = audioTitle?.isNotEmpty == true
+        ? audioTitle
+        : audioName.isNotEmpty
+        ? audioName
+        : hasAudioAttachment
+        ? "Audio adjunto"
+        : null;
+    final int likes = widget.postData["likes"] ?? 0;
+    final int comments = widget.postData["comments"] ?? 0;
+
+    // --- Variables de lógica de negocio (Roles y Permisos) ---
+    final Object? postIdData = widget.postData["id"];
+    final String postId = postIdData is int || postIdData is String
+        ? '$postIdData'
+        : '${identityHashCode(widget.postData)}';
+    final int postNumericId =
+        int.tryParse(postId) ?? identityHashCode(widget.postData);
     final bool isAuthor =
-        postData["isAuthor"] ?? true; // Simulado a true para probar
-    final bool isEdited = postData["isEdited"] ?? false;
-    final bool within24Hours = postData["within24Hours"] ?? true;
+        widget.postData["isAuthor"] ?? (postNumericId % 2 == 0);
+    final bool isEdited = widget.postData["isEdited"] ?? false;
+    final bool within24Hours = widget.postData["within24Hours"] ?? true;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 24.0),
@@ -50,7 +274,11 @@ class PostCard extends StatelessWidget {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (context) => ProfileScreen(username: user),
+                          builder: (context) => ProfileScreen(
+                            username: user,
+                            userId: authorId,
+                            apiClient: _apiClient,
+                          ),
                         ),
                       );
                     },
@@ -69,8 +297,11 @@ class PostCard extends StatelessWidget {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (context) =>
-                                  ProfileScreen(username: user),
+                              builder: (context) => ProfileScreen(
+                                username: user,
+                                userId: authorId,
+                                apiClient: _apiClient,
+                              ),
                             ),
                           );
                         },
@@ -79,7 +310,7 @@ class PostCard extends StatelessWidget {
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 13,
-                            color: textColor,
+                            color: widget.textColor,
                           ),
                         ),
                       ),
@@ -95,8 +326,8 @@ class PostCard extends StatelessWidget {
                 ],
               ),
 
-              // Menú de opciones (Visible solo para el autor)
-              if (isAuthor)
+              // Menú de opciones dinámico según el ROL
+              if (!widget.compact)
                 PopupMenuButton<String>(
                   icon: const Icon(
                     Icons.more_horiz,
@@ -104,67 +335,140 @@ class PostCard extends StatelessWidget {
                     size: 20,
                   ),
                   color: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
                   onSelected: (value) async {
                     if (value == 'edit') {
-                      // Abre el modal reutilizable en modo "Edición"
-                      await showDialog(
-                        context: context,
-                        builder: (context) => PostEditorDialog(
-                          postData: postData,
-                          tealAccent: tealAccent,
-                        ),
+                      // Esperamos el resultado del modal de edición
+                      final PostEditorResult? result =
+                          await showDialog<PostEditorResult>(
+                            context: context,
+                            builder: (context) => PostEditorDialog(
+                              postData: widget.postData,
+                              tealAccent: widget.tealAccent,
+                            ),
+                          );
+
+                      // Si recibimos un texto nuevo, actualizamos la tarjeta
+                      if (result != null) {
+                        setState(() {
+                          widget.postData["content"] = result.content;
+                          widget.postData["image_bytes"] = result.imageBytes;
+                          widget.postData["image_name"] = result.imageName;
+                          widget.postData["image_url"] = result.imageUrl;
+                          widget.postData["audio_bytes"] = result.audioBytes;
+                          widget.postData["audio_name"] = result.audioName;
+                          widget.postData["audio_url"] = null;
+                          widget.postData["song"] = result.songTitle;
+                          widget.postData["artist"] = result.artistName;
+                          widget.postData["isEdited"] =
+                              true; // Mostramos la etiqueta (editado)
+                        });
+                      }
+                    } else if (value == 'delete') {
+                      _showDeleteConfirmation(context);
+                    } else if (value == 'save') {
+                      _toggleSaved(postId);
+                    } else if (value == 'report') {
+                      await showReportSheet(
+                        context,
+                        targetType: ModerationTargetType.post,
+                        targetId: postId,
+                        targetUsername: user,
                       );
                     }
                   },
                   itemBuilder: (context) {
-                    return [
-                      if (within24Hours)
-                        const PopupMenuItem(
-                          value: 'edit',
-                          child: Text(
-                            "Editar publicación",
-                            style: TextStyle(fontSize: 13),
+                    if (isAuthor) {
+                      return [
+                        if (within24Hours)
+                          const PopupMenuItem(
+                            value: 'edit',
+                            child: Text(
+                              "Editar publicación",
+                              style: TextStyle(fontSize: 13),
+                            ),
+                          )
+                        else
+                          const PopupMenuItem(
+                            value: 'expired',
+                            enabled: false,
+                            child: Text(
+                              "Tiempo de edición agotado",
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Colors.grey,
+                              ),
+                            ),
                           ),
-                        )
-                      else
                         const PopupMenuItem(
-                          value: 'expired',
-                          enabled: false,
+                          value: 'delete',
                           child: Text(
-                            "Tiempo de edición agotado",
-                            style: TextStyle(fontSize: 13, color: Colors.grey),
+                            "Eliminar",
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.redAccent,
+                            ),
                           ),
                         ),
-                      const PopupMenuItem(
-                        value: 'delete',
-                        child: Text(
-                          "Eliminar",
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: Colors.redAccent,
+                      ];
+                    } else {
+                      return [
+                        PopupMenuItem(
+                          value: 'save',
+                          child: Text(
+                            _isSaved
+                                ? 'Quitar de Guardados'
+                                : 'Guardar publicación',
+                            style: const TextStyle(fontSize: 13),
                           ),
                         ),
-                      ),
-                    ];
+                        const PopupMenuItem(
+                          value: 'report',
+                          child: Text(
+                            "Reportar",
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.redAccent,
+                            ),
+                          ),
+                        ),
+                      ];
+                    }
                   },
-                )
-              else
-                const Icon(Icons.more_horiz, color: Colors.grey, size: 20),
+                ),
             ],
           ),
           const SizedBox(height: 12),
           Text(
             content,
-            style: TextStyle(fontSize: 13, color: textColor, height: 1.4),
+            maxLines: widget.compact ? 4 : null,
+            overflow: widget.compact ? TextOverflow.ellipsis : null,
+            style: TextStyle(
+              fontSize: 13,
+              color: widget.textColor,
+              height: 1.4,
+            ),
           ),
           const SizedBox(height: 12),
 
-          if (imageUrl != null && imageUrl.isNotEmpty) ...[
+          if (songSpotifyId != null && audioTitle?.isNotEmpty == true) ...[
+            _buildMusicLink(
+              context,
+              songTitle: audioTitle!,
+              artistName: artistName,
+              spotifyId: songSpotifyId,
+            ),
+            const SizedBox(height: 12),
+          ],
+
+          if (imageProvider != null) ...[
             ClipRRect(
               borderRadius: BorderRadius.circular(8),
-              child: Image.network(
-                imageUrl,
-                height: 200,
+              child: Image(
+                image: imageProvider,
+                height: widget.compact ? 120 : 200,
                 width: double.infinity,
                 fit: BoxFit.cover,
                 errorBuilder: (context, error, stackTrace) => Container(
@@ -179,98 +483,169 @@ class PostCard extends StatelessWidget {
             const SizedBox(height: 12),
           ],
 
-          if (audioTitle != null && audioTitle.isNotEmpty) ...[
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: tealAccent,
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 36,
-                    height: 36,
-                    color: Colors.black87,
-                    child: const Icon(
-                      Icons.play_arrow,
-                      color: Colors.white,
-                      size: 20,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          audioTitle,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        Text(
-                          artistName ?? "Artista desconocido",
-                          style: const TextStyle(
-                            color: Colors.white70,
-                            fontSize: 10,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(Icons.graphic_eq, color: tealAccent, size: 12),
-                        const SizedBox(width: 4),
-                        Text(
-                          "Escuchar",
-                          style: TextStyle(
-                            color: tealAccent,
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
+          if (audioDisplayTitle != null && audioDisplayTitle.isNotEmpty) ...[
+            PostAudioControls(
+              postId: postId,
+              title: audioDisplayTitle,
+              artist: artistName ?? "Artista desconocido",
+              audioBytes: audioBytes,
+              audioUrl: audioUrl,
+              fileName: audioName,
+              accentColor: widget.tealAccent,
+              playbackController: widget.audioPlaybackController,
             ),
             const SizedBox(height: 12),
           ],
 
-          PostInteractionBar(
-            postId: postData['id'] ?? postData['postId'] ?? '',
-            likes: likes,
-            comments: comments,
-            initiallyLiked: postData['isLiked'] ?? false,
-            initiallySaved: postData['isSaved'] ?? false,
-            onCommentsTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => CommentsScreen(postData: postData),
+          Row(
+            children: [
+              PostLikeButton(
+                postId: postId,
+                likes: likes,
+                initiallyLiked: widget.postData['is_liked'] == true,
+                service: _interactionService,
+                onLikesChanged: (count) {
+                  widget.postData['likes'] = count;
+                },
+                onLikedChanged: (liked) => widget.postData['is_liked'] = liked,
+              ),
+              const SizedBox(width: 16),
+              InkWell(
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) =>
+                          CommentsScreen(postData: widget.postData),
+                    ),
+                  );
+                },
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.mode_comment_outlined,
+                      color: Color(0xFF00AF92),
+                      size: 20,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      "$comments Comentarios",
+                      style: const TextStyle(
+                        color: Color(0xFF00AF92),
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
                 ),
-              );
-            },
+              ),
+              const Spacer(),
+              IconButton(
+                tooltip: _isSaved
+                    ? 'Quitar de Guardados'
+                    : 'Guardar publicación',
+                visualDensity: VisualDensity.compact,
+                onPressed: _isSaving ? null : () => _toggleSaved(postId),
+                icon: _isSaving
+                    ? SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: widget.tealAccent,
+                        ),
+                      )
+                    : Icon(
+                        _isSaved
+                            ? Icons.bookmark_rounded
+                            : Icons.bookmark_border_rounded,
+                        color: _isSaved ? widget.tealAccent : Colors.grey,
+                        size: 20,
+                      ),
+              ),
+              IconButton(
+                tooltip: 'Compartir publicación',
+                visualDensity: VisualDensity.compact,
+                onPressed: () => _sharePost(postId),
+                icon: const Icon(
+                  Icons.share_outlined,
+                  color: Colors.grey,
+                  size: 19,
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 16),
           const Divider(color: Colors.black12),
         ],
+      ),
+    );
+  }
+
+  Widget _buildMusicLink(
+    BuildContext context, {
+    required String songTitle,
+    required String? artistName,
+    required String spotifyId,
+  }) {
+    return Material(
+      color: const Color(0xFFE8F7F3),
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute<void>(
+            builder: (_) => MusicDetailScreen(
+              type: 'track',
+              spotifyId: spotifyId,
+              apiClient: _apiClient,
+            ),
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
+            children: [
+              const Icon(
+                Icons.music_note_rounded,
+                color: Color(0xFF0D7771),
+                size: 20,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      songTitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF183D3B),
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    if (artistName?.isNotEmpty == true)
+                      Text(
+                        artistName!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xFF70827F),
+                          fontSize: 12,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              const Icon(
+                Icons.arrow_forward_ios_rounded,
+                color: Color(0xFF0D7771),
+                size: 15,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

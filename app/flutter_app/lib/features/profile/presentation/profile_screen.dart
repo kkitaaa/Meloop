@@ -1,40 +1,66 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 
 import 'dart:async';
 
+import '../../../core/navigation/artists_and_songs_screen.dart';
+import '../../../core/navigation/desktop_navigation_shell.dart';
+import '../../social/presentation/mutual_friends_row.dart';
 import '../../../screens/friends_screen.dart';
-import '../../comments/presentation/comments_screen.dart';
+import '../../../widgets/desktop_app_header.dart';
+import '../../../widgets/mobile_app_header.dart';
+import '../../../widgets/paper/stacked_paper_card.dart';
 import '../../../widgets/post_card.dart';
 import '../../../widgets/level_progress/level_progress.dart';
+import '../../../services/api_client.dart';
+import '../../../services/auth_session.dart';
+import '../../../models/feed_data.dart';
+import '../../posts/presentation/saved_posts_screen.dart';
+import '../../search/presentation/global_search_route.dart';
 import '../../gamification/presentation/gamification_demo_controller.dart';
 
 class ProfileScreen extends StatefulWidget {
   final String? username;
+  final String? userId;
+  final ApiClient? apiClient;
   final bool openInventory;
+  final bool insideDesktopShell;
 
-  const ProfileScreen({super.key, this.username, this.openInventory = false});
+  const ProfileScreen({
+    super.key,
+    this.username,
+    this.userId,
+    this.apiClient,
+    this.openInventory = false,
+    this.insideDesktopShell = false,
+  });
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-  final Color _bgColor = const Color(0xFF0D5C5E);
   final Color _tealAccent = const Color(0xFF1ABC9C);
 
   final ScrollController _scrollController = ScrollController();
+  final ScrollController _blogsScrollController = ScrollController();
   final List<Map<String, dynamic>> _posts = [];
+  late final ApiClient _apiClient;
+  late final bool _ownsApiClient;
 
   bool _isInitialLoading = true;
   bool _isLoadingMore = false;
-  int _currentPage = 1;
+  bool _hasMorePosts = true;
+  String? _postsError;
+  static const int _postsPageSize = 10;
 
-  // Datos del perfil (Editables)
+  // Estados del perfil: own, public, private, blocked
+  late String _profileStatus;
+
   late String _displayUsername;
   String _biography =
       "Hola, gente soy Vicente. Me gusta mucho la música ambiental y la música rapidísima con mucho bajo, también el jazz fusion y otras cosas más.\nAl igual que a todos, me gustan los gatos (tengo 2).";
 
-  // Controladores para el formulario de edición
   final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _bioController = TextEditingController();
 
@@ -82,96 +108,211 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   void initState() {
     super.initState();
-    _displayUsername = widget.username ?? "Nombre de usuario";
+    _ownsApiClient = widget.apiClient == null;
+    _apiClient = widget.apiClient ?? ApiClient();
+    _displayUsername =
+        widget.username ??
+        AuthSession.shared.user?.username ??
+        "Nombre de usuario";
     _usernameController.text = _displayUsername;
     _bioController.text = _biography;
 
-    _fetchInitialPosts();
-    _ensureRgbReward();
-    GamificationDemoController.instance.addListener(_ensureRgbReward);
+    _determineProfileStatus();
 
-    _scrollController.addListener(() {
-      if (_scrollController.position.pixels >=
-          _scrollController.position.maxScrollExtent - 200) {
-        if (!_isLoadingMore && _posts.isNotEmpty) {
-          _fetchMorePosts();
-        }
-      }
-    });
+    if (_profileStatus == 'own' || _profileStatus == 'public') {
+      _fetchInitialPosts();
+    } else {
+      _isInitialLoading = false;
+    }
+
+    _blogsScrollController.addListener(_handleBlogsScroll);
+  }
+
+  void _determineProfileStatus() {
+    if (widget.userId != null && widget.userId == AuthSession.shared.user?.id) {
+      _profileStatus = 'own';
+    } else if (widget.username == "UsuarioPrivado") {
+      _profileStatus = 'private';
+    } else if (widget.username == "UsuarioBloqueado") {
+      _profileStatus = 'blocked';
+    } else if (widget.username == null || widget.username == "MiUsuario") {
+      _profileStatus = 'own';
+    } else {
+      _profileStatus = 'public';
+    }
+  }
+
+  String? get _profileAuthorId {
+    final authorId =
+        widget.userId ??
+        (_profileStatus == 'own' ? AuthSession.shared.user?.id : null);
+    return authorId?.trim().isNotEmpty == true ? authorId : null;
   }
 
   @override
   void dispose() {
-    GamificationDemoController.instance.removeListener(_ensureRgbReward);
     _scrollController.dispose();
+    _blogsScrollController
+      ..removeListener(_handleBlogsScroll)
+      ..dispose();
+    if (_ownsApiClient) _apiClient.close();
     _usernameController.dispose();
     _bioController.dispose();
     super.dispose();
   }
 
-  void _ensureRgbReward() {
-    if (!GamificationDemoController.instance.rgbFrameUnlocked ||
-        _inventory.any((item) => item['id'] == 'frame-rgb'))
-      return;
-    setState(() {
-      _inventory.add({
-        'id': 'frame-rgb',
-        'type': 'frame',
-        'name': 'Marco RGB',
-        'icon': Icons.gradient,
-        'color': Colors.purpleAccent,
-        'isEquipped': GamificationDemoController.instance.rgbFrameEquipped,
-      });
-    });
-  }
-
-  // Simulación de consumo paginado del post-service (RF-06, RF-19)
   Future<void> _fetchInitialPosts() async {
-    setState(() => _isInitialLoading = true);
-    await Future.delayed(const Duration(seconds: 1));
-
-    if (!mounted) return;
-
     setState(() {
-      // Simulamos que el usuario "Usuario_01" u otros tienen contenido,
-      // y si es un usuario sin posts simulamos lista vacía para probar el estado requerido.
-      if (_displayUsername == "UsuarioVacioTest") {
-        _posts.clear();
-      } else {
-        _posts.addAll(_generateMockPosts(1, 3));
-      }
-      _isInitialLoading = false;
+      _isInitialLoading = true;
+      _isLoadingMore = false;
+      _hasMorePosts = true;
+      _postsError = null;
+      _posts.clear();
     });
+
+    final authorId = _profileAuthorId;
+    if (authorId == null) {
+      setState(() {
+        _isInitialLoading = false;
+        _postsError = 'No se pudo identificar el perfil para cargar sus blogs.';
+      });
+      return;
+    }
+
+    try {
+      final posts = await _apiClient.getAuthorPosts(
+        authorId,
+        limit: _postsPageSize,
+      );
+      final postCards = posts.map(_toPostCardData).toList();
+      if (!mounted) return;
+      setState(() {
+        _posts.addAll(postCards);
+        _hasMorePosts = posts.length == _postsPageSize;
+        _isInitialLoading = false;
+      });
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _isInitialLoading = false;
+        _postsError = error.statusCode == null
+            ? error.message
+            : 'HTTP ${error.statusCode}: ${error.message}';
+      });
+    } on FormatException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _isInitialLoading = false;
+        _postsError = error.message;
+      });
+    }
   }
 
   Future<void> _fetchMorePosts() async {
+    final authorId = _profileAuthorId;
+    if (_isInitialLoading ||
+        _isLoadingMore ||
+        !_hasMorePosts ||
+        authorId == null) {
+      return;
+    }
+
     setState(() => _isLoadingMore = true);
-    await Future.delayed(const Duration(seconds: 1));
-
-    if (!mounted) return;
-
-    setState(() {
-      _currentPage++;
-      _posts.addAll(_generateMockPosts(_currentPage, 2));
-      _isLoadingMore = false;
-    });
+    try {
+      final posts = await _apiClient.getAuthorPosts(
+        authorId,
+        limit: _postsPageSize,
+        offset: _posts.length,
+      );
+      final postCards = posts.map(_toPostCardData).toList();
+      if (!mounted) return;
+      setState(() {
+        _posts.addAll(postCards);
+        _hasMorePosts = posts.length == _postsPageSize;
+        _isLoadingMore = false;
+      });
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      setState(() => _isLoadingMore = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No se pudieron cargar más blogs: ${error.message}'),
+        ),
+      );
+    } on FormatException catch (error) {
+      if (!mounted) return;
+      setState(() => _isLoadingMore = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No se pudieron mostrar los blogs: ${error.message}'),
+        ),
+      );
+    }
   }
 
-  List<Map<String, dynamic>> _generateMockPosts(int page, int count) {
-    return List.generate(count, (index) {
-      final id = (page - 1) * count + index + 1;
-      return {
-        "id": id,
-        "user": _displayUsername,
-        "time": "Hace ${id * 2} horas",
-        "content":
-            "Publicación número $id del perfil de $_displayUsername. Consumiendo ruta paginada del post-service (RF-06, RF-19).",
-        "song": "Track del Perfil $id",
-        "artist": "Artista Afín",
-        "likes": 15 * id,
-        "comments": id * 2,
-      };
+  void _handleBlogsScroll() {
+    if (!_blogsScrollController.hasClients) return;
+    if (_blogsScrollController.position.pixels >=
+        _blogsScrollController.position.maxScrollExtent - 200) {
+      _fetchMorePosts();
+    }
+  }
+
+  Map<String, dynamic> _toPostCardData(Map<String, dynamic> post) {
+    final authorId = post['author_id'] ?? post['user_id'];
+    final username =
+        post['author_username'] ?? post['user'] ?? _displayUsername;
+    final content = post['content'];
+    final postId = post['id'];
+    final createdAt = post['created_at'] ?? post['time'];
+    if ((authorId is! String) ||
+        (username is! String) ||
+        (content is! String) ||
+        postId == null) {
+      throw const FormatException(
+        'El servicio devolvió datos incompletos para un blog.',
+      );
+    }
+
+    final feedPost = FeedPost.fromJson({
+      ...post,
+      'user': username,
+      'user_id': authorId,
+      'time': _formatPostTime(createdAt),
+      'image_url':
+          post['image_url'] ?? post['url_multimedia'] ?? post['media_url'],
+      'song_id': post['song_id'] ?? post['music_id'],
+      'likes': post['likes'] ?? post['likes_count'] ?? 0,
+      'comments': post['comments'] ?? post['comments_count'] ?? 0,
+      'isAuthor': authorId == AuthSession.shared.user?.id,
+      'isEdited': post['isEdited'] ?? false,
+      'within24Hours': post['within24Hours'] ?? _isWithinLastDay(createdAt),
     });
+    return feedPost.toPostCardData();
+  }
+
+  String _formatPostTime(Object? value) {
+    if (value is! String) {
+      throw const FormatException('Un blog no contiene una fecha válida.');
+    }
+    final createdAt = DateTime.tryParse(value);
+    if (createdAt == null) {
+      throw const FormatException('Un blog contiene una fecha inválida.');
+    }
+
+    final elapsed = DateTime.now().difference(createdAt.toLocal());
+    if (elapsed.isNegative || elapsed.inMinutes < 1) return 'Ahora';
+    if (elapsed.inHours < 1) return 'Hace ${elapsed.inMinutes} min';
+    if (elapsed.inDays < 1) return 'Hace ${elapsed.inHours} h';
+    return 'Hace ${elapsed.inDays} días';
+  }
+
+  bool _isWithinLastDay(Object? value) {
+    if (value is! String) return false;
+    final createdAt = DateTime.tryParse(value);
+    return createdAt != null &&
+        DateTime.now().difference(createdAt.toLocal()) <=
+            const Duration(hours: 24);
   }
 
   void _toggleEquipItem(int index) {
@@ -184,12 +325,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
           if (i['type'] == item['type']) i['isEquipped'] = false;
         }
         item['isEquipped'] = true;
-        if (item['id'] == 'frame-rgb') {
-          GamificationDemoController.instance.equipRgbFrame();
-        }
 
         if (item['type'] == 'frame') _activeFrameColor = item['color'] as Color;
-        if (item['type'] == 'pin') _activePinColor = item['color'] as Color;
+        if (item['type'] == 'pin') {
+          _activePinColor = item['color'] as Color;
+          GamificationDemoController.instance.setActivePinColor(
+            _activePinColor,
+          );
+        }
         if (item['type'] == 'bg') {
           _paperColor = item['color'] as Color;
           _paperTextColor = Colors.white;
@@ -198,7 +341,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
         item['isEquipped'] = false;
 
         if (item['type'] == 'frame') _activeFrameColor = null;
-        if (item['type'] == 'pin') _activePinColor = Colors.red[700]!;
+        if (item['type'] == 'pin') {
+          _activePinColor = Colors.red[700]!;
+          GamificationDemoController.instance.setActivePinColor(null);
+        }
         if (item['type'] == 'bg') {
           _paperColor = const Color(0xFFFDFDFD);
           _paperTextColor = Colors.black87;
@@ -291,12 +437,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget build(BuildContext context) {
     final double screenWidth = MediaQuery.of(context).size.width;
     final bool isDesktop = screenWidth > 900;
+    final bool insideDesktopShell =
+        widget.insideDesktopShell || DesktopShellScope.maybeOf(context) != null;
 
     return Scaffold(
-      backgroundColor: _bgColor,
+      backgroundColor: Colors.transparent,
       body: Column(
         children: [
-          _buildTopBar(isDesktop, context),
+          if (!insideDesktopShell) _buildTopBar(isDesktop, context),
           Expanded(
             child: isDesktop ? _buildDesktopLayout() : _buildMobileLayout(),
           ),
@@ -306,6 +454,29 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildTopBar(bool isDesktop, BuildContext context) {
+    if (!isDesktop && defaultTargetPlatform == TargetPlatform.android) {
+      return MobileAppHeader(
+        onSearchTap: () => openGlobalSearch(context),
+        apiClient: widget.apiClient,
+      );
+    }
+
+    if (isDesktop) {
+      return DesktopAppHeader(
+        activeSection: DesktopNavigationSection.none,
+        onHomeTap: () => navigateToDesktopHome(context),
+        onFriendsTap: () =>
+            navigateToDesktopSection(context, (_) => const FriendsScreen()),
+        onArtistsTap: () => navigateToDesktopSection(
+          context,
+          (_) => const ArtistsAndSongsScreen(),
+        ),
+        onProfileTap: () {},
+        onSearchTap: () => openGlobalSearch(context),
+        apiClient: widget.apiClient,
+      );
+    }
+
     return Container(
       height: 55,
       color: _tealAccent,
@@ -418,7 +589,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 children: [
                   _buildPolaroidProfile(),
                   const SizedBox(height: 16),
-                  _buildLevelCard(),
+                  if (_profileStatus != 'blocked') _buildLevelCard(),
                 ],
               ),
             ),
@@ -426,35 +597,44 @@ class _ProfileScreenState extends State<ProfileScreen> {
           const SizedBox(width: 24),
           ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 800),
-            child: SingleChildScrollView(
-              controller: _scrollController,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildStatsAndEditRow(),
-                  const SizedBox(height: 16),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(flex: 3, child: _buildAboutMe()),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        flex: 2,
-                        child: Column(
+            child: _profileStatus == 'blocked'
+                ? _buildBlockedState()
+                : SingleChildScrollView(
+                    controller: _scrollController,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildStatsAndActionsRow(),
+                        if (_profileStatus == 'public' &&
+                            widget.userId != null &&
+                            widget.userId!.isNotEmpty)
+                          MutualFriendsRow(targetUserId: widget.userId!),
+                        const SizedBox(height: 16),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            _buildFavoriteArtists(),
-                            const SizedBox(height: 16),
-                            _buildFavoriteSong(),
+                            Expanded(flex: 3, child: _buildAboutMe()),
+                            const SizedBox(width: 16),
+                            if (_profileStatus != 'private')
+                              Expanded(
+                                flex: 2,
+                                child: Column(
+                                  children: [
+                                    _buildFavoriteArtists(),
+                                    const SizedBox(height: 16),
+                                    _buildFavoriteSong(),
+                                  ],
+                                ),
+                              ),
                           ],
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: 24),
+                        _profileStatus == 'private'
+                            ? _buildPrivateState()
+                            : _buildProfilePaperTabs(),
+                      ],
+                    ),
                   ),
-                  const SizedBox(height: 24),
-                  _buildProfilePaperTabs(isMobile: false),
-                ],
-              ),
-            ),
           ),
         ],
       ),
@@ -469,17 +649,29 @@ class _ProfileScreenState extends State<ProfileScreen> {
         children: [
           _buildPolaroidProfile(),
           const SizedBox(height: 16),
-          _buildLevelCard(),
-          const SizedBox(height: 16),
-          _buildStatsAndEditRow(isMobile: true),
-          const SizedBox(height: 16),
-          _buildAboutMe(),
-          const SizedBox(height: 16),
-          _buildFavoriteSong(),
-          const SizedBox(height: 16),
-          _buildFavoriteArtists(),
-          const SizedBox(height: 24),
-          _buildProfilePaperTabs(isMobile: true),
+          if (_profileStatus == 'blocked')
+            _buildBlockedState()
+          else ...[
+            _buildLevelCard(),
+            const SizedBox(height: 16),
+            _buildStatsAndActionsRow(isMobile: true),
+            if (_profileStatus == 'public' &&
+                widget.userId != null &&
+                widget.userId!.isNotEmpty)
+              MutualFriendsRow(targetUserId: widget.userId!),
+            const SizedBox(height: 16),
+            _buildAboutMe(),
+            const SizedBox(height: 16),
+            if (_profileStatus == 'private')
+              _buildPrivateState()
+            else ...[
+              _buildFavoriteSong(),
+              const SizedBox(height: 16),
+              _buildFavoriteArtists(),
+              const SizedBox(height: 24),
+              _buildProfilePaperTabs(),
+            ],
+          ],
         ],
       ),
     );
@@ -528,10 +720,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                 ),
                 const SizedBox(height: 4),
-                const Text(
-                  "Me siento Feliz",
-                  style: TextStyle(fontSize: 11, color: Colors.black54),
-                ),
+                if (_profileStatus != 'blocked')
+                  const Text(
+                    "Me siento Feliz",
+                    style: TextStyle(fontSize: 11, color: Colors.black54),
+                  ),
               ],
             ),
           ),
@@ -548,13 +741,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
         ),
         Positioned(
-          top: 8,
-          child: CircleAvatar(
-            radius: 6,
-            backgroundColor: _activePinColor,
-            child: _activePinColor != Colors.red[700]
-                ? const Icon(Icons.star, size: 8, color: Colors.white)
-                : null,
+          top: -12,
+          child: CustomizablePin(
+            color: _activePinColor == Colors.red[700] ? null : _activePinColor,
+            size: 40,
           ),
         ),
       ],
@@ -562,80 +752,34 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildLevelCard() {
-    return AnimatedBuilder(
-      animation: GamificationDemoController.instance,
-      builder: (context, _) {
-        final game = GamificationDemoController.instance;
-        return LevelProgress(
-          level: game.level,
-          xp: game.xp,
-          xpNeeded: GamificationDemoController.xpNeeded,
-          compact: true,
-          accentColor: _tealAccent,
-        );
-      },
+    final progress = GamificationDemoController.instance;
+    return LevelProgress(
+      level: progress.level,
+      xp: progress.xp,
+      xpNeeded: progress.experienceNeeded,
+      compact: true,
+      demoController: progress,
     );
   }
 
-  Widget _buildLegacyLevelCard() {
-    final game = GamificationDemoController.instance;
-    final percentage = (game.xp / GamificationDemoController.xpNeeded * 100)
-        .round();
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              Icon(Icons.star, color: _tealAccent, size: 14),
-              const SizedBox(width: 4),
-              Text(
-                "Nivel ${game.level} · (${game.xp} XP / 100 XP) $percentage%",
-                style: const TextStyle(
-                  color: Colors.black87,
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          LinearProgressIndicator(
-            value: game.xp / GamificationDemoController.xpNeeded,
-            backgroundColor: Colors.grey[200],
-            valueColor: AlwaysStoppedAnimation<Color>(_tealAccent),
-            minHeight: 6,
-            borderRadius: BorderRadius.circular(3),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatsAndEditRow({bool isMobile = false}) {
+  Widget _buildStatsAndActionsRow({bool isMobile = false}) {
     final int equippedCount = _inventory
         .where((i) => i['isEquipped'] as bool)
         .length;
-    final statsRow = Row(
-      mainAxisAlignment: isMobile
-          ? MainAxisAlignment.spaceEvenly
-          : MainAxisAlignment.start,
+    final statsRow = Wrap(
+      spacing: 10,
+      runSpacing: 8,
+      alignment: isMobile ? WrapAlignment.center : WrapAlignment.start,
       children: [
         _pillStat("Amigos 5"),
-        if (!isMobile) const SizedBox(width: 12),
         _pillStat("Artistas 13"),
-        if (!isMobile) const SizedBox(width: 12),
-        _pillStat("Decoraciones $equippedCount"),
+        if (_profileStatus == 'own') _pillStat("Decoraciones $equippedCount"),
       ],
     );
 
     if (isMobile) {
       return Column(
-        children: [statsRow, const SizedBox(height: 12), _editProfileBtn()],
+        children: [statsRow, const SizedBox(height: 12), _buildActionButtons()],
       );
     }
 
@@ -643,7 +787,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Expanded(child: statsRow),
-        _editProfileBtn(),
+        _buildActionButtons(),
       ],
     );
   }
@@ -669,23 +813,94 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _editProfileBtn() {
-    return OutlinedButton(
-      style: OutlinedButton.styleFrom(
-        side: BorderSide(color: _tealAccent),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        backgroundColor: Colors.white,
-      ),
-      onPressed: _showEditProfileDialog,
-      child: Text(
-        "Editar perfil",
-        style: TextStyle(
-          color: _tealAccent,
-          fontSize: 12,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-    );
+  Widget _buildActionButtons() {
+    if (_profileStatus == 'own') {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          OutlinedButton(
+            style: OutlinedButton.styleFrom(
+              side: BorderSide(color: _tealAccent),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              backgroundColor: Colors.white,
+            ),
+            onPressed: _showEditProfileDialog,
+            child: Text(
+              "Editar perfil",
+              style: TextStyle(
+                color: _tealAccent,
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          OutlinedButton.icon(
+            style: OutlinedButton.styleFrom(
+              side: BorderSide(color: _tealAccent),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              backgroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+            ),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute<void>(
+                builder: (_) => SavedPostsScreen(apiClient: widget.apiClient),
+              ),
+            ),
+            icon: Icon(
+              Icons.bookmark_border_rounded,
+              color: _tealAccent,
+              size: 15,
+            ),
+            label: Text(
+              'Guardados',
+              style: TextStyle(
+                color: _tealAccent,
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      );
+    } else {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          OutlinedButton.icon(
+            style: OutlinedButton.styleFrom(
+              side: BorderSide(color: _tealAccent),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              backgroundColor: Colors.white,
+            ),
+            onPressed: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text("Solicitud enviada a $_displayUsername"),
+                  backgroundColor: _tealAccent,
+                ),
+              );
+            },
+            icon: Icon(Icons.person_add, color: _tealAccent, size: 16),
+            label: Text(
+              "Añadir amigo",
+              style: TextStyle(
+                color: _tealAccent,
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      );
+    }
   }
 
   Widget _buildAboutMe() {
@@ -849,8 +1064,73 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // --- SECCIÓN DE TABS (BLOGS CON SCROLL INFINITO E INVENTARIO) ---
-  Widget _buildProfilePaperTabs({required bool isMobile}) {
+  // --- SECCIÓN DE ESTADOS ESPECIALES (RN-09, RF-55) ---
+  Widget _buildBlockedState() {
+    return Container(
+      padding: const EdgeInsets.all(48.0),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.no_accounts, size: 64, color: Colors.grey[400]),
+          const SizedBox(height: 24),
+          const Text(
+            "Esta cuenta no está disponible",
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Colors.black87,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            "El perfil que intentas buscar no existe o ha restringido tu acceso.",
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 13, color: Colors.grey),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPrivateState() {
+    return Container(
+      padding: const EdgeInsets.all(48.0),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.lock, size: 64, color: Colors.grey[400]),
+          const SizedBox(height: 24),
+          const Text(
+            "Este perfil es privado",
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Colors.black87,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            "Añade a este usuario como amigo para ver sus publicaciones, artistas favoritos y más detalles.",
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 13, color: Colors.grey),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // --- SECCIÓN DE TABS (BLOGS E INVENTARIO) ---
+  Widget _buildProfilePaperTabs() {
+    final bool isOwn = _profileStatus == 'own';
+
     return Container(
       height: 700,
       decoration: BoxDecoration(
@@ -863,8 +1143,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ],
       ),
       child: DefaultTabController(
-        initialIndex: widget.openInventory ? 1 : 0,
-        length: 2,
+        length: isOwn ? 2 : 1,
+        initialIndex: isOwn && widget.openInventory ? 1 : 0,
         child: Column(
           children: [
             TabBar(
@@ -872,18 +1152,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
               indicatorWeight: 3,
               labelColor: _tealAccent,
               unselectedLabelColor: Colors.grey,
-              tabs: const [
-                Tab(text: "Tus Blogs"),
-                Tab(text: "Inventario"),
+              tabs: [
+                const Tab(text: "Tus Blogs"),
+                if (isOwn) const Tab(text: "Inventario"),
               ],
             ),
             const Divider(height: 1, thickness: 1, color: Colors.black12),
             Expanded(
               child: TabBarView(
-                children: [
-                  _buildBlogsTab(isMobile: isMobile),
-                  _buildInventoryTab(),
-                ],
+                children: [_buildBlogsTab(), if (isOwn) _buildInventoryTab()],
               ),
             ),
           ],
@@ -892,7 +1169,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildBlogsTab({required bool isMobile}) {
+  Widget _buildBlogsTab() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 32.0, vertical: 24.0),
       child: Column(
@@ -907,30 +1184,51 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   _filterChip("tendencias", isActive: false),
                 ],
               ),
-              OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(
-                  side: BorderSide(color: _tealAccent),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(20),
+              if (_profileStatus == 'own')
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    side: BorderSide(color: _tealAccent),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                  ),
+                  onPressed: () {},
+                  icon: Icon(Icons.edit, color: _tealAccent, size: 14),
+                  label: Text(
+                    "Tus reacciones",
+                    style: TextStyle(
+                      color: _tealAccent,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
-                onPressed: () {},
-                icon: Icon(Icons.edit, color: _tealAccent, size: 14),
-                label: Text(
-                  "Tus reacciones",
-                  style: TextStyle(
-                    color: _tealAccent,
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
             ],
           ),
           const SizedBox(height: 24),
           Expanded(
             child: _isInitialLoading
                 ? Center(child: CircularProgressIndicator(color: _tealAccent))
+                : _postsError != null
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          _postsError!,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: _paperTextColor.withValues(alpha: 0.7),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        OutlinedButton(
+                          onPressed: _fetchInitialPosts,
+                          child: const Text('Reintentar'),
+                        ),
+                      ],
+                    ),
+                  )
                 : _posts.isEmpty
                 ? Center(
                     child: Column(
@@ -950,6 +1248,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                   )
                 : ListView.builder(
+                    controller: _blogsScrollController,
                     itemCount: _posts.length + (_isLoadingMore ? 1 : 0),
                     itemBuilder: (context, index) {
                       if (index == _posts.length) {
@@ -962,10 +1261,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ),
                         );
                       }
+                      // Renderiza usando la Tarjeta Reutilizable PostCard
                       return PostCard(
                         postData: _posts[index],
                         tealAccent: _tealAccent,
                         textColor: _paperTextColor,
+                        apiClient: _apiClient,
+                        onDelete: () {
+                          setState(() {
+                            _posts.removeAt(index);
+                          });
+                        },
                       );
                     },
                   ),
@@ -1074,99 +1380,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
           fontSize: 10,
           fontWeight: FontWeight.bold,
         ),
-      ),
-    );
-  }
-
-  Widget _buildPostCard(Map<String, dynamic> postData) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 24.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
-                children: [
-                  const CircleAvatar(
-                    radius: 16,
-                    backgroundColor: Colors.black87,
-                    child: Icon(Icons.person, color: Colors.white, size: 18),
-                  ),
-                  const SizedBox(width: 12),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        postData["user"],
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
-                          color: _paperTextColor,
-                        ),
-                      ),
-                      Text(
-                        postData["time"],
-                        style: const TextStyle(
-                          fontSize: 10,
-                          color: Colors.grey,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Text(
-            postData["content"],
-            style: TextStyle(fontSize: 13, color: _paperTextColor, height: 1.4),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Row(
-                children: [
-                  const Icon(Icons.favorite, color: Colors.red, size: 16),
-                  const SizedBox(width: 4),
-                  Text(
-                    "${postData["likes"]} Likes",
-                    style: const TextStyle(color: Colors.grey, fontSize: 11),
-                  ),
-                ],
-              ),
-              const SizedBox(width: 16),
-              InkWell(
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => CommentsScreen(postData: postData),
-                    ),
-                  );
-                },
-                child: Row(
-                  children: [
-                    const Icon(
-                      Icons.mode_comment_outlined,
-                      color: Colors.grey,
-                      size: 16,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      "${postData["comments"]} Comentarios",
-                      style: const TextStyle(color: Colors.grey, fontSize: 11),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          const Divider(color: Colors.black12),
-        ],
       ),
     );
   }

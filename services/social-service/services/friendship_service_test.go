@@ -17,6 +17,10 @@ type friendshipRepositoryFake struct {
 	listFriendsErr    error
 	removeFriendErr   error
 	getProfileErr     error
+	mutualQuery       models.MutualFriendsQuery
+	mutualPageIDs     []string
+	mutualHasMore     bool
+	mutualProfiles    []models.MutualFriend
 	blockUserErr      error
 	validateErr       error
 	request           *models.FriendRequest
@@ -26,6 +30,8 @@ type friendshipRepositoryFake struct {
 	removedFriend     bool
 	blockedUser       bool
 	removedFriendship bool
+	cancelledRequests []models.FriendRequest
+	existingBlock     bool
 	excludeBlockedErr error
 	blockedPairs      map[string]map[string]bool
 }
@@ -67,14 +73,14 @@ func (f *friendshipRepositoryFake) Cancel(context.Context, string, string) (*mod
 	return f.request, nil
 }
 
-func (f *friendshipRepositoryFake) ListFriends(ctx context.Context, userID string) ([]models.Friend, error) {
+func (f *friendshipRepositoryFake) ListFriends(ctx context.Context, userID string, limit int, query string, cursor *models.FriendCursor) (models.FriendPage, error) {
 	if f.listFriendsErr != nil {
-		return nil, f.listFriendsErr
+		return models.FriendPage{}, f.listFriendsErr
 	}
 	if f.friends == nil {
-		return []models.Friend{}, nil
+		return models.FriendPage{Friends: []models.Friend{}}, nil
 	}
-	return f.friends, nil
+	return models.FriendPage{Friends: f.friends}, nil
 }
 
 func (f *friendshipRepositoryFake) RemoveFriend(ctx context.Context, userID, targetID string) error {
@@ -92,13 +98,31 @@ func (f *friendshipRepositoryFake) GetFriendProfile(ctx context.Context, userID,
 	return f.profile, nil
 }
 
-func (f *friendshipRepositoryFake) BlockUser(ctx context.Context, blockerID, blockedID string) error {
+func (f *friendshipRepositoryFake) GetMutualFriendsQuery(context.Context, string, string) (models.MutualFriendsQuery, error) {
+	return f.mutualQuery, nil
+}
+
+func (f *friendshipRepositoryFake) GetMutualFriendsPage(context.Context, string, string, string, int) ([]string, bool, error) {
+	return f.mutualPageIDs, f.mutualHasMore, nil
+}
+
+func (f *friendshipRepositoryFake) ListMutualFriendProfiles(context.Context, []string) ([]models.MutualFriend, error) {
+	if f.mutualProfiles == nil {
+		return []models.MutualFriend{}, nil
+	}
+	return f.mutualProfiles, nil
+}
+
+func (f *friendshipRepositoryFake) BlockUser(ctx context.Context, blockerID, blockedID string) ([]models.FriendRequest, error) {
 	if f.blockUserErr != nil {
-		return f.blockUserErr
+		return nil, f.blockUserErr
+	}
+	if f.existingBlock {
+		return []models.FriendRequest{}, nil
 	}
 	f.blockedUser = true
 	f.removedFriendship = true
-	return nil
+	return f.cancelledRequests, nil
 }
 
 func (f *friendshipRepositoryFake) IsBlocked(ctx context.Context, user1ID, user2ID string) (bool, error) {
@@ -153,13 +177,39 @@ func (f *friendshipRepositoryFake) GetBlockedCandidateIDs(ctx context.Context, u
 	return result, nil
 }
 
+func (f *friendshipRepositoryFake) UnblockUser(ctx context.Context, blockerID, blockedID string) error {
+	return nil
+}
+
+func (f *friendshipRepositoryFake) GetAcceptedFriendsCount(ctx context.Context, userID string) (int, error) {
+	return 0, nil
+}
+
+func (f *friendshipRepositoryFake) GetFriendsCount(ctx context.Context, userID string) (int, error) {
+	return 0, nil
+}
+
+func (f *friendshipRepositoryFake) GetBlockedUsersCount(ctx context.Context, userID string) (int, error) {
+	return 0, nil
+}
+
+func (f *friendshipRepositoryFake) GetBlockedCount(ctx context.Context, userID string) (int, error) {
+	return 0, nil
+}
+
 type eventPublisherFake struct {
-	called bool
-	err    error
+	called            bool
+	err               error
+	cancelledRequests []models.FriendRequest
 }
 
 func (f *eventPublisherFake) PublishFriendAccepted(context.Context, *models.FriendRequest) error {
 	f.called = true
+	return f.err
+}
+
+func (f *eventPublisherFake) PublishFriendRequestCancelled(_ context.Context, request *models.FriendRequest) error {
+	f.cancelledRequests = append(f.cancelledRequests, *request)
 	return f.err
 }
 
@@ -258,6 +308,99 @@ func TestFriendshipServiceActionsEnforceAuthorizationAndState(t *testing.T) {
 	}
 }
 
+func TestFriendshipServiceRejectsMutualFriendsLimitAboveMaximum(t *testing.T) {
+	service := NewFriendshipService(&friendshipRepositoryFake{}, nil)
+	_, err := service.GetMutualFriends(context.Background(), "viewer", "target", MaxMutualFriendsLimit+1, "")
+	if !errors.Is(err, ErrInvalidPagination) {
+		t.Fatalf("error = %v, want %v", err, ErrInvalidPagination)
+	}
+}
+
+func TestFriendshipServiceMutualFriendsPrivacyFailClosed(t *testing.T) {
+	commonFriend := models.MutualFriend{ID: "friend-1", Username: "amigo1", AvatarURL: "https://example.com/a.png"}
+
+	tests := []struct {
+		name         string
+		visibility   string
+		viewerFriend bool
+		wantHidden   bool
+		wantFriends  int
+	}{
+		{
+			name:         "PUBLICO allows list exposure",
+			visibility:   "PUBLICO",
+			viewerFriend: false,
+			wantHidden:   false,
+			wantFriends:  1,
+		},
+		{
+			name:         "AMIGOS with viewer as friend allows list exposure",
+			visibility:   "AMIGOS",
+			viewerFriend: true,
+			wantHidden:   false,
+			wantFriends:  1,
+		},
+		{
+			name:         "AMIGOS with viewer not friend hides list",
+			visibility:   "AMIGOS",
+			viewerFriend: false,
+			wantHidden:   true,
+			wantFriends:  0,
+		},
+		{
+			name:         "PRIVADO hides list",
+			visibility:   "PRIVADO",
+			viewerFriend: true,
+			wantHidden:   true,
+			wantFriends:  0,
+		},
+		{
+			name:         "UNKNOWN visibility hides list (fail-closed)",
+			visibility:   "UNKNOWN",
+			viewerFriend: true,
+			wantHidden:   true,
+			wantFriends:  0,
+		},
+		{
+			name:         "EMPTY visibility hides list (fail-closed)",
+			visibility:   "",
+			viewerFriend: true,
+			wantHidden:   true,
+			wantFriends:  0,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := &friendshipRepositoryFake{
+				mutualQuery: models.MutualFriendsQuery{
+					TargetExists: true,
+					ViewerFriend: tc.viewerFriend,
+					Visibility:   tc.visibility,
+					Count:        1,
+				},
+				mutualPageIDs:  []string{"friend-1"},
+				mutualProfiles: []models.MutualFriend{commonFriend},
+			}
+			service := NewFriendshipService(repo, nil)
+
+			resp, err := service.GetMutualFriends(context.Background(), "viewer-id", "target-id", 20, "")
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if resp.Count != 1 {
+				t.Fatalf("resp.Count = %d, want 1", resp.Count)
+			}
+			if resp.Hidden != tc.wantHidden {
+				t.Fatalf("resp.Hidden = %v, want %v", resp.Hidden, tc.wantHidden)
+			}
+			if len(resp.Friends) != tc.wantFriends {
+				t.Fatalf("len(resp.Friends) = %d, want %d", len(resp.Friends), tc.wantFriends)
+			}
+		})
+	}
+}
+
 func TestFriendshipServiceAcceptPublishesEventAfterRepositoryAction(t *testing.T) {
 	repo := &friendshipRepositoryFake{
 		request: &models.FriendRequest{ID: "1", SenderID: "sender", ReceiverID: "receiver", Status: models.FriendshipAccepted},
@@ -310,15 +453,15 @@ func TestFriendshipServiceListFriends(t *testing.T) {
 		}
 		service := NewFriendshipService(repo, nil)
 
-		friends, err := service.ListFriends(context.Background(), "user-1")
+		page, err := service.ListFriends(context.Background(), "user-1", 20, "", nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if len(friends) != 2 {
-			t.Fatalf("expected 2 friends, got %d", len(friends))
+		if len(page.Friends) != 2 {
+			t.Fatalf("expected 2 friends, got %d", len(page.Friends))
 		}
-		if friends[0].Username != "carlos" || friends[1].Username != "maria" {
-			t.Fatalf("unexpected friend data: %+v", friends)
+		if page.Friends[0].Username != "carlos" || page.Friends[1].Username != "maria" {
+			t.Fatalf("unexpected friend data: %+v", page.Friends)
 		}
 	})
 
@@ -328,12 +471,12 @@ func TestFriendshipServiceListFriends(t *testing.T) {
 		}
 		service := NewFriendshipService(repo, nil)
 
-		friends, err := service.ListFriends(context.Background(), "user-1")
+		page, err := service.ListFriends(context.Background(), "user-1", 20, "", nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if len(friends) != 0 {
-			t.Fatalf("expected 0 friends, got %d", len(friends))
+		if len(page.Friends) != 0 {
+			t.Fatalf("expected 0 friends, got %d", len(page.Friends))
 		}
 	})
 
@@ -341,7 +484,7 @@ func TestFriendshipServiceListFriends(t *testing.T) {
 		repo := &friendshipRepositoryFake{}
 		service := NewFriendshipService(repo, nil)
 
-		_, err := service.ListFriends(context.Background(), "")
+		_, err := service.ListFriends(context.Background(), "", 20, "", nil)
 		if !errors.Is(err, ErrInvalidUser) {
 			t.Fatalf("expected ErrInvalidUser, got %v", err)
 		}
@@ -491,15 +634,52 @@ func TestFriendshipServiceBlockUser(t *testing.T) {
 		}
 	})
 
-	t.Run("block when already blocked", func(t *testing.T) {
-		repo := &friendshipRepositoryFake{
-			blockUserErr: repositories.ErrAlreadyBlocked,
+	t.Run("publishes each cancelled request after repository success", func(t *testing.T) {
+		requests := []models.FriendRequest{
+			{ID: "req-a-b", SenderID: "user-1", ReceiverID: "user-2", Status: models.FriendshipCanceled},
+			{ID: "req-b-a", SenderID: "user-2", ReceiverID: "user-1", Status: models.FriendshipCanceled},
 		}
-		service := NewFriendshipService(repo, nil)
+		repo := &friendshipRepositoryFake{cancelledRequests: requests}
+		publisher := &eventPublisherFake{}
 
-		err := service.BlockUser(context.Background(), "user-1", "user-2")
-		if !errors.Is(err, ErrAlreadyBlocked) {
-			t.Fatalf("expected ErrAlreadyBlocked, got %v", err)
+		if err := NewFriendshipService(repo, publisher).BlockUser(context.Background(), "user-1", "user-2"); err != nil {
+			t.Fatalf("BlockUser() error = %v", err)
+		}
+		if len(publisher.cancelledRequests) != 2 {
+			t.Fatalf("published requests = %d, want 2", len(publisher.cancelledRequests))
+		}
+		for i, want := range requests {
+			if got := publisher.cancelledRequests[i]; got != want {
+				t.Fatalf("published request[%d] = %+v, want %+v", i, got, want)
+			}
+		}
+	})
+
+	t.Run("publisher failure does not fail committed block", func(t *testing.T) {
+		repo := &friendshipRepositoryFake{
+			cancelledRequests: []models.FriendRequest{{ID: "req", SenderID: "user-1", ReceiverID: "user-2"}},
+		}
+		publisher := &eventPublisherFake{err: errors.New("broker unavailable")}
+
+		if err := NewFriendshipService(repo, publisher).BlockUser(context.Background(), "user-1", "user-2"); err != nil {
+			t.Fatalf("BlockUser() error = %v, want best-effort success", err)
+		}
+		if !repo.blockedUser || len(publisher.cancelledRequests) != 1 {
+			t.Fatal("expected block to complete and cancellation publication to be attempted")
+		}
+	})
+
+	t.Run("idempotent block publishes no cancellation event", func(t *testing.T) {
+		publisher := &eventPublisherFake{}
+		repo := &friendshipRepositoryFake{existingBlock: true}
+		if err := NewFriendshipService(repo, publisher).BlockUser(context.Background(), "user-1", "user-2"); err != nil {
+			t.Fatalf("BlockUser() error = %v", err)
+		}
+		if repo.blockedUser {
+			t.Fatal("expected an existing block not to be inserted again")
+		}
+		if len(publisher.cancelledRequests) != 0 {
+			t.Fatalf("published requests = %d, want 0", len(publisher.cancelledRequests))
 		}
 	})
 

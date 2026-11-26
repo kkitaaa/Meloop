@@ -2,7 +2,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: ml-service
-  namespace: student-franco-araya-d52ef23de43f
+  namespace: meloop
 spec:
   type: ClusterIP
   selector:

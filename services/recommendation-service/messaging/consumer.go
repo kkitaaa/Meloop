@@ -40,6 +40,10 @@ func Run(ctx context.Context, rabbitURL string, processor ActivityProcessor) err
 	}
 	defer channel.Close()
 
+	if err := repairEventsExchange(connection, channel); err != nil {
+		return err
+	}
+
 	queue, err := declareActivityTopology(channel)
 	if err != nil {
 		return err
@@ -65,10 +69,25 @@ func Run(ctx context.Context, rabbitURL string, processor ActivityProcessor) err
 	}
 }
 
-func declareActivityTopology(channel *amqp.Channel) (amqp.Queue, error) {
-	if err := channel.ExchangeDeclare(eventsExchange, "topic", true, false, false, false, nil); err != nil {
-		return amqp.Queue{}, fmt.Errorf("declare events exchange: %w", err)
+func repairEventsExchange(connection *amqp.Connection, channel *amqp.Channel) error {
+	deleteChannel, err := connection.Channel()
+	if err != nil {
+		return fmt.Errorf("open RabbitMQ exchange repair channel: %w", err)
 	}
+	if err := deleteChannel.ExchangeDelete(eventsExchange, false, false); err != nil {
+		_ = deleteChannel.Close()
+		return fmt.Errorf("delete incompatible events exchange: %w", err)
+	}
+	if err := deleteChannel.Close(); err != nil {
+		return fmt.Errorf("close RabbitMQ exchange repair channel: %w", err)
+	}
+	if err := channel.ExchangeDeclare(eventsExchange, "topic", true, false, false, false, nil); err != nil {
+		return fmt.Errorf("redeclare events exchange as topic: %w", err)
+	}
+	return nil
+}
+
+func declareActivityTopology(channel *amqp.Channel) (amqp.Queue, error) {
 	if err := channel.ExchangeDeclare(deadLetterExchange, "direct", true, false, false, false, nil); err != nil {
 		return amqp.Queue{}, fmt.Errorf("declare recommendation dead-letter exchange: %w", err)
 	}

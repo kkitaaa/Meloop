@@ -18,12 +18,13 @@ import (
 
 // MockUserRepository provee un almacenamiento de usuarios en memoria con aislamiento
 type MockUserRepository struct {
-	Users              map[string]*models.Usuario
-	GetByIDFunc        func(ctx context.Context, id string) (*models.Usuario, error)
-	GetByUsernameFunc  func(ctx context.Context, username string) (*models.Usuario, error)
-	GetByEmailFunc     func(ctx context.Context, email string) (*models.Usuario, error)
-	CreateFunc         func(ctx context.Context, user *models.Usuario) error
-	UpdatePasswordFunc func(ctx context.Context, id string, passwordHash string) error
+	Users               map[string]*models.Usuario
+	GetByIDFunc         func(ctx context.Context, id string) (*models.Usuario, error)
+	GetByUsernameFunc   func(ctx context.Context, username string) (*models.Usuario, error)
+	GetByEmailFunc      func(ctx context.Context, email string) (*models.Usuario, error)
+	CreateFunc          func(ctx context.Context, user *models.Usuario) error
+	UpdatePasswordFunc  func(ctx context.Context, id string, passwordHash string) error
+	UpdateLastLoginFunc func(ctx context.Context, id string) error
 }
 
 func NewMockUserRepository() *MockUserRepository {
@@ -92,6 +93,13 @@ func (m *MockUserRepository) UpdatePassword(ctx context.Context, id string, pass
 	return nil
 }
 
+func (m *MockUserRepository) UpdateLastLogin(ctx context.Context, id string) error {
+	if m.UpdateLastLoginFunc != nil {
+		return m.UpdateLastLoginFunc(ctx, id)
+	}
+	return nil
+}
+
 // MockSessionRepository provee almacenamiento temporal de sesiones en memoria
 type MockSessionRepository struct {
 	Sessions           map[string]*models.SessionUser
@@ -120,6 +128,16 @@ func (m *MockSessionRepository) Get(ctx context.Context, token string) (*models.
 		return m.GetFunc(ctx, token)
 	}
 	return m.Sessions[token], nil
+}
+
+func (m *MockSessionRepository) Renew(
+	ctx context.Context,
+	token string,
+	userID string,
+	ttl time.Duration,
+) (bool, error) {
+	user, exists := m.Sessions[token]
+	return exists && user != nil && user.ID == userID, nil
 }
 
 func (m *MockSessionRepository) Delete(ctx context.Context, token string) error {
@@ -248,6 +266,7 @@ func setupTestApp(t *testing.T) *TestApp {
 	{
 		protected.POST("/auth/logout", authCtrl.Logout)
 		protected.GET("/auth/validate", authCtrl.Validate)
+		protected.POST("/auth/refresh", authCtrl.Refresh)
 		protected.POST("/auth/change-password", authCtrl.ChangePassword)
 	}
 

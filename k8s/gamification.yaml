@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: gamification-service
-  namespace: student-amanda-garcia-4679dc667f08
+  namespace: meloop
   labels:
     app.kubernetes.io/name: gamification-service
 spec:
@@ -71,7 +71,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: gamification-service
-  namespace: student-amanda-garcia-4679dc667f08
+  namespace: meloop
 spec:
   type: ClusterIP
   selector:
