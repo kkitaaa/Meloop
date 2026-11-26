@@ -66,12 +66,11 @@ func main() {
 	protected.Use(controllers.AuthRequired(authClient))
 	{
 		adminRoutes := protected.Group("/admin")
-		adminRoutes.Use(controllers.AdminRequired(userRepo))
 		{
-			adminRoutes.GET("/users", adminCtrl.ListUsers)
-			adminRoutes.PATCH("/users/:id/suspend", adminCtrl.SuspendUser)
-			adminRoutes.PATCH("/users/:id/reactivate", adminCtrl.ReactivateUser)
-			adminRoutes.PATCH("/users/:id/moderation", adminCtrl.UpdateModeratorRole)
+			adminRoutes.GET("/users", controllers.AdminRequired(userRepo), adminCtrl.ListUsers)
+			adminRoutes.PATCH("/users/:id/suspend", controllers.AdminRequired(userRepo), adminCtrl.SuspendUser)
+			adminRoutes.PATCH("/users/:id/reactivate", controllers.AdminRequired(userRepo), adminCtrl.ReactivateUser)
+			adminRoutes.PATCH("/users/:id/moderation", controllers.AdminOnly(userRepo), adminCtrl.UpdateModeratorRole)
 		}
 
 		// Gestión de inventario y equipamiento (RF-08 / RF-09 / RN-12)
