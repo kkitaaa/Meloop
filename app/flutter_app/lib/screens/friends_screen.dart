@@ -967,11 +967,11 @@ class _FriendProfileTile extends StatelessWidget {
                               friend.username,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: MeloopTypography.username(
-                                fontSize: isMobile ? 17 : 19,
+                              style: MeloopTypography.lexend(
+                                fontSize: isMobile ? 15 : 16,
                                 fontWeight: FontWeight.w700,
                                 color: const Color(0xFF1A2222),
-                                height: 1.15,
+                                height: 1.2,
                               ),
                             ),
                           ),
@@ -1192,11 +1192,11 @@ class _FriendRequestTile extends StatelessWidget {
                             request.username,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: MeloopTypography.username(
-                              fontSize: isMobile ? 17 : 19,
+                            style: MeloopTypography.lexend(
+                              fontSize: isMobile ? 15 : 16,
                               fontWeight: FontWeight.w700,
                               color: const Color(0xFF1A2222),
-                              height: 1.15,
+                              height: 1.2,
                             ),
                           ),
                           const SizedBox(height: 2),
@@ -1288,11 +1288,11 @@ class _SuggestedProfileTile extends StatelessWidget {
                             profile.username,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: MeloopTypography.username(
-                              fontSize: 17.5,
+                            style: MeloopTypography.lexend(
+                              fontSize: 15,
                               fontWeight: FontWeight.w700,
                               color: const Color(0xFF1A2222),
-                              height: 1.15,
+                              height: 1.2,
                             ),
                           ),
                           const SizedBox(height: 2),
