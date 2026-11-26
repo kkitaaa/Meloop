@@ -44,6 +44,7 @@ services:
       - test-service
       - user-service
       - auth-service
+      - social-service
       - media-service
       - social-service
       - recommendation-service

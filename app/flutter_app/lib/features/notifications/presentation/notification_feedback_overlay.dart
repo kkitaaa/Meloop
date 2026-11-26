@@ -1,0 +1,157 @@
+import 'package:flutter/material.dart';
+
+import '../state/app_notification.dart';
+import '../state/notification_controller.dart';
+
+class NotificationFeedbackOverlay extends StatelessWidget {
+  const NotificationFeedbackOverlay({
+    required this.controller,
+    required this.child,
+    super.key,
+  });
+
+  final NotificationController controller;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: controller,
+      child: child,
+      builder: (context, child) {
+        final notification = controller.activeBanner;
+        final mediaQuery = MediaQuery.of(context);
+        final isDesktop = mediaQuery.size.width > 900;
+        final top = mediaQuery.viewPadding.top + (isDesktop ? 98.0 : 56.0);
+        return Stack(
+          children: [
+            ?child,
+            if (notification != null)
+              Positioned(
+                top: top,
+                left: 16,
+                right: 16,
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 520),
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        _NotificationBanner(
+                          key: ValueKey(notification.id),
+                          notification: notification,
+                          onDismiss: controller.dismissBanner,
+                        ),
+                        Positioned(
+                          top: 2,
+                          right: 2,
+                          child: Semantics(
+                            label: 'Cerrar notificación',
+                            button: true,
+                            child: IconButton(
+                              key: const ValueKey('notification-banner-close'),
+                              visualDensity: VisualDensity.compact,
+                              constraints: const BoxConstraints(
+                                minWidth: 32,
+                                minHeight: 32,
+                              ),
+                              padding: EdgeInsets.zero,
+                              onPressed: controller.dismissBanner,
+                              icon: const Icon(
+                                Icons.close,
+                                color: Colors.grey,
+                                size: 18,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _NotificationBanner extends StatelessWidget {
+  const _NotificationBanner({
+    required this.notification,
+    required this.onDismiss,
+    super.key,
+  });
+
+  final AppNotification notification;
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: Dismissible(
+        key: ValueKey(notification.id),
+        direction: DismissDirection.up,
+        onDismissed: (_) => onDismiss(),
+        child: Card(
+          elevation: 12,
+          margin: EdgeInsets.zero,
+          color: const Color(0xFFFAFAFA),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 13, 44, 13),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  backgroundColor: const Color(0xFF00AF92)
+                      .withValues(alpha: .14),
+                  child: Icon(
+                    switch (notification.kind) {
+                      NotificationKind.like => Icons.favorite,
+                      NotificationKind.comment => Icons.mode_comment,
+                      NotificationKind.friendRequest => Icons.person_add_alt_1,
+                      NotificationKind.levelUp => Icons.trending_up,
+                      NotificationKind.reward => Icons.card_giftcard,
+                    },
+                    color: switch (notification.kind) {
+                      NotificationKind.like => const Color(0xFFFF6262),
+                      NotificationKind.comment => const Color(0xFF00AF92),
+                      NotificationKind.friendRequest => const Color(0xFF5B7FFF),
+                      NotificationKind.levelUp => const Color(0xFFFFB020),
+                      NotificationKind.reward => const Color(0xFF9C5BFF),
+                    },
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        notification.title,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      if (notification.detail.isNotEmpty) ...[
+                        const SizedBox(height: 3),
+                        Text(
+                          notification.detail,
+                          style: const TextStyle(
+                            color: Colors.black54,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
