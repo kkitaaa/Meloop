@@ -3,6 +3,7 @@
 - [Contrato REST OpenAPI del Gateway](./api/openapi.yaml)
 - [Estado de la API WebSocket de Chat](./chat-ws.md)
 - [Guía del API Gateway y su inventario de prefijos](../services/api-gateway/README.md)
+- [Roles, permisos y procedimiento de verificación](./microservices.md#17-roles-y-autorización)
 
 El contrato lista las operaciones que existen en los servicios detrás del
 Gateway y señala explícitamente los dominios todavía pendientes.
