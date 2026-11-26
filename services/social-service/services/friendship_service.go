@@ -197,7 +197,7 @@ func (s *friendshipService) ValidateMessage(ctx context.Context, senderID, recei
 		return ErrInvalidUser
 	}
 	if senderID == receiverID {
-		return nil
+		return ErrMessageNotAllowed
 	}
 
 	allowed, err := s.repo.CanSendMessage(ctx, senderID, receiverID)

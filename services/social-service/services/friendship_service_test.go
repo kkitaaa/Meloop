@@ -214,7 +214,7 @@ func TestFriendshipServiceValidateMessage(t *testing.T) {
 		{name: "allowed", allowed: true, senderID: "u1", receiverID: "u2"},
 		{name: "privacy denied", senderID: "u1", receiverID: "u2", wantErr: ErrMessageNotAllowed},
 		{name: "blank sender", receiverID: "u2", wantErr: ErrInvalidUser},
-		{name: "same user", senderID: "u1", receiverID: "u1"},
+		{name: "same user", senderID: "u1", receiverID: "u1", wantErr: ErrMessageNotAllowed},
 		{name: "repository error", senderID: "u1", receiverID: "u2", repoErr: errors.New("database error"), wantErr: errors.New("database error")},
 	}
 

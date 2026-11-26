@@ -598,7 +598,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SuccessResponse'
+                $ref: '#/components/schemas/PrivacySettingsResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '500':
@@ -615,19 +615,20 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              additionalProperties: true
+              $ref: '#/components/schemas/PrivacySettingsUpdate'
       responses:
         '200':
           description: Configuración actualizada
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SuccessResponse'
+                $ref: '#/components/schemas/PrivacySettingsResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '500':
           $ref: '#/components/responses/InternalError'
     put:
@@ -642,19 +643,20 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              additionalProperties: true
+              $ref: '#/components/schemas/PrivacySettingsUpdate'
       responses:
         '200':
           description: Configuración actualizada
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SuccessResponse'
+                $ref: '#/components/schemas/PrivacySettingsResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '500':
           $ref: '#/components/responses/InternalError'
   /users/me/privacidad:
@@ -671,7 +673,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SuccessResponse'
+                $ref: '#/components/schemas/PrivacySettingsResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '500':
@@ -688,19 +690,20 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              additionalProperties: true
+              $ref: '#/components/schemas/PrivacySettingsUpdate'
       responses:
         '200':
           description: Configuración actualizada
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SuccessResponse'
+                $ref: '#/components/schemas/PrivacySettingsResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '500':
           $ref: '#/components/responses/InternalError'
 
@@ -1359,6 +1362,8 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '409':
           $ref: '#/components/responses/Conflict'
         '500':
@@ -1653,6 +1658,40 @@ paths:
       responses:
         '200':
           description: Interacción permitida
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /friends/validate-message:
+    post:
+      tags: [Social]
+      operationId: validateMessagePermission
+      summary: Comprobar bloqueo y privacidad antes de iniciar un mensaje privado
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id_usuario]
+              properties:
+                id_usuario:
+                  type: string
+                  description: Identificador del destinatario del mensaje
+      responses:
+        '200':
+          description: Mensaje permitido
           content:
             application/json:
               schema:
@@ -2295,6 +2334,57 @@ components:
         error:
           type: object
           nullable: true
+    PrivacySettingsUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        visibilidad_perfil:
+          type: string
+          enum: [PUBLICO, AMIGOS, PRIVADO]
+        visibilidad_publicaciones:
+          type: string
+          enum: [PUBLICO, AMIGOS, PRIVADO]
+        visibilidad_interacciones:
+          type: string
+          enum: [PUBLICO, AMIGOS, PRIVADO]
+        recepcion_mensajes:
+          type: string
+          enum: [TODOS, AMIGOS, NADIE]
+        recepcion_solicitudes_amistad:
+          type: string
+          enum: [TODOS, AMIGOS, NADIE]
+        recepcion_solicitudes:
+          type: string
+          deprecated: true
+          enum: [TODOS, AMIGOS, NADIE]
+    PrivacySettings:
+      type: object
+      required: [id_usuario, visibilidad_perfil, visibilidad_publicaciones, visibilidad_interacciones, recepcion_mensajes, recepcion_solicitudes_amistad]
+      properties:
+        id_usuario:
+          type: string
+        visibilidad_perfil:
+          type: string
+          enum: [PUBLICO, AMIGOS, PRIVADO]
+        visibilidad_publicaciones:
+          type: string
+          enum: [PUBLICO, AMIGOS, PRIVADO]
+        visibilidad_interacciones:
+          type: string
+          enum: [PUBLICO, AMIGOS, PRIVADO]
+        recepcion_mensajes:
+          type: string
+          enum: [TODOS, AMIGOS, NADIE]
+        recepcion_solicitudes_amistad:
+          type: string
+          enum: [TODOS, AMIGOS, NADIE]
+    PrivacySettingsResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/PrivacySettings'
     LoginResponse:
       type: object
       required: [success, data, error]
