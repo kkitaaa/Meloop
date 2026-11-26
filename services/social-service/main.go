@@ -38,9 +38,6 @@ func run() error {
 	service := services.NewFriendshipService(repository, messaging.NewPublisher(cfg.RabbitMQURL), compatRepository)
 	controller := controllers.NewFriendshipController(service)
 	authClient := client.NewAuthClient(cfg.AuthServiceURL)
-	mutualFriendsController := controllers.NewMutualFriendsController(
-		repositories.NewMutualFriendsRepository(dbPool),
-	)
 	router := gin.New()
 	router.Use(logging.GinMiddleware(logger))
 	router.Use(httpresponse.GinRecoveryWithLogger(logger))
