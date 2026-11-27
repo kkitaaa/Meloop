@@ -46,7 +46,6 @@ services:
       - auth-service
       - social-service
       - media-service
-      - social-service
       - recommendation-service
       - notification-service
       - redis
@@ -94,10 +93,9 @@ services:
       SOCIAL_SERVICE_INTERNAL_TOKEN: ${SOCIAL_SERVICE_INTERNAL_TOKEN:?Debes configurar SOCIAL_SERVICE_INTERNAL_TOKEN en .env}
     depends_on:
       - social-service
+      - auth-service
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    depends_on:
-      - auth-service
     networks:
       - meloop-network
 
@@ -257,6 +255,8 @@ services:
       - meloop-network
 
   minio-init:
+    profiles:
+      - storage-init
     image: quay.io/minio/mc:latest
     container_name: meloop-minio-init
     depends_on:

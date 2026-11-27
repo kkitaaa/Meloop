@@ -86,7 +86,11 @@ func (client *MLClient) Predict(ctx context.Context, request models.Recommendati
 
 	var recommendation models.RecommendationResponse
 	err = client.call(ctx, func(requestCtx context.Context) error {
-		responseBody, err := client.doWithRetry(requestCtx, http.MethodPost, client.baseURL+"/predict", body)
+		endpoint := "/recommendations/friends"
+		if request.Type != "friends" {
+			endpoint = "/recommendations/music"
+		}
+		responseBody, err := client.doWithRetry(requestCtx, http.MethodPost, client.baseURL+endpoint, body)
 		if err != nil {
 			return fmt.Errorf("call ML service: %w", err)
 		}

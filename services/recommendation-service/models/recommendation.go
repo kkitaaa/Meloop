@@ -22,12 +22,24 @@ type PopularContent struct {
 }
 
 type RecommendationRequest struct {
-	UserID       int           `json:"user_id"`
-	Limit        int           `json:"limit"`
-	Type         string        `json:"type,omitempty"`
-	Preferences  []string      `json:"preferences"`
-	Profile      UserProfile   `json:"profile"`
-	Interactions []Interaction `json:"interactions"`
+	UserID            int                `json:"user_id"`
+	Limit             int                `json:"limit"`
+	Type              string             `json:"type,omitempty"`
+	Preferences       []string           `json:"preferences"`
+	Profile           UserProfile        `json:"profile"`
+	Interactions      []Interaction      `json:"interactions"`
+	CandidateProfiles []CandidateProfile `json:"candidate_profiles,omitempty"`
+	Catalog           []MusicCatalogItem `json:"catalog,omitempty"`
+}
+
+type CandidateProfile struct {
+	UserID  int         `json:"user_id"`
+	Profile UserProfile `json:"profile"`
+}
+
+type MusicCatalogItem struct {
+	ItemID  int         `json:"item_id"`
+	Profile UserProfile `json:"profile"`
 }
 
 type RecommendationItem struct {

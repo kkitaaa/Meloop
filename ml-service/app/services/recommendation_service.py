@@ -38,7 +38,11 @@ class RecommendationService:
         )
         user_data["user_id"] = request.user_id
         processed_user = self.preferences_pipeline.transform(user_data)
-        if not processed_user.preference_features:
+        preference_features = set(processed_user.preference_features)
+        preference_features.update(
+            value.strip().casefold() for value in request.preferences if value.strip()
+        )
+        if not preference_features:
             return self._empty_response(request, "El usuario no tiene historial musical suficiente")
 
         processed_catalog = [
@@ -49,13 +53,15 @@ class RecommendationService:
         ]
         feature_names = tuple(
             sorted(
-                set(processed_user.preference_features)
+            preference_features
                 | {feature for item in processed_catalog for feature in item.preference_features}
             )
         )
         user_vector = self._align_vector(
             processed_user.preference_matrix, processed_user.preference_features, feature_names
         )
+        for feature in preference_features - set(processed_user.preference_features):
+            user_vector[0, feature_names.index(feature)] = 1.0
         catalog_vectors = vstack(
             [
                 self._align_vector(item.preference_matrix, item.preference_features, feature_names)
@@ -69,6 +75,22 @@ class RecommendationService:
             feature_names,
             request.limit,
         )
+        liked_items = {
+            interaction.target_id
+            for interaction in request.interactions
+            if interaction.type == "like"
+        }
+        if liked_items:
+            ranked = tuple(
+                sorted(
+                    (
+                        item
+                        for item in ranked
+                        if item.item_id not in liked_items
+                    ),
+                    key=lambda item: (-item.score, item.item_id),
+                )
+            )
         return RecommendationResponse(
             user_id=request.user_id,
             recommendations=[
