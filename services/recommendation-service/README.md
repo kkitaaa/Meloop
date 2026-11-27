@@ -23,7 +23,17 @@ uses recent activity from the last 30 days.
 
 Friend recommendations are checked against `USUARIO`, bidirectional
 `BLOQUEO` records, accepted `AMISTAD` records, and inactive `ACCION_MODERACION`
-actions in one batched database query. Recommendations from ML, cache, and
+actions in one batched database query. Suspended accounts are also excluded
+directly through `USUARIO.suspendido`, including when cached recommendations are
+revalidated. Recommendations from ML, cache, and
 backup are all revalidated before being returned. The service keeps the ML
 ranking order and takes later eligible candidates from the fetched candidate
 batch to satisfy the requested limit.
+
+Recommendation routes and ML payloads preserve user IDs as strings, including Auth UUIDs. Like interactions resolve the liked publication to the song Spotify ID (or database song ID if there is no Spotify ID), so publication IDs are never compared to music catalog IDs.
+
+The music catalog reads genres from `CANCION.generos` (added by
+`20261127000000_song_genres_for_recommendations.sql`) and sends them to ML along
+with artist and song identifiers. Existing songs default to an empty genre array
+until their catalog metadata is supplied. ML removes liked songs before ranking
+and applying the requested result limit.

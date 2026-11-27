@@ -1,14 +1,20 @@
+from collections import Counter
+
 from scipy.sparse import csr_matrix, vstack
 
 from app.models.recommendation_model import RecommendationModel
 from app.schemas.recommendation_schema import (
     CandidateProfile,
+    MusicCatalogItem,
     MusicRecommendationRequest,
     RecommendationItem,
     RecommendationRequest,
     RecommendationResponse,
 )
 from data_processing import UserPreferencesPipeline
+
+LIKE_FEATURE_WEIGHT = 0.5
+MAX_LIKE_FEATURE_WEIGHT = 2.0
 
 
 class CompatibilityReason:
@@ -33,29 +39,76 @@ class RecommendationService:
     def generate_music_recommendations(
         self, request: MusicRecommendationRequest
     ) -> RecommendationResponse:
+        liked_items = {
+            interaction.target_id
+            for interaction in request.interactions
+            if interaction.type == "like"
+        }
+        catalog = [item for item in request.catalog if item.item_id not in liked_items]
+        if not catalog:
+            return RecommendationResponse(
+                user_id=request.user_id,
+                recommendations=[],
+                model="music_content_similarity",
+                model_version=self.model.version,
+                interaction_count=len(request.interactions),
+            )
+
         user_data = self._profile_data(
             request.profile.genres, request.profile.artists, request.profile.songs
         )
         user_data["user_id"] = request.user_id
-        processed_user = self.preferences_pipeline.transform(user_data)
-        if not processed_user.preference_features:
-            return self._empty_response(request, "El usuario no tiene historial musical suficiente")
+        base_user = self.preferences_pipeline.transform(user_data)
+        explicit_features = set(base_user.preference_features)
+        explicit_features.update(
+            value.strip().casefold() for value in request.preferences if value.strip()
+        )
+        inferred_feature_counts: Counter[str] = Counter()
+        seen_liked_items: set[str] = set()
+        for item in request.catalog:
+            if item.item_id not in liked_items or item.item_id in seen_liked_items:
+                continue
+            seen_liked_items.add(item.item_id)
+            liked_profile = self.preferences_pipeline.transform(
+                self._profile_data(item.profile.genres, item.profile.artists, item.profile.songs)
+            ).normalized_data.iloc[0]
+            user_data["genres"].extend(liked_profile["genres"])
+            user_data["artists"].extend(liked_profile["artists"])
+            inferred_feature_counts.update(f"genre:{genre}" for genre in liked_profile["genres"])
+            inferred_feature_counts.update(
+                f"artist:{artist}" for artist in liked_profile["artists"]
+            )
 
+        processed_user = self.preferences_pipeline.transform(user_data)
+        preference_features = set(processed_user.preference_features) | explicit_features
+        if not preference_features:
+            return self._catalog_fallback(request, catalog)
+
+        feature_weights = {feature: 1.0 for feature in base_user.preference_features}
+        for feature, count in inferred_feature_counts.items():
+            feature_weights[feature] = (1.0 if feature in explicit_features else 0.0) + min(
+                count * LIKE_FEATURE_WEIGHT, MAX_LIKE_FEATURE_WEIGHT
+            )
+        processed_user = self.preferences_pipeline.transform(
+            user_data, preference_weights=feature_weights
+        )
         processed_catalog = [
             self.preferences_pipeline.transform(
                 self._profile_data(item.profile.genres, item.profile.artists, item.profile.songs)
             )
-            for item in request.catalog
+            for item in catalog
         ]
         feature_names = tuple(
             sorted(
-                set(processed_user.preference_features)
+                preference_features
                 | {feature for item in processed_catalog for feature in item.preference_features}
             )
         )
         user_vector = self._align_vector(
             processed_user.preference_matrix, processed_user.preference_features, feature_names
         )
+        for feature in preference_features - set(processed_user.preference_features):
+            user_vector[0, feature_names.index(feature)] = feature_weights.get(feature, 1.0)
         catalog_vectors = vstack(
             [
                 self._align_vector(item.preference_matrix, item.preference_features, feature_names)
@@ -65,7 +118,7 @@ class RecommendationService:
         ranked = self.model.recommend_catalog(
             user_vector,
             catalog_vectors,
-            [item.item_id for item in request.catalog],
+            [item.item_id for item in catalog],
             feature_names,
             request.limit,
         )
@@ -84,6 +137,24 @@ class RecommendationService:
             interaction_count=len(request.interactions),
         )
 
+    def _catalog_fallback(
+        self, request: MusicRecommendationRequest, catalog: list[MusicCatalogItem]
+    ) -> RecommendationResponse:
+        return RecommendationResponse(
+            user_id=request.user_id,
+            recommendations=[
+                RecommendationItem(
+                    item_id=item.item_id,
+                    score=0.0,
+                    reason="Sugerencia de descubrimiento mientras se recopilan preferencias musicales",
+                )
+                for item in catalog[: request.limit]
+            ],
+            model="music_catalog_fallback",
+            model_version=self.model.version,
+            interaction_count=len(request.interactions),
+        )
+
     def generate(self, request: RecommendationRequest) -> RecommendationResponse:
         if request.candidate_profiles:
             return self.generate_friend_recommendations(request)
@@ -98,9 +169,10 @@ class RecommendationService:
         recommendation_offset = interaction_count * 10
 
         for index in range(1, min(request.limit, 5) + 1):
-            item_id = request.user_id + recommendation_offset + index
-            if item_id in liked_items:
-                item_id += 1000
+            item_id = f"generated:{request.user_id}:{recommendation_offset + index}"
+            while item_id in liked_items:
+                recommendation_offset += 1
+                item_id = f"generated:{request.user_id}:{recommendation_offset + index}"
             recommendations.append(
                 RecommendationItem(
                     item_id=item_id,

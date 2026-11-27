@@ -122,7 +122,7 @@ func recommendationHandler(service *services.RecommendationService) http.Handler
 			return
 		}
 		userID, recommendationType, err := parseRecommendationPath(request.URL.Path)
-		if err != nil || userID < 1 {
+		if err != nil || !validUserID(userID) {
 			http.Error(writer, "invalid user id", http.StatusBadRequest)
 			return
 		}
@@ -145,23 +145,25 @@ func recommendationHandler(service *services.RecommendationService) http.Handler
 	}
 }
 
-func parseRecommendationPath(path string) (int, string, error) {
+func parseRecommendationPath(path string) (string, string, error) {
 	parts := strings.Split(strings.Trim(path, "/"), "/")
 	if len(parts) == 2 && parts[0] == "recommendations" {
-		userID, err := strconv.Atoi(parts[1])
-		return userID, "all", err
+		return parts[1], "all", nil
 	}
 	if len(parts) == 3 && parts[0] == "recommendations" {
 		if parts[2] == "music" || parts[2] == "friends" {
-			userID, err := strconv.Atoi(parts[1])
-			return userID, parts[2], err
+			return parts[1], parts[2], nil
 		}
 		if parts[1] == "music" || parts[1] == "friends" {
-			userID, err := strconv.Atoi(parts[2])
-			return userID, parts[1], err
+			return parts[2], parts[1], nil
 		}
 	}
-	return 0, "", strconv.ErrSyntax
+	return "", "", strconv.ErrSyntax
+}
+
+func validUserID(userID string) bool {
+	userID = strings.TrimSpace(userID)
+	return userID != "" && len(userID) <= 64 && !strings.ContainsRune(userID, '\x00')
 }
 
 func interactionHandler(service *services.RecommendationService) http.HandlerFunc {
@@ -171,11 +173,11 @@ func interactionHandler(service *services.RecommendationService) http.HandlerFun
 			return
 		}
 		var event struct {
-			UserID      int                `json:"user_id"`
+			UserID      string             `json:"user_id"`
 			Limit       int                `json:"limit"`
 			Interaction models.Interaction `json:"interaction"`
 		}
-		if err := json.NewDecoder(request.Body).Decode(&event); err != nil || event.UserID < 1 {
+		if err := json.NewDecoder(request.Body).Decode(&event); err != nil || !validUserID(event.UserID) {
 			http.Error(writer, "invalid interaction payload", http.StatusBadRequest)
 			return
 		}

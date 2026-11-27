@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/meloop/recommendation-service/models"
@@ -25,7 +24,7 @@ type CachedRecommendation struct {
 type RecommendationCacheStore interface {
 	GetCached(ctx context.Context, key string) (CachedRecommendation, bool, error)
 	SetCached(ctx context.Context, key string, cached CachedRecommendation, ttl time.Duration) error
-	InvalidateCached(ctx context.Context, userID int) error
+	InvalidateCached(ctx context.Context, userID string) error
 }
 
 type RedisRecommendationStore struct {
@@ -97,8 +96,8 @@ func (store *RedisRecommendationStore) SetCached(ctx context.Context, key string
 	return nil
 }
 
-func (store *RedisRecommendationStore) InvalidateCached(ctx context.Context, userID int) error {
-	return store.InvalidateCachedForUser(ctx, strconv.Itoa(userID))
+func (store *RedisRecommendationStore) InvalidateCached(ctx context.Context, userID string) error {
+	return store.InvalidateCachedForUser(ctx, userID)
 }
 
 func (store *RedisRecommendationStore) InvalidateCachedForUser(ctx context.Context, userID string) error {

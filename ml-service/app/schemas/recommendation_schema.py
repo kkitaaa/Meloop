@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 
 class Interaction(BaseModel):
     type: Literal["like", "friend_added", "comment", "post_interaction"]
-    target_id: int = Field(..., ge=1)
+    target_id: str = Field(..., min_length=1, max_length=128)
 
 
 class UserProfile(BaseModel):
@@ -15,12 +15,14 @@ class UserProfile(BaseModel):
 
 
 class CandidateProfile(BaseModel):
-    user_id: int = Field(..., ge=1)
+    user_id: str = Field(..., min_length=1, max_length=64)
     profile: UserProfile = Field(default_factory=UserProfile)
 
 
 class RecommendationRequest(BaseModel):
-    user_id: int = Field(..., ge=1, description="ID del usuario para generar recomendaciones.")
+    user_id: str = Field(
+        ..., min_length=1, max_length=64, description="ID del usuario para generar recomendaciones."
+    )
     limit: int = Field(default=10, ge=1, le=50, description="Cantidad máxima de sugerencias.")
     type: Literal["all", "music", "friends"] = "all"
     preferences: list[str] = Field(
@@ -38,12 +40,14 @@ class RecommendationRequest(BaseModel):
 
 
 class MusicCatalogItem(BaseModel):
-    item_id: int = Field(..., ge=1)
+    item_id: str = Field(..., min_length=1, max_length=128)
     profile: UserProfile = Field(default_factory=UserProfile)
 
 
 class MusicRecommendationRequest(BaseModel):
-    user_id: int = Field(..., ge=1, description="ID del usuario para generar recomendaciones.")
+    user_id: str = Field(
+        ..., min_length=1, max_length=64, description="ID del usuario para generar recomendaciones."
+    )
     limit: int = Field(default=10, ge=1, le=50, description="Cantidad máxima de sugerencias.")
     preferences: list[str] = Field(
         default_factory=list, description="Gustos adicionales del usuario."
@@ -58,13 +62,13 @@ class MusicRecommendationRequest(BaseModel):
 
 
 class RecommendationItem(BaseModel):
-    item_id: int
+    item_id: str
     score: float
     reason: str
 
 
 class RecommendationResponse(BaseModel):
-    user_id: int
+    user_id: str
     recommendations: list[RecommendationItem]
     model: str
     model_version: str

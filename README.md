@@ -267,7 +267,7 @@ Docker Compose levanta inicialmente los siguientes componentes:
 - Redis.
 - RabbitMQ.
 - MinIO (servidor de almacenamiento de objetos).
-- MinIO Init (contenedor de aprovisionamiento automatizado de bucket y políticas).
+- MinIO Init (perfil opcional `storage-init` para aprovisionar el bucket y las políticas).
 
 Los servicios se comunican mediante una red interna de Docker Compose.
 
@@ -279,6 +279,12 @@ Desde la raíz del repositorio ejecutar:
 
 ```bash
 docker compose up --build
+```
+
+`minio-init` no se ejecuta con el comando anterior. Para crear el bucket y configurar las políticas, inicia el perfil opcional:
+
+```bash
+docker compose --profile storage-init up -d minio-init
 ```
 
 La opción `--build` permite construir nuevamente las imágenes de los microservicios antes de iniciar los contenedores.
@@ -293,7 +299,7 @@ Para comprobar el estado de los servicios ejecutar:
 docker compose ps
 ```
 
-Los contenedores deberían aparecer en estado `Up` o `Running` (el contenedor `meloop-minio-init` saldrá con código `0` tras completar el aprovisionamiento).
+Los servicios principales deberían aparecer en estado `Up` o `Running`. Si iniciaste el perfil `storage-init`, `meloop-minio-init` terminará con código `0` tras completar el aprovisionamiento.
 
 ### Servicios disponibles
 

@@ -38,7 +38,12 @@ class UserPreferencesPipeline:
         "friend_ids": "friends",
     }
 
-    def transform(self, raw_data: Mapping[str, Any]) -> ProcessedUserPreferences:
+    def transform(
+        self,
+        raw_data: Mapping[str, Any],
+        *,
+        preference_weights: Mapping[str, float] | None = None,
+    ) -> ProcessedUserPreferences:
         if not isinstance(raw_data, Mapping):
             raise TypeError("raw_data debe ser un objeto JSON con preferencias del usuario")
 
@@ -68,6 +73,12 @@ class UserPreferencesPipeline:
             ]
         ]
         preference_matrix, preference_features = self._encode(preference_labels)
+        if preference_weights and preference_features:
+            weights = np.asarray(
+                [preference_weights.get(feature, 1.0) for feature in preference_features],
+                dtype=np.float32,
+            )
+            preference_matrix = preference_matrix.multiply(weights).tocsr()
 
         friend_labels = [[f"friend:{friend}" for friend in friends]]
         friend_matrix, friend_features = self._encode(friend_labels)

@@ -16,11 +16,20 @@ import (
 type profileRepositoryFake struct{}
 
 func (profileRepositoryFake) Get(context.Context, string, string) (models.UserProfile, []models.Interaction, error) {
-	return models.UserProfile{Genres: []string{"jazz"}, Artists: []string{"Miles Davis"}, Songs: []string{"So What"}}, []models.Interaction{{Type: "comment", TargetID: 9}}, nil
+	return models.UserProfile{Genres: []string{"jazz"}, Artists: []string{"Miles Davis"}, Songs: []string{"So What"}}, []models.Interaction{{Type: "like", TargetID: "spotify-track-9"}}, nil
 }
 
 func (profileRepositoryFake) GetPopular(context.Context, string, int) ([]models.PopularContent, error) {
 	return nil, nil
+}
+
+func (profileRepositoryFake) GetMusicCatalog(context.Context, int) ([]models.MusicCatalogItem, error) {
+	return []models.MusicCatalogItem{{
+		ItemID: "spotify-track-10",
+		Profile: models.UserProfile{
+			Genres: []string{"jazz"}, Artists: []string{"Miles Davis"}, Songs: []string{"spotify-track-10"},
+		},
+	}}, nil
 }
 
 type coldStartRepositoryFake struct {
@@ -31,8 +40,8 @@ type coldStartRepositoryFake struct {
 }
 
 type friendEligibilityRepositoryFake struct {
-	eligibleIDs  map[int]struct{}
-	candidateIDs []int
+	eligibleIDs  map[string]struct{}
+	candidateIDs []string
 	filterCalls  int
 }
 
@@ -40,9 +49,9 @@ func (repository *friendEligibilityRepositoryFake) Get(context.Context, string, 
 	return models.UserProfile{}, nil, nil
 }
 
-func (repository *friendEligibilityRepositoryFake) FilterEligibleFriendCandidates(_ context.Context, _ string, candidateIDs []int) (map[int]struct{}, error) {
+func (repository *friendEligibilityRepositoryFake) FilterEligibleFriendCandidates(_ context.Context, _ string, candidateIDs []string) (map[string]struct{}, error) {
 	repository.filterCalls++
-	repository.candidateIDs = append([]int(nil), candidateIDs...)
+	repository.candidateIDs = append([]string(nil), candidateIDs...)
 	return repository.eligibleIDs, nil
 }
 
@@ -59,7 +68,7 @@ type recommendationStoreFake struct {
 	responses          map[string]models.RecommendationResponse
 	cached             map[string]CachedRecommendation
 	cacheTTL           time.Duration
-	invalidatedUsers   []int
+	invalidatedUsers   []string
 	invalidatedUserIDs []string
 }
 
@@ -87,7 +96,7 @@ func (store *recommendationStoreFake) SetCached(_ context.Context, key string, c
 	return nil
 }
 
-func (store *recommendationStoreFake) InvalidateCached(_ context.Context, userID int) error {
+func (store *recommendationStoreFake) InvalidateCached(_ context.Context, userID string) error {
 	store.invalidatedUsers = append(store.invalidatedUsers, userID)
 	for _, recommendationType := range []string{"all", "music", "friends"} {
 		delete(store.cached, recommendationCacheKey(userID, recommendationType))
@@ -123,7 +132,14 @@ func TestRecommendationServiceLoadsPersistedProfile(t *testing.T) {
 		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
 			t.Fatalf("decode ML request: %v", err)
 		}
-		if len(payload.Profile.Genres) != 1 || payload.Profile.Genres[0] != "jazz" || len(payload.Interactions) != 1 {
+		if request.URL.Path != "/recommendations/music" {
+			t.Fatalf("expected all recommendations to use the music endpoint, got %q", request.URL.Path)
+		}
+		if payload.Type != "music" || len(payload.Catalog) != 1 || payload.Catalog[0].ItemID != "spotify-track-10" ||
+			len(payload.Catalog[0].Profile.Genres) != 1 || payload.Catalog[0].Profile.Genres[0] != "jazz" {
+			t.Fatalf("all recommendation request must include a music catalog: %+v", payload)
+		}
+		if len(payload.Profile.Genres) != 1 || payload.Profile.Genres[0] != "jazz" || len(payload.Interactions) != 1 || payload.Interactions[0].Type != "like" {
 			t.Fatalf("persisted profile was not packaged: %+v", payload)
 		}
 		_ = json.NewEncoder(writer).Encode(models.RecommendationResponse{UserID: payload.UserID, Model: "test-model"})
@@ -131,47 +147,77 @@ func TestRecommendationServiceLoadsPersistedProfile(t *testing.T) {
 	defer mlServer.Close()
 
 	service := NewRecommendationServiceWithRepository(NewMLClient(mlServer.URL), time.Minute, profileRepositoryFake{})
-	if _, _, err := service.Get(context.Background(), 42, 10); err != nil {
+	if _, _, err := service.Get(context.Background(), "42", 10); err != nil {
 		t.Fatalf("get recommendations: %v", err)
+	}
+}
+
+func TestRecordInteractionUsesMusicRecommendationRequest(t *testing.T) {
+	var requestedPath string
+	mlServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		requestedPath = request.URL.Path
+		var payload models.RecommendationRequest
+		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode ML request: %v", err)
+		}
+		if payload.Type != "music" || len(payload.Catalog) != 1 {
+			t.Fatalf("interaction recommendation must include music catalog and type, got %+v", payload)
+		}
+		if len(payload.Interactions) != 2 || payload.Interactions[1].TargetID != "spotify-track-new-like" {
+			t.Fatalf("new like was not included in ML request: %+v", payload.Interactions)
+		}
+		_ = json.NewEncoder(writer).Encode(models.RecommendationResponse{UserID: payload.UserID, Model: "music_content_similarity"})
+	}))
+	defer mlServer.Close()
+
+	service := NewRecommendationServiceWithRepository(NewMLClient(mlServer.URL), time.Minute, profileRepositoryFake{})
+	_, err := service.RecordInteraction(context.Background(), "auth-user-42", models.Interaction{
+		Type: "like", TargetID: "spotify-track-new-like",
+	}, 5)
+	if err != nil {
+		t.Fatalf("record interaction: %v", err)
+	}
+	if requestedPath != "/recommendations/music" {
+		t.Fatalf("expected POST /recommendations/music, got %q", requestedPath)
 	}
 }
 
 func TestRecommendationServiceFiltersFriendCandidatesInOneBatchAndRefillsLimit(t *testing.T) {
 	mlServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		_ = json.NewEncoder(writer).Encode(models.RecommendationResponse{
-			UserID: 42,
+			UserID: "42",
 			Recommendations: []models.RecommendationItem{
-				{ItemID: 42},
-				{ItemID: 11},
-				{ItemID: 12},
-				{ItemID: 13},
-				{ItemID: 14},
-				{ItemID: 15},
-				{ItemID: 15},
-				{ItemID: 16},
+				{ItemID: "42"},
+				{ItemID: "11"},
+				{ItemID: "12"},
+				{ItemID: "13"},
+				{ItemID: "14"},
+				{ItemID: "15"},
+				{ItemID: "15"},
+				{ItemID: "16"},
 			},
 			Model: "test-model",
 		})
 	}))
 	defer mlServer.Close()
 
-	repository := &friendEligibilityRepositoryFake{eligibleIDs: map[int]struct{}{
-		14: {},
-		15: {},
-		16: {},
+	repository := &friendEligibilityRepositoryFake{eligibleIDs: map[string]struct{}{
+		"14": {},
+		"15": {},
+		"16": {},
 	}}
 	service := NewRecommendationServiceWithRepository(NewMLClient(mlServer.URL), time.Minute, repository)
 
-	response, _, err := service.GetByType(context.Background(), 42, "friends", 3)
+	response, _, err := service.GetByType(context.Background(), "42", "friends", 3)
 	if err != nil {
 		t.Fatalf("get friend recommendations: %v", err)
 	}
 	if len(response.Recommendations) != 3 {
 		t.Fatalf("expected requested count after removing ineligible candidates, got %+v", response.Recommendations)
 	}
-	for index, expectedID := range []int{14, 15, 16} {
+	for index, expectedID := range []string{"14", "15", "16"} {
 		if response.Recommendations[index].ItemID != expectedID {
-			t.Fatalf("expected ranked eligible candidate %d at position %d, got %+v", expectedID, index, response.Recommendations)
+			t.Fatalf("expected ranked eligible candidate %s at position %d, got %+v", expectedID, index, response.Recommendations)
 		}
 	}
 	if repository.filterCalls != 1 {
@@ -185,15 +231,15 @@ func TestRecommendationServiceFiltersFriendCandidatesInOneBatchAndRefillsLimit(t
 func TestRecommendationServiceFailsClosedWhenFriendEligibilityCannotBeChecked(t *testing.T) {
 	mlServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		_ = json.NewEncoder(writer).Encode(models.RecommendationResponse{
-			UserID:          42,
-			Recommendations: []models.RecommendationItem{{ItemID: 99}},
+			UserID:          "42",
+			Recommendations: []models.RecommendationItem{{ItemID: "99"}},
 			Model:           "test-model",
 		})
 	}))
 	defer mlServer.Close()
 
 	service := NewRecommendationService(NewMLClient(mlServer.URL), time.Minute)
-	if _, _, err := service.GetByType(context.Background(), 42, "friends", 1); err == nil {
+	if _, _, err := service.GetByType(context.Background(), "42", "friends", 1); err == nil {
 		t.Fatal("expected an error when candidate eligibility cannot be verified")
 	}
 }
@@ -202,13 +248,13 @@ func TestRecommendationServiceUsesPopularContentForColdStartWithoutPreviousSet(t
 	var mlCalls atomic.Int32
 	mlServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		mlCalls.Add(1)
-		_ = json.NewEncoder(writer).Encode(models.RecommendationResponse{UserID: 42, Model: "test-model"})
+		_ = json.NewEncoder(writer).Encode(models.RecommendationResponse{UserID: "42", Model: "test-model"})
 	}))
 	defer mlServer.Close()
 
 	repository := &coldStartRepositoryFake{
 		profile:      models.UserProfile{Genres: []string{"jazz"}},
-		interactions: []models.Interaction{{Type: "like", TargetID: 9}},
+		interactions: []models.Interaction{{Type: "like", TargetID: "spotify-track-9"}},
 		popular: []models.PopularContent{
 			{Type: "song", ID: "spotify-track-1", Name: "So What", UsageCount: 8},
 			{Type: "artist", ID: "spotify-artist-1", Name: "Miles Davis", UsageCount: 4},
@@ -216,7 +262,7 @@ func TestRecommendationServiceUsesPopularContentForColdStartWithoutPreviousSet(t
 	}
 	service := NewRecommendationServiceWithRepository(NewMLClient(mlServer.URL), time.Minute, repository)
 
-	response, cached, err := service.GetByType(context.Background(), 42, "music", 10)
+	response, cached, err := service.GetByType(context.Background(), "42", "music", 10)
 	if err != nil || cached {
 		t.Fatalf("expected a fresh popularity response, response=%+v cached=%v error=%v", response, cached, err)
 	}
@@ -232,14 +278,43 @@ func TestRecommendationServiceUsesPopularContentForColdStartWithoutPreviousSet(t
 	}
 }
 
+func TestRecommendationServiceExcludesLikedSongFromPopularColdStart(t *testing.T) {
+	repository := &coldStartRepositoryFake{
+		interactions: []models.Interaction{{Type: "like", TargetID: "spotify-track-liked"}},
+		popular: []models.PopularContent{
+			{Type: "song", ID: "spotify-track-liked", Name: "Already liked"},
+			{Type: "song", ID: "spotify-track-new", Name: "New song"},
+			{Type: "artist", ID: "spotify-artist-liked", Name: "Artist"},
+		},
+	}
+	service := NewRecommendationServiceWithRepository(
+		NewMLClient("http://127.0.0.1:1"),
+		time.Minute,
+		repository,
+	)
+
+	response, _, err := service.GetByType(context.Background(), "auth-user-abc123", "music", 10)
+	if err != nil {
+		t.Fatalf("get popular recommendations: %v", err)
+	}
+	for _, recommendation := range response.Recommendations {
+		if recommendation.ItemKey == "spotify-track-liked" {
+			t.Fatal("already-liked song must be excluded from popular recommendations")
+		}
+	}
+	if len(response.Recommendations) != 2 {
+		t.Fatalf("expected unliked song and artist to remain, got %+v", response.Recommendations)
+	}
+}
+
 func TestRecommendationServiceRefreshesChangedColdStartInsteadOfUsingOldSet(t *testing.T) {
 	repository := &coldStartRepositoryFake{
 		popular: []models.PopularContent{{Type: "song", ID: "track-1", UsageCount: 5}},
 	}
 	store := &recommendationStoreFake{responses: map[string]models.RecommendationResponse{
 		"recommendations:last:42:music": {
-			UserID:          42,
-			Recommendations: []models.RecommendationItem{{ItemID: 17}},
+			UserID:          "42",
+			Recommendations: []models.RecommendationItem{{ItemID: "17"}},
 			Model:           "previous-model",
 		},
 	}}
@@ -250,7 +325,7 @@ func TestRecommendationServiceRefreshesChangedColdStartInsteadOfUsingOldSet(t *t
 		store,
 	)
 
-	response, cached, err := service.GetByType(context.Background(), 42, "music", 10)
+	response, cached, err := service.GetByType(context.Background(), "42", "music", 10)
 	if err != nil || cached {
 		t.Fatalf("expected a fresh response for changed/no input snapshot, response=%+v cached=%v error=%v", response, cached, err)
 	}
@@ -269,7 +344,7 @@ func TestRecommendationServiceCachesFor24HoursAndRefreshesWhenPreferencesChange(
 		}
 		_ = json.NewEncoder(writer).Encode(models.RecommendationResponse{
 			UserID:          payload.UserID,
-			Recommendations: []models.RecommendationItem{{ItemID: int(mlCalls.Load())}, {ItemID: 99}},
+			Recommendations: []models.RecommendationItem{{ItemID: "first"}, {ItemID: "99"}},
 			Model:           "test-model",
 		})
 	}))
@@ -286,11 +361,11 @@ func TestRecommendationServiceCachesFor24HoursAndRefreshesWhenPreferencesChange(
 	service := NewRecommendationServiceWithRepositoryAndStore(NewMLClient(mlServer.URL), time.Minute, repository, store)
 	ctx := context.Background()
 
-	first, cached, err := service.GetByType(ctx, 42, "music", 1)
+	first, cached, err := service.GetByType(ctx, "42", "music", 1)
 	if err != nil || cached || len(first.Recommendations) != 1 {
 		t.Fatalf("unexpected first calculation: response=%+v cached=%v error=%v", first, cached, err)
 	}
-	second, cached, err := service.GetByType(ctx, 42, "music", 10)
+	second, cached, err := service.GetByType(ctx, "42", "music", 10)
 	if err != nil || !cached {
 		t.Fatalf("expected Redis cache hit at a different result limit: response=%+v cached=%v error=%v", second, cached, err)
 	}
@@ -305,46 +380,46 @@ func TestRecommendationServiceCachesFor24HoursAndRefreshesWhenPreferencesChange(
 	}
 
 	repository.profile.Genres = []string{"rock"}
-	updated, cached, err := service.GetByType(ctx, 42, "music", 10)
+	updated, cached, err := service.GetByType(ctx, "42", "music", 10)
 	if err != nil || cached {
 		t.Fatalf("expected preference change to trigger immediate calculation, response=%+v cached=%v error=%v", updated, cached, err)
 	}
 	if got := mlCalls.Load(); got != 2 {
 		t.Fatalf("expected preferences change to cause second ML calculation, got %d", got)
 	}
-	if len(store.invalidatedUsers) != 1 || store.invalidatedUsers[0] != 42 {
+	if len(store.invalidatedUsers) != 1 || store.invalidatedUsers[0] != "42" {
 		t.Fatalf("expected preference change to invalidate user's Redis marker, got %v", store.invalidatedUsers)
 	}
 }
 
 func TestRecommendationServiceInvalidatesRedisCacheWhenInteractionIsRecorded(t *testing.T) {
 	mlServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		_ = json.NewEncoder(writer).Encode(models.RecommendationResponse{UserID: 42, Model: "test-model"})
+		_ = json.NewEncoder(writer).Encode(models.RecommendationResponse{UserID: "42", Model: "test-model"})
 	}))
 	defer mlServer.Close()
 
 	store := &recommendationStoreFake{
 		responses: make(map[string]models.RecommendationResponse),
 		cached: map[string]CachedRecommendation{
-			recommendationCacheKey(42, "music"): {Fingerprint: "previous"},
+			recommendationCacheKey("42", "music"): {Fingerprint: "previous"},
 		},
 	}
 	service := NewRecommendationServiceWithRepositoryAndStore(NewMLClient(mlServer.URL), time.Minute, nil, store)
 
-	if _, err := service.RecordInteraction(context.Background(), 42, models.Interaction{Type: "like", TargetID: 7}, 10); err != nil {
+	if _, err := service.RecordInteraction(context.Background(), "42", models.Interaction{Type: "like", TargetID: "spotify-track-7"}, 10); err != nil {
 		t.Fatalf("record interaction: %v", err)
 	}
-	if len(store.invalidatedUsers) != 1 || store.invalidatedUsers[0] != 42 {
+	if len(store.invalidatedUsers) != 1 || store.invalidatedUsers[0] != "42" {
 		t.Fatalf("expected Redis cache invalidation for user 42, got %v", store.invalidatedUsers)
 	}
-	if _, found := store.cached[recommendationCacheKey(42, "music")]; found {
+	if _, found := store.cached[recommendationCacheKey("42", "music")]; found {
 		t.Fatal("expected old Redis recommendation cache entry to be removed")
 	}
 }
 
 func TestRecommendationServiceKeepsMLForUsersWithEnoughRecentInteractions(t *testing.T) {
 	mlServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		_ = json.NewEncoder(writer).Encode(models.RecommendationResponse{UserID: 42, Model: "test-model"})
+		_ = json.NewEncoder(writer).Encode(models.RecommendationResponse{UserID: "42", Model: "test-model"})
 	}))
 	defer mlServer.Close()
 
@@ -354,7 +429,7 @@ func TestRecommendationServiceKeepsMLForUsersWithEnoughRecentInteractions(t *tes
 	}
 	service := NewRecommendationServiceWithRepository(NewMLClient(mlServer.URL), time.Minute, repository)
 
-	response, _, err := service.GetByType(context.Background(), 42, "music", 10)
+	response, _, err := service.GetByType(context.Background(), "42", "music", 10)
 	if err != nil || response.Model != "test-model" {
 		t.Fatalf("expected ML recommendations for a user with sufficient activity, response=%+v error=%v", response, err)
 	}
@@ -376,7 +451,7 @@ func TestRecommendationServicePersistsRecommendationsAndUsesBackupOnMLFailure(t 
 		}
 		_ = json.NewEncoder(writer).Encode(models.RecommendationResponse{
 			UserID:          payload.UserID,
-			Recommendations: []models.RecommendationItem{{ItemID: 17}, {ItemID: 18}},
+			Recommendations: []models.RecommendationItem{{ItemID: "17"}, {ItemID: "18"}},
 			Model:           "test-model",
 		})
 	}))
@@ -386,7 +461,7 @@ func TestRecommendationServicePersistsRecommendationsAndUsesBackupOnMLFailure(t 
 	service := NewRecommendationServiceWithRepositoryAndStore(NewMLClient(mlServer.URL), time.Minute, nil, store)
 	ctx := context.Background()
 
-	initial, _, err := service.GetByType(ctx, 42, "music", 10)
+	initial, _, err := service.GetByType(ctx, "42", "music", 10)
 	if err != nil {
 		t.Fatalf("get initial recommendations: %v", err)
 	}
@@ -399,13 +474,13 @@ func TestRecommendationServicePersistsRecommendationsAndUsesBackupOnMLFailure(t 
 	}
 
 	mlUnavailable.Store(true)
-	service.cache.InvalidateUser(42)
-	delete(store.cached, recommendationCacheKey(42, "music"))
-	backup, cached, err := service.GetByType(ctx, 42, "music", 1)
+	service.cache.InvalidateUser("42")
+	delete(store.cached, recommendationCacheKey("42", "music"))
+	backup, cached, err := service.GetByType(ctx, "42", "music", 1)
 	if err != nil || !cached {
 		t.Fatalf("expected stored backup response: response=%+v cached=%v error=%v", backup, cached, err)
 	}
-	if !backup.FromBackup || backup.Model != "test-model" || len(backup.Recommendations) != 1 || backup.Recommendations[0].ItemID != 17 {
+	if !backup.FromBackup || backup.Model != "test-model" || len(backup.Recommendations) != 1 || backup.Recommendations[0].ItemID != "17" {
 		t.Fatalf("expected limited prior recommendation marked as backup, got %+v", backup)
 	}
 	if !backup.CalculatedAt.Equal(initial.CalculatedAt) {
@@ -435,7 +510,7 @@ func TestRecommendationServiceCachesAndRefreshesAfterInteraction(t *testing.T) {
 		}
 		_ = json.NewEncoder(writer).Encode(models.RecommendationResponse{
 			UserID:           payload.UserID,
-			Recommendations:  []models.RecommendationItem{{ItemID: len(payload.Interactions) + 1}},
+			Recommendations:  []models.RecommendationItem{{ItemID: "interaction-result"}},
 			Model:            "test-model",
 			InteractionCount: len(payload.Interactions),
 		})
@@ -445,16 +520,16 @@ func TestRecommendationServiceCachesAndRefreshesAfterInteraction(t *testing.T) {
 	service := NewRecommendationService(NewMLClient(mlServer.URL), time.Minute)
 	ctx := context.Background()
 
-	initial, cached, err := service.Get(ctx, 42, 10)
+	initial, cached, err := service.Get(ctx, "42", 10)
 	if err != nil || cached || initial.InteractionCount != 0 {
 		t.Fatalf("unexpected initial response: response=%+v cached=%v error=%v", initial, cached, err)
 	}
-	_, cached, err = service.Get(ctx, 42, 10)
+	_, cached, err = service.Get(ctx, "42", 10)
 	if err != nil || !cached {
 		t.Fatalf("expected cached response: cached=%v error=%v", cached, err)
 	}
 
-	updated, err := service.RecordInteraction(ctx, 42, models.Interaction{Type: "like", TargetID: 7}, 10)
+	updated, err := service.RecordInteraction(ctx, "42", models.Interaction{Type: "like", TargetID: "spotify-track-7"}, 10)
 	if err != nil || updated.InteractionCount != 1 {
 		t.Fatalf("expected refreshed response: response=%+v error=%v", updated, err)
 	}
@@ -473,7 +548,7 @@ func TestMLClientRetriesOpensCircuitAndUsesFallback(t *testing.T) {
 			return
 		}
 		_ = json.NewEncoder(writer).Encode(models.RecommendationResponse{
-			UserID: 42,
+			UserID: "42",
 			Model:  "recovered-model",
 		})
 	}))
@@ -485,7 +560,7 @@ func TestMLClientRetriesOpensCircuitAndUsesFallback(t *testing.T) {
 	service := NewRecommendationService(client, time.Minute)
 
 	for attempt := 0; attempt < 2; attempt++ {
-		response, _, err := service.Get(context.Background(), 42, 10)
+		response, _, err := service.Get(context.Background(), "42", 10)
 		if err != nil || response.Model != "fallback" {
 			t.Fatalf("expected fallback after ML failure: response=%+v error=%v", response, err)
 		}
@@ -494,7 +569,7 @@ func TestMLClientRetriesOpensCircuitAndUsesFallback(t *testing.T) {
 		t.Fatalf("expected three HTTP attempts per request, got %d total calls", got)
 	}
 
-	response, _, err := service.Get(context.Background(), 42, 10)
+	response, _, err := service.Get(context.Background(), "42", 10)
 	if err != nil || response.Model != "fallback" {
 		t.Fatalf("expected immediate fallback while circuit is open: response=%+v error=%v", response, err)
 	}
@@ -506,7 +581,7 @@ func TestMLClientRetriesOpensCircuitAndUsesFallback(t *testing.T) {
 	client.breaker.mu.Lock()
 	client.breaker.openedAt = time.Now().Add(-time.Hour)
 	client.breaker.mu.Unlock()
-	response, err = client.Predict(context.Background(), models.RecommendationRequest{UserID: 42})
+	response, err = client.Predict(context.Background(), models.RecommendationRequest{UserID: "42"})
 	if err != nil || response.Model != "recovered-model" {
 		t.Fatalf("expected circuit recovery probe to succeed: response=%+v error=%v", response, err)
 	}
@@ -545,7 +620,7 @@ func TestMLClientSendsEmptyCollectionsInsteadOfNull(t *testing.T) {
 
 	response, err := NewMLClient(mlServer.URL).Predict(
 		context.Background(),
-		models.RecommendationRequest{UserID: 42, Type: "music"},
+		models.RecommendationRequest{UserID: "42", Type: "music"},
 	)
 	if err != nil {
 		t.Fatalf("send ML request: %v", err)

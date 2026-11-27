@@ -10,7 +10,7 @@ from urllib.request import Request, urlopen
 
 def fetch_preferences(
     endpoint: str,
-    user_id: int,
+    user_id: str,
     *,
     timeout: float = 10.0,
 ) -> Mapping[str, Any]:

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -22,7 +21,15 @@ type PopularityRepository interface {
 }
 
 type FriendRecommendationEligibilityRepository interface {
-	FilterEligibleFriendCandidates(ctx context.Context, userID string, candidateIDs []int) (map[int]struct{}, error)
+	FilterEligibleFriendCandidates(ctx context.Context, userID string, candidateIDs []string) (map[string]struct{}, error)
+}
+
+type MusicCatalogRepository interface {
+	GetMusicCatalog(ctx context.Context, limit int) ([]models.MusicCatalogItem, error)
+}
+
+type FriendRecommendationCandidatesRepository interface {
+	GetFriendRecommendationCandidates(ctx context.Context, userID string, limit int) ([]models.CandidateProfile, error)
 }
 
 type postgresUserProfileRepository struct{ pool *pgxpool.Pool }
@@ -82,8 +89,14 @@ func (repository *postgresUserProfileRepository) Get(ctx context.Context, userID
 	}
 
 	rows, err = repository.pool.Query(ctx, `
-		SELECT COALESCE(LOWER(TRIM(i.tipo)), ''), i.id_publicacion
+		SELECT COALESCE(LOWER(TRIM(i.tipo)), ''),
+		       CASE WHEN LOWER(TRIM(COALESCE(i.tipo, ''))) = 'like'
+		            THEN COALESCE(NULLIF(TRIM(c.spotify_id), ''), c.id_cancion::text, '')
+		            ELSE i.id_publicacion::text
+		       END
 		FROM INTERACCION i
+		LEFT JOIN PUBLICACION p ON p.id_publicacion = i.id_publicacion
+		LEFT JOIN CANCION c ON c.id_cancion = p.id_cancion
 		WHERE i.id_usuario = $1
 		  AND i.fecha_creacion >= now() - ($2 * interval '1 second')
 		  AND NOT EXISTS (
@@ -100,12 +113,10 @@ func (repository *postgresUserProfileRepository) Get(ctx context.Context, userID
 	var interactions []models.Interaction
 	for rows.Next() {
 		var interaction models.Interaction
-		var targetID string
-		if err := rows.Scan(&interaction.Type, &targetID); err != nil {
+		if err := rows.Scan(&interaction.Type, &interaction.TargetID); err != nil {
 			return models.UserProfile{}, nil, fmt.Errorf("scan recent user interaction: %w", err)
 		}
-		interaction.TargetID, err = strconv.Atoi(targetID)
-		if err != nil || interaction.TargetID < 1 {
+		if interaction.TargetID == "" {
 			continue
 		}
 		if recommendationType == "music" && interaction.Type != "like" {
@@ -134,7 +145,8 @@ func (repository *postgresUserProfileRepository) GetPopular(ctx context.Context,
 		WITH active_users AS (
 			SELECT u.id_usuario
 			FROM USUARIO u
-			WHERE NOT EXISTS (
+			WHERE COALESCE(u.suspendido, FALSE) = FALSE
+			  AND NOT EXISTS (
 				SELECT 1
 				FROM ACCION_MODERACION am
 				WHERE am.id_usuario_afectado = u.id_usuario
@@ -216,23 +228,13 @@ func (repository *postgresUserProfileRepository) GetPopular(ctx context.Context,
 	return popular, nil
 }
 
-func (repository *postgresUserProfileRepository) FilterEligibleFriendCandidates(ctx context.Context, userID string, candidateIDs []int) (map[int]struct{}, error) {
+func (repository *postgresUserProfileRepository) FilterEligibleFriendCandidates(ctx context.Context, userID string, candidateIDs []string) (map[string]struct{}, error) {
 	if repository.pool == nil {
 		return nil, errors.New("database connection pool is not initialized")
 	}
 
-	eligible := make(map[int]struct{}, len(candidateIDs))
+	eligible := make(map[string]struct{}, len(candidateIDs))
 	if len(candidateIDs) == 0 {
-		return eligible, nil
-	}
-
-	candidateUserIDs := make([]string, 0, len(candidateIDs))
-	for _, candidateID := range candidateIDs {
-		if candidateID > 0 {
-			candidateUserIDs = append(candidateUserIDs, strconv.Itoa(candidateID))
-		}
-	}
-	if len(candidateUserIDs) == 0 {
 		return eligible, nil
 	}
 
@@ -241,6 +243,7 @@ func (repository *postgresUserProfileRepository) FilterEligibleFriendCandidates(
 		FROM UNNEST($2::text[]) AS candidates(candidate_id)
 		JOIN USUARIO u ON u.id_usuario::text = candidates.candidate_id
 		WHERE u.id_usuario::text <> $1
+		  AND COALESCE(u.suspendido, FALSE) = FALSE
 		  AND NOT EXISTS (
 			SELECT 1
 			FROM BLOQUEO b
@@ -259,7 +262,7 @@ func (repository *postgresUserProfileRepository) FilterEligibleFriendCandidates(
 			WHERE ((a.id_usuario_1::text = $1 AND a.id_usuario_2::text = u.id_usuario::text)
 			    OR (a.id_usuario_1::text = u.id_usuario::text AND a.id_usuario_2::text = $1))
 			  AND UPPER(TRIM(COALESCE(a.estado, ''))) = 'ACEPTADA'
-		  )`, userID, candidateUserIDs)
+		  )`, userID, candidateIDs)
 	if err != nil {
 		return nil, fmt.Errorf("filter ineligible friend recommendation candidates: %w", err)
 	}
@@ -270,14 +273,140 @@ func (repository *postgresUserProfileRepository) FilterEligibleFriendCandidates(
 		if err := rows.Scan(&candidateID); err != nil {
 			return nil, fmt.Errorf("scan eligible friend recommendation candidate: %w", err)
 		}
-		id, err := strconv.Atoi(candidateID)
-		if err != nil {
-			return nil, fmt.Errorf("parse eligible friend recommendation candidate id %q: %w", candidateID, err)
-		}
-		eligible[id] = struct{}{}
+		eligible[candidateID] = struct{}{}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("read eligible friend recommendation candidates: %w", err)
 	}
 	return eligible, nil
+}
+
+func (repository *postgresUserProfileRepository) GetMusicCatalog(ctx context.Context, limit int) ([]models.MusicCatalogItem, error) {
+	if repository.pool == nil {
+		return nil, errors.New("database connection pool is not initialized")
+	}
+	if limit < 1 {
+		return []models.MusicCatalogItem{}, nil
+	}
+
+	rows, err := repository.pool.Query(ctx, `
+		SELECT COALESCE(NULLIF(TRIM(spotify_id), ''), id_cancion::text),
+		       COALESCE(NULLIF(TRIM(artista_nombre), ''), ''),
+		       COALESCE(generos, ARRAY[]::text[])
+		FROM CANCION
+		ORDER BY titulo, id_cancion
+		LIMIT $1`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("query music catalog: %w", err)
+	}
+	defer rows.Close()
+
+	catalog := make([]models.MusicCatalogItem, 0, limit)
+	for rows.Next() {
+		var rawID, artist string
+		var genres []string
+		if err := rows.Scan(&rawID, &artist, &genres); err != nil {
+			return nil, fmt.Errorf("scan music catalog item: %w", err)
+		}
+		if rawID == "" {
+			continue
+		}
+		item := models.MusicCatalogItem{ItemID: rawID, Profile: models.UserProfile{Genres: genres, Artists: []string{}, Songs: []string{rawID}}}
+		if artist != "" {
+			item.Profile.Artists = append(item.Profile.Artists, artist)
+		}
+		catalog = append(catalog, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read music catalog: %w", err)
+	}
+	return catalog, nil
+}
+
+func (repository *postgresUserProfileRepository) GetFriendRecommendationCandidates(ctx context.Context, userID string, limit int) ([]models.CandidateProfile, error) {
+	if repository.pool == nil {
+		return nil, errors.New("database connection pool is not initialized")
+	}
+	if limit < 1 {
+		return []models.CandidateProfile{}, nil
+	}
+
+	rows, err := repository.pool.Query(ctx, `
+	WITH eligible_candidates AS (
+		SELECT u.id_usuario::text AS user_id
+		FROM USUARIO u
+		LEFT JOIN CONFIGURACION_PRIVACIDAD privacy ON privacy.id_usuario = u.id_usuario
+		WHERE u.id_usuario::text <> $1
+		  AND COALESCE(u.suspendido, FALSE) = FALSE
+		  AND UPPER(TRIM(COALESCE(privacy.visibilidad_perfil, 'PUBLICO'))) = 'PUBLICO'
+		  AND NOT EXISTS (
+			SELECT 1 FROM BLOQUEO b
+			WHERE (b.id_usuario_bloqueador::text = $1 AND b.id_usuario_bloqueado::text = u.id_usuario::text)
+			   OR (b.id_usuario_bloqueado::text = $1 AND b.id_usuario_bloqueador::text = u.id_usuario::text)
+		  )
+		  AND NOT EXISTS (
+			SELECT 1 FROM ACCION_MODERACION am
+			WHERE am.id_usuario_afectado::text = u.id_usuario::text
+			  AND UPPER(TRIM(COALESCE(am.tipo_accion, ''))) IN ('BAN', 'SUSPENSION', 'INACTIVO', 'DESACTIVADO')
+		  )
+		  AND NOT EXISTS (
+			SELECT 1 FROM AMISTAD a
+			WHERE ((a.id_usuario_1::text = $1 AND a.id_usuario_2::text = u.id_usuario::text)
+			    OR (a.id_usuario_1::text = u.id_usuario::text AND a.id_usuario_2::text = $1))
+			  AND UPPER(TRIM(COALESCE(a.estado, ''))) = 'ACEPTADA'
+		  )
+		ORDER BY u.id_usuario
+		LIMIT $2
+	)
+	SELECT eligible_candidates.user_id, UPPER(TRIM(COALESCE(pref.tipo, ''))), TRIM(COALESCE(pref.spotify_id, ''))
+	FROM eligible_candidates
+	LEFT JOIN PREFERENCIA_MUSICAL pref
+	  ON pref.id_usuario::text = eligible_candidates.user_id
+	 AND pref.spotify_id IS NOT NULL
+	 AND TRIM(pref.spotify_id) <> ''
+	ORDER BY eligible_candidates.user_id, pref.tipo, pref.spotify_id`, userID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("query friend recommendation candidates: %w", err)
+	}
+	defer rows.Close()
+
+	candidates := make([]models.CandidateProfile, 0, limit)
+	indexes := make(map[string]int, limit)
+	for rows.Next() {
+		var rawID string
+		var preferenceType, value string
+		if err := rows.Scan(&rawID, &preferenceType, &value); err != nil {
+			return nil, fmt.Errorf("scan friend recommendation candidate: %w", err)
+		}
+		if rawID == "" {
+			continue
+		}
+		index, exists := indexes[rawID]
+		if !exists {
+			index = len(candidates)
+			indexes[rawID] = index
+			candidates = append(candidates, models.CandidateProfile{
+				UserID: rawID,
+				Profile: models.UserProfile{
+					Genres: []string{}, Artists: []string{}, Songs: []string{},
+				},
+			})
+		}
+		if value == "" {
+			continue
+		}
+		profile := &candidates[index].Profile
+		switch preferenceType {
+		case "GENERO", "GENRE":
+			profile.Genres = append(profile.Genres, value)
+		case "ARTISTA", "ARTIST":
+			profile.Artists = append(profile.Artists, value)
+		case "CANCION", "SONG", "TRACK":
+			profile.Songs = append(profile.Songs, value)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read friend recommendation candidates: %w", err)
+	}
+	return candidates, nil
 }

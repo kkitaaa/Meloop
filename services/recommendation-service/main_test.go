@@ -35,7 +35,7 @@ func TestRecommendationHandlerReturnsMusicRecommendations(t *testing.T) {
 		}
 		_ = json.NewEncoder(writer).Encode(models.RecommendationResponse{
 			UserID:          payload.UserID,
-			Recommendations: []models.RecommendationItem{{ItemID: 11}},
+			Recommendations: []models.RecommendationItem{{ItemID: "11"}},
 			Model:           "test-model",
 			ModelVersion:    "2.3.4",
 		})
@@ -43,7 +43,7 @@ func TestRecommendationHandlerReturnsMusicRecommendations(t *testing.T) {
 	defer mlServer.Close()
 
 	handler := recommendationHandler(services.NewRecommendationService(services.NewMLClient(mlServer.URL), time.Minute))
-	request := httptest.NewRequest(http.MethodGet, "/recommendations/42/music?limit=3", nil)
+	request := httptest.NewRequest(http.MethodGet, "/recommendations/a0000000000000000000000000000001/music?limit=3", nil)
 	recorder := httptest.NewRecorder()
 
 	handler.ServeHTTP(recorder, request)
@@ -66,8 +66,8 @@ func TestRecommendationHandlerReturnsMusicRecommendations(t *testing.T) {
 func TestRecommendationHandlerServesRedisBackupAsJSON(t *testing.T) {
 	calculatedAt := time.Date(2026, time.October, 5, 12, 0, 0, 0, time.UTC)
 	store := recommendationBackupFake{response: models.RecommendationResponse{
-		UserID:          42,
-		Recommendations: []models.RecommendationItem{{ItemID: 99}},
+		UserID:          "42",
+		Recommendations: []models.RecommendationItem{{ItemID: "99"}},
 		Model:           "previous-model",
 		CalculatedAt:    calculatedAt,
 	}}
@@ -78,7 +78,7 @@ func TestRecommendationHandlerServesRedisBackupAsJSON(t *testing.T) {
 		store,
 	)
 	handler := recommendationHandler(service)
-	request := httptest.NewRequest(http.MethodGet, "/recommendations/42/music", nil)
+	request := httptest.NewRequest(http.MethodGet, "/recommendations/a0000000000000000000000000000001/music", nil)
 	recorder := httptest.NewRecorder()
 
 	handler.ServeHTTP(recorder, request)
@@ -137,7 +137,7 @@ func TestReadinessHandlerReturnsUnavailableWhenMLIsNotReady(t *testing.T) {
 
 func TestRecommendationHandlerFallsBackWhenMLIsUnavailable(t *testing.T) {
 	handler := recommendationHandler(services.NewRecommendationService(services.NewMLClient("http://127.0.0.1:1"), time.Minute))
-	request := httptest.NewRequest(http.MethodGet, "/recommendations/friends/42", nil)
+	request := httptest.NewRequest(http.MethodGet, "/recommendations/friends/a0000000000000000000000000000001", nil)
 	recorder := httptest.NewRecorder()
 
 	handler.ServeHTTP(recorder, request)

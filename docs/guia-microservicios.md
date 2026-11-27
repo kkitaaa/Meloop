@@ -94,13 +94,15 @@ guardes secretos en Git. Arranca solo la infraestructura cuando desarrolles los
 servicios en procesos locales:
 
 ```powershell
-docker compose up -d redis rabbitmq minio minio-init
+docker compose up -d redis rabbitmq minio
+docker compose --profile storage-init up -d minio-init
 docker compose ps
 docker compose logs --tail=100 redis rabbitmq minio minio-init
 ```
 
-`minio-init` prepara el bucket y las credenciales de media y puede terminar
-después de completar esa tarea; no tiene que permanecer ejecutándose.
+`minio-init` pertenece al perfil opcional `storage-init`. Al activarlo prepara
+el bucket y las credenciales de media y puede terminar después de completar
+esa tarea; no tiene que permanecer ejecutándose.
 
 | Dependencia | Dirección local | Validación |
 | --- | --- | --- |
