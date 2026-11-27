@@ -55,6 +55,15 @@ catálogo mediante `UserPreferencesPipeline`, y usa similitud coseno de scikit-l
 ordenar los candidatos. El servicio no inventa canciones: el backend debe enviar el
 catálogo que quiere que el modelo evalúe.
 
+Las canciones con `type: "like"` aportan los géneros y artistas de sus perfiles
+de catálogo al vector del usuario y luego se excluyen de los resultados. Las
+señales explícitas pesan 1.0; las características inferidas suman 0.5 por
+canción distinta marcada con like, hasta un máximo de 2.0 adicionales. El
+pipeline normaliza y deduplica las características antes de ponderarlas. Si no
+hay señales musicales, el servicio devuelve los primeros elementos disponibles
+del catálogo como recomendaciones de descubrimiento; si todos están marcados
+con like, devuelve una lista vacía.
+
 Ejemplo de petición:
 
 ```json

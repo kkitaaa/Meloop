@@ -6,6 +6,18 @@ from app.main import app
 client = TestClient(app)
 
 
+def precision_at_k(recommended_ids, relevant_ids, k):
+    selected = recommended_ids[:k]
+    return sum(item_id in relevant_ids for item_id in selected) / k
+
+
+def recall_at_k(recommended_ids, relevant_ids, k):
+    if not relevant_ids:
+        return 0.0
+    selected = recommended_ids[:k]
+    return sum(item_id in relevant_ids for item_id in selected) / len(relevant_ids)
+
+
 def test_health_reports_live_process():
     response = client.get("/health")
 
@@ -194,3 +206,136 @@ def test_music_recommendations_filter_likes_before_applying_limit():
         "spotify-track-new-1",
         "spotify-track-new-2",
     ]
+
+
+def test_music_recommendations_infer_genre_from_likes_and_measures_quality_at_k():
+    liked_tracks = [
+        {
+            "item_id": f"deftones-liked-{index}",
+            "profile": {"genres": ["metal"], "artists": ["Deftones"]},
+        }
+        for index in range(5)
+    ]
+    catalog = [
+        *liked_tracks,
+        {"item_id": "deftones-unheard", "profile": {"genres": ["metal"], "artists": ["Deftones"]}},
+        {"item_id": "gojira-unheard", "profile": {"genres": ["metal"], "artists": ["Gojira"]}},
+        {"item_id": "pop-unheard", "profile": {"genres": ["pop"], "artists": ["Dua Lipa"]}},
+    ]
+    response = client.post(
+        "/recommendations/music",
+        json={
+            "user_id": "auth-user-metal",
+            "limit": 2,
+            "interactions": [
+                {"type": "like", "target_id": track["item_id"]} for track in liked_tracks
+            ],
+            "catalog": catalog,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    recommended_ids = [item["item_id"] for item in body["recommendations"]]
+    relevant_ids = {"deftones-unheard", "gojira-unheard"}
+    assert recommended_ids == ["deftones-unheard", "gojira-unheard"]
+    assert precision_at_k(recommended_ids, relevant_ids, 2) == 1.0
+    assert recall_at_k(recommended_ids, relevant_ids, 2) == 1.0
+
+
+def test_music_recommendations_learn_more_than_one_artist_from_likes():
+    response = client.post(
+        "/recommendations/music",
+        json={
+            "user_id": "auth-user-varied",
+            "limit": 2,
+            "interactions": [
+                {"type": "like", "target_id": "deftones-liked"},
+                {"type": "like", "target_id": "radiohead-liked"},
+            ],
+            "catalog": [
+                {
+                    "item_id": "deftones-liked",
+                    "profile": {"genres": ["metal"], "artists": ["Deftones"]},
+                },
+                {
+                    "item_id": "radiohead-liked",
+                    "profile": {"genres": ["alternative"], "artists": ["Radiohead"]},
+                },
+                {
+                    "item_id": "deftones-next",
+                    "profile": {"genres": ["metal"], "artists": ["Deftones"]},
+                },
+                {
+                    "item_id": "radiohead-next",
+                    "profile": {"genres": ["alternative"], "artists": ["Radiohead"]},
+                },
+                {
+                    "item_id": "unrelated-pop",
+                    "profile": {"genres": ["pop"], "artists": ["Dua Lipa"]},
+                },
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    assert {item["item_id"] for item in response.json()["recommendations"]} == {
+        "deftones-next",
+        "radiohead-next",
+    }
+
+
+def test_music_recommendations_return_catalog_fallback_without_preferences():
+    response = client.post(
+        "/recommendations/music",
+        json={
+            "user_id": "auth-user-new",
+            "limit": 2,
+            "catalog": [
+                {"item_id": "catalog-first"},
+                {"item_id": "catalog-second"},
+                {"item_id": "catalog-third"},
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["model"] == "music_catalog_fallback"
+    assert [item["item_id"] for item in response.json()["recommendations"]] == [
+        "catalog-first",
+        "catalog-second",
+    ]
+
+
+def test_music_recommendations_return_empty_when_all_catalog_songs_are_liked():
+    response = client.post(
+        "/recommendations/music",
+        json={
+            "user_id": "auth-user-all-liked",
+            "limit": 3,
+            "interactions": [{"type": "like", "target_id": "already-liked"}],
+            "catalog": [{"item_id": "already-liked", "profile": {"genres": ["metal"]}}],
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["recommendations"] == []
+
+
+def test_music_recommendations_handle_liked_songs_without_genres():
+    response = client.post(
+        "/recommendations/music",
+        json={
+            "user_id": "auth-user-no-genre",
+            "limit": 1,
+            "interactions": [{"type": "like", "target_id": "liked-no-genre"}],
+            "catalog": [
+                {"item_id": "liked-no-genre", "profile": {"artists": ["Deftones"]}},
+                {"item_id": "same-artist", "profile": {"artists": ["Deftones"]}},
+                {"item_id": "unrelated", "profile": {"artists": ["Dua Lipa"]}},
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    assert [item["item_id"] for item in response.json()["recommendations"]] == ["same-artist"]

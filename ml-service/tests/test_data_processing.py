@@ -50,6 +50,16 @@ def test_transform_includes_songs_in_the_model_matrix():
     assert np.array_equal(processed.preference_matrix.toarray(), [[1]])
 
 
+def test_transform_applies_weights_to_normalized_preference_features():
+    processed = UserPreferencesPipeline().transform(
+        {"genres": ["Rock", " rock "], "artists": ["Deftones"]},
+        preference_weights={"genre:rock": 2.5},
+    )
+
+    assert processed.preference_features == ("artist:deftones", "genre:rock")
+    assert np.array_equal(processed.preference_matrix.toarray(), [[1.0, 2.5]])
+
+
 def test_fetch_preferences_adds_user_id_and_decodes_json(monkeypatch):
     class FakeResponse:
         def __enter__(self):
