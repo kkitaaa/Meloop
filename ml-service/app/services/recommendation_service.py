@@ -53,7 +53,7 @@ class RecommendationService:
         ]
         feature_names = tuple(
             sorted(
-            preference_features
+                preference_features
                 | {feature for item in processed_catalog for feature in item.preference_features}
             )
         )
@@ -83,11 +83,7 @@ class RecommendationService:
         if liked_items:
             ranked = tuple(
                 sorted(
-                    (
-                        item
-                        for item in ranked
-                        if item.item_id not in liked_items
-                    ),
+                    (item for item in ranked if item.item_id not in liked_items),
                     key=lambda item: (-item.score, item.item_id),
                 )
             )
