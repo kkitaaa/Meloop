@@ -13,13 +13,17 @@ VALUES
     (5, 5, 1000)
 ON CONFLICT (id_nivel) DO NOTHING;
 
-INSERT INTO CANCION (id_cancion, spotify_id, titulo, artista_nombre)
+INSERT INTO CANCION (id_cancion, spotify_id, titulo, artista_nombre, generos)
 VALUES
-    ('101', '101', 'Luz de invierno', 'Artista Semilla'),
-    ('102', 'seed-track-002', 'Rutas paralelas', 'Los Ejemplos'),
-    ('103', 'seed-track-003', 'Cielo abierto', 'Artista Semilla'),
-    ('104', '104', 'Pequenos comienzos', 'Banda de Prueba')
-ON CONFLICT DO NOTHING;
+    ('101', '101', 'Luz de invierno', 'Artista Semilla', ARRAY['indie', 'alternative']),
+    ('102', 'seed-track-002', 'Rutas paralelas', 'Los Ejemplos', ARRAY['indie-pop', 'rock']),
+    ('103', 'seed-track-003', 'Cielo abierto', 'Artista Semilla', ARRAY['indie', 'folk']),
+    ('104', '104', 'Pequenos comienzos', 'Banda de Prueba', ARRAY['electronic', 'synth-pop'])
+ON CONFLICT (id_cancion) DO UPDATE SET
+    spotify_id = EXCLUDED.spotify_id,
+    titulo = EXCLUDED.titulo,
+    artista_nombre = EXCLUDED.artista_nombre,
+    generos = EXCLUDED.generos;
 
 -- Reemplaza las cuentas seed anteriores (IDs numericos) y sus datos
 -- dependientes para evitar colisiones por correo/username al actualizar el seed.

@@ -20,7 +20,9 @@ class CandidateProfile(BaseModel):
 
 
 class RecommendationRequest(BaseModel):
-    user_id: str = Field(..., min_length=1, max_length=64, description="ID del usuario para generar recomendaciones.")
+    user_id: str = Field(
+        ..., min_length=1, max_length=64, description="ID del usuario para generar recomendaciones."
+    )
     limit: int = Field(default=10, ge=1, le=50, description="Cantidad máxima de sugerencias.")
     type: Literal["all", "music", "friends"] = "all"
     preferences: list[str] = Field(
@@ -43,7 +45,9 @@ class MusicCatalogItem(BaseModel):
 
 
 class MusicRecommendationRequest(BaseModel):
-    user_id: str = Field(..., min_length=1, max_length=64, description="ID del usuario para generar recomendaciones.")
+    user_id: str = Field(
+        ..., min_length=1, max_length=64, description="ID del usuario para generar recomendaciones."
+    )
     limit: int = Field(default=10, ge=1, le=50, description="Cantidad máxima de sugerencias.")
     preferences: list[str] = Field(
         default_factory=list, description="Gustos adicionales del usuario."

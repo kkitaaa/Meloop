@@ -56,8 +56,13 @@ docker-compose up
 Creating meloop-redis-1 ... done
 Creating meloop-rabbitmq-1 ... done
 Creating meloop-minio-1 ... done
-Creating meloop-minio-init-1 ... done
 Creating meloop-api-gateway-1 ... done
+```
+
+`minio-init` es opcional y no se ejecuta con `docker compose up -d`. Para crear el bucket y configurar las políticas, ejecuta:
+
+```bash
+docker compose --profile storage-init up -d minio-init
 ```
 
 ### Paso 4: Verificar servicios activos

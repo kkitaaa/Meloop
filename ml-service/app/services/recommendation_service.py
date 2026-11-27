@@ -45,11 +45,26 @@ class RecommendationService:
         if not preference_features:
             return self._empty_response(request, "El usuario no tiene historial musical suficiente")
 
+        liked_items = {
+            interaction.target_id
+            for interaction in request.interactions
+            if interaction.type == "like"
+        }
+        catalog = [item for item in request.catalog if item.item_id not in liked_items]
+        if not catalog:
+            return RecommendationResponse(
+                user_id=request.user_id,
+                recommendations=[],
+                model="music_content_similarity",
+                model_version=self.model.version,
+                interaction_count=len(request.interactions),
+            )
+
         processed_catalog = [
             self.preferences_pipeline.transform(
                 self._profile_data(item.profile.genres, item.profile.artists, item.profile.songs)
             )
-            for item in request.catalog
+            for item in catalog
         ]
         feature_names = tuple(
             sorted(
@@ -71,22 +86,10 @@ class RecommendationService:
         ranked = self.model.recommend_catalog(
             user_vector,
             catalog_vectors,
-            [item.item_id for item in request.catalog],
+            [item.item_id for item in catalog],
             feature_names,
             request.limit,
         )
-        liked_items = {
-            interaction.target_id
-            for interaction in request.interactions
-            if interaction.type == "like"
-        }
-        if liked_items:
-            ranked = tuple(
-                sorted(
-                    (item for item in ranked if item.item_id not in liked_items),
-                    key=lambda item: (-item.score, item.item_id),
-                )
-            )
         return RecommendationResponse(
             user_id=request.user_id,
             recommendations=[

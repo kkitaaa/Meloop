@@ -54,13 +54,17 @@ func (service *RecommendationService) Get(ctx context.Context, userID string, li
 }
 
 func (service *RecommendationService) GetByType(ctx context.Context, userID string, recommendationType string, limit int) (models.RecommendationResponse, bool, error) {
+	requestType := recommendationType
+	if requestType != "friends" {
+		requestType = "music"
+	}
 	service.mu.RLock()
 	state := service.users[userID]
 	service.mu.RUnlock()
 	profile := models.UserProfile{}
 	interactions := state.interactions
 	if service.profiles != nil {
-		persistedProfile, persistedInteractions, err := service.profiles.Get(ctx, userID, recommendationType)
+		persistedProfile, persistedInteractions, err := service.profiles.Get(ctx, userID, requestType)
 		if err != nil {
 			return models.RecommendationResponse{}, false, fmt.Errorf("load recommendation profile: %w", err)
 		}
@@ -68,10 +72,10 @@ func (service *RecommendationService) GetByType(ctx context.Context, userID stri
 		interactions = append(persistedInteractions, interactions...)
 	}
 	preferences := profilePreferences(profile, state.preferences)
-	filteredInteractions := filterInteractions(interactions, recommendationType)
+	filteredInteractions := filterInteractions(interactions, requestType)
 	var err error
 	catalog := []models.MusicCatalogItem{}
-	if recommendationType == "music" {
+	if requestType == "music" {
 		if repository, ok := service.profiles.(repositories.MusicCatalogRepository); ok {
 			catalog, err = repository.GetMusicCatalog(ctx, recommendationCacheLimit)
 			if err != nil {
@@ -135,7 +139,7 @@ func (service *RecommendationService) GetByType(ctx context.Context, userID stri
 	}
 
 	response, err := service.mlClient.Predict(ctx, models.RecommendationRequest{
-		UserID: userID, Limit: recommendationCacheLimit, Type: recommendationType,
+		UserID: userID, Limit: recommendationCacheLimit, Type: requestType,
 		Preferences: preferences, Profile: profile,
 		Interactions: filteredInteractions,
 		Catalog:      catalog, CandidateProfiles: candidateProfiles,

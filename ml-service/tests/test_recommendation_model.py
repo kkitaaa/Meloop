@@ -58,7 +58,10 @@ def test_recommend_catalog_ranks_music_by_content_similarity(model):
         limit=2,
     )
 
-    assert [(item.item_id, item.score) for item in recommendations] == [("track-101", 1.0), ("track-102", 0.5)]
+    assert [(item.item_id, item.score) for item in recommendations] == [
+        ("track-101", 1.0),
+        ("track-102", 0.5),
+    ]
     assert recommendations[0].matching_features == ("artist:a", "genre:rock")
 
 

@@ -16,11 +16,20 @@ import (
 type profileRepositoryFake struct{}
 
 func (profileRepositoryFake) Get(context.Context, string, string) (models.UserProfile, []models.Interaction, error) {
-	return models.UserProfile{Genres: []string{"jazz"}, Artists: []string{"Miles Davis"}, Songs: []string{"So What"}}, []models.Interaction{{Type: "comment", TargetID: "post-9"}}, nil
+	return models.UserProfile{Genres: []string{"jazz"}, Artists: []string{"Miles Davis"}, Songs: []string{"So What"}}, []models.Interaction{{Type: "like", TargetID: "spotify-track-9"}}, nil
 }
 
 func (profileRepositoryFake) GetPopular(context.Context, string, int) ([]models.PopularContent, error) {
 	return nil, nil
+}
+
+func (profileRepositoryFake) GetMusicCatalog(context.Context, int) ([]models.MusicCatalogItem, error) {
+	return []models.MusicCatalogItem{{
+		ItemID: "spotify-track-10",
+		Profile: models.UserProfile{
+			Genres: []string{"jazz"}, Artists: []string{"Miles Davis"}, Songs: []string{"spotify-track-10"},
+		},
+	}}, nil
 }
 
 type coldStartRepositoryFake struct {
@@ -123,7 +132,14 @@ func TestRecommendationServiceLoadsPersistedProfile(t *testing.T) {
 		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
 			t.Fatalf("decode ML request: %v", err)
 		}
-		if len(payload.Profile.Genres) != 1 || payload.Profile.Genres[0] != "jazz" || len(payload.Interactions) != 1 {
+		if request.URL.Path != "/recommendations/music" {
+			t.Fatalf("expected all recommendations to use the music endpoint, got %q", request.URL.Path)
+		}
+		if payload.Type != "music" || len(payload.Catalog) != 1 || payload.Catalog[0].ItemID != "spotify-track-10" ||
+			len(payload.Catalog[0].Profile.Genres) != 1 || payload.Catalog[0].Profile.Genres[0] != "jazz" {
+			t.Fatalf("all recommendation request must include a music catalog: %+v", payload)
+		}
+		if len(payload.Profile.Genres) != 1 || payload.Profile.Genres[0] != "jazz" || len(payload.Interactions) != 1 || payload.Interactions[0].Type != "like" {
 			t.Fatalf("persisted profile was not packaged: %+v", payload)
 		}
 		_ = json.NewEncoder(writer).Encode(models.RecommendationResponse{UserID: payload.UserID, Model: "test-model"})
@@ -133,6 +149,36 @@ func TestRecommendationServiceLoadsPersistedProfile(t *testing.T) {
 	service := NewRecommendationServiceWithRepository(NewMLClient(mlServer.URL), time.Minute, profileRepositoryFake{})
 	if _, _, err := service.Get(context.Background(), "42", 10); err != nil {
 		t.Fatalf("get recommendations: %v", err)
+	}
+}
+
+func TestRecordInteractionUsesMusicRecommendationRequest(t *testing.T) {
+	var requestedPath string
+	mlServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		requestedPath = request.URL.Path
+		var payload models.RecommendationRequest
+		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode ML request: %v", err)
+		}
+		if payload.Type != "music" || len(payload.Catalog) != 1 {
+			t.Fatalf("interaction recommendation must include music catalog and type, got %+v", payload)
+		}
+		if len(payload.Interactions) != 2 || payload.Interactions[1].TargetID != "spotify-track-new-like" {
+			t.Fatalf("new like was not included in ML request: %+v", payload.Interactions)
+		}
+		_ = json.NewEncoder(writer).Encode(models.RecommendationResponse{UserID: payload.UserID, Model: "music_content_similarity"})
+	}))
+	defer mlServer.Close()
+
+	service := NewRecommendationServiceWithRepository(NewMLClient(mlServer.URL), time.Minute, profileRepositoryFake{})
+	_, err := service.RecordInteraction(context.Background(), "auth-user-42", models.Interaction{
+		Type: "like", TargetID: "spotify-track-new-like",
+	}, 5)
+	if err != nil {
+		t.Fatalf("record interaction: %v", err)
+	}
+	if requestedPath != "/recommendations/music" {
+		t.Fatalf("expected POST /recommendations/music, got %q", requestedPath)
 	}
 }
 

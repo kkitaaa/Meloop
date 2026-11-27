@@ -114,7 +114,10 @@ def test_music_recommendations_rank_catalog_with_pipeline_and_model():
             "limit": 2,
             "profile": {"genres": ["rock"], "artists": ["Arctic Monkeys"]},
             "catalog": [
-                {"item_id": "spotify-track-101", "profile": {"genres": ["rock"], "artists": ["Arctic Monkeys"]}},
+                {
+                    "item_id": "spotify-track-101",
+                    "profile": {"genres": ["rock"], "artists": ["Arctic Monkeys"]},
+                },
                 {"item_id": "spotify-track-102", "profile": {"genres": ["rock"]}},
                 {"item_id": "spotify-track-103", "profile": {"genres": ["jazz"]}},
             ],
@@ -126,7 +129,10 @@ def test_music_recommendations_rank_catalog_with_pipeline_and_model():
     assert body["user_id"] == "auth-user-42"
     assert body["model"] == "music_content_similarity"
     assert body["model_version"] == "1.0.0"
-    assert [item["item_id"] for item in body["recommendations"]] == ["spotify-track-101", "spotify-track-102"]
+    assert [item["item_id"] for item in body["recommendations"]] == [
+        "spotify-track-101",
+        "spotify-track-102",
+    ]
     assert body["recommendations"][0]["score"] == 1.0
 
 
@@ -155,3 +161,36 @@ def test_music_recommendations_exclude_the_liked_song_identifier():
 
     assert response.status_code == 200
     assert [item["item_id"] for item in response.json()["recommendations"]] == ["spotify-track-new"]
+
+
+def test_music_recommendations_filter_likes_before_applying_limit():
+    response = client.post(
+        "/recommendations/music",
+        json={
+            "user_id": "auth-user-abc123",
+            "limit": 2,
+            "profile": {"genres": ["rock"]},
+            "interactions": [
+                {"type": "like", "target_id": "spotify-track-loved-1"},
+                {"type": "like", "target_id": "spotify-track-loved-2"},
+            ],
+            "catalog": [
+                {
+                    "item_id": "spotify-track-loved-1",
+                    "profile": {"genres": ["rock"]},
+                },
+                {
+                    "item_id": "spotify-track-loved-2",
+                    "profile": {"genres": ["rock"]},
+                },
+                {"item_id": "spotify-track-new-1", "profile": {"genres": ["rock"]}},
+                {"item_id": "spotify-track-new-2", "profile": {"genres": ["rock"]}},
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    assert [item["item_id"] for item in response.json()["recommendations"]] == [
+        "spotify-track-new-1",
+        "spotify-track-new-2",
+    ]

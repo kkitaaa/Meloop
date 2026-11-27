@@ -145,7 +145,8 @@ func (repository *postgresUserProfileRepository) GetPopular(ctx context.Context,
 		WITH active_users AS (
 			SELECT u.id_usuario
 			FROM USUARIO u
-			WHERE NOT EXISTS (
+			WHERE COALESCE(u.suspendido, FALSE) = FALSE
+			  AND NOT EXISTS (
 				SELECT 1
 				FROM ACCION_MODERACION am
 				WHERE am.id_usuario_afectado = u.id_usuario
@@ -242,6 +243,7 @@ func (repository *postgresUserProfileRepository) FilterEligibleFriendCandidates(
 		FROM UNNEST($2::text[]) AS candidates(candidate_id)
 		JOIN USUARIO u ON u.id_usuario::text = candidates.candidate_id
 		WHERE u.id_usuario::text <> $1
+		  AND COALESCE(u.suspendido, FALSE) = FALSE
 		  AND NOT EXISTS (
 			SELECT 1
 			FROM BLOQUEO b
@@ -289,7 +291,8 @@ func (repository *postgresUserProfileRepository) GetMusicCatalog(ctx context.Con
 
 	rows, err := repository.pool.Query(ctx, `
 		SELECT COALESCE(NULLIF(TRIM(spotify_id), ''), id_cancion::text),
-		       COALESCE(NULLIF(TRIM(artista_nombre), ''), '')
+		       COALESCE(NULLIF(TRIM(artista_nombre), ''), ''),
+		       COALESCE(generos, ARRAY[]::text[])
 		FROM CANCION
 		ORDER BY titulo, id_cancion
 		LIMIT $1`, limit)
@@ -301,13 +304,14 @@ func (repository *postgresUserProfileRepository) GetMusicCatalog(ctx context.Con
 	catalog := make([]models.MusicCatalogItem, 0, limit)
 	for rows.Next() {
 		var rawID, artist string
-		if err := rows.Scan(&rawID, &artist); err != nil {
+		var genres []string
+		if err := rows.Scan(&rawID, &artist, &genres); err != nil {
 			return nil, fmt.Errorf("scan music catalog item: %w", err)
 		}
 		if rawID == "" {
 			continue
 		}
-		item := models.MusicCatalogItem{ItemID: rawID, Profile: models.UserProfile{Genres: []string{}, Artists: []string{}, Songs: []string{rawID}}}
+		item := models.MusicCatalogItem{ItemID: rawID, Profile: models.UserProfile{Genres: genres, Artists: []string{}, Songs: []string{rawID}}}
 		if artist != "" {
 			item.Profile.Artists = append(item.Profile.Artists, artist)
 		}
@@ -333,6 +337,7 @@ func (repository *postgresUserProfileRepository) GetFriendRecommendationCandidat
 		FROM USUARIO u
 		LEFT JOIN CONFIGURACION_PRIVACIDAD privacy ON privacy.id_usuario = u.id_usuario
 		WHERE u.id_usuario::text <> $1
+		  AND COALESCE(u.suspendido, FALSE) = FALSE
 		  AND UPPER(TRIM(COALESCE(privacy.visibilidad_perfil, 'PUBLICO'))) = 'PUBLICO'
 		  AND NOT EXISTS (
 			SELECT 1 FROM BLOQUEO b
