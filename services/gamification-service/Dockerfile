@@ -13,6 +13,8 @@ RUN go mod download
 # Copiar el código fuente
 WORKDIR /app
 COPY services/common ./services/common
+# El servicio importa el paquete compartido de autorización desde common/authz.
+COPY services/common/authz ./services/common/authz
 COPY services/gamification-service ./services/gamification-service
 
 # Compilar
