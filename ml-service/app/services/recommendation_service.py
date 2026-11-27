@@ -116,9 +116,10 @@ class RecommendationService:
         recommendation_offset = interaction_count * 10
 
         for index in range(1, min(request.limit, 5) + 1):
-            item_id = request.user_id + recommendation_offset + index
-            if item_id in liked_items:
-                item_id += 1000
+            item_id = f"generated:{request.user_id}:{recommendation_offset + index}"
+            while item_id in liked_items:
+                recommendation_offset += 1
+                item_id = f"generated:{request.user_id}:{recommendation_offset + index}"
             recommendations.append(
                 RecommendationItem(
                     item_id=item_id,

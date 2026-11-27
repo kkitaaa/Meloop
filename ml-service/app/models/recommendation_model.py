@@ -27,13 +27,13 @@ class CompatibilityResult:
 
 @dataclass(frozen=True)
 class CatalogRecommendation:
-    item_id: int
+    item_id: str
     score: float
     matching_features: tuple[str, ...] = ()
 
 
 CollaborativeScorer = Callable[
-    [Sequence[float] | np.ndarray | spmatrix, Sequence[int]], Sequence[float]
+    [Sequence[float] | np.ndarray | spmatrix, Sequence[str]], Sequence[float]
 ]
 
 
@@ -74,7 +74,7 @@ class RecommendationModel:
         self,
         user_vector: Sequence[float] | np.ndarray | spmatrix,
         catalog_vectors: Sequence[Sequence[float]] | np.ndarray | spmatrix,
-        item_ids: Sequence[int],
+        item_ids: Sequence[str],
         feature_names: Sequence[str] = (),
         limit: int = 10,
     ) -> tuple[CatalogRecommendation, ...]:

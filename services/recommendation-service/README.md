@@ -27,3 +27,5 @@ actions in one batched database query. Recommendations from ML, cache, and
 backup are all revalidated before being returned. The service keeps the ML
 ranking order and takes later eligible candidates from the fetched candidate
 batch to satisfy the requested limit.
+
+Recommendation routes and ML payloads preserve user IDs as strings, including Auth UUIDs. Like interactions resolve the liked publication to the song Spotify ID (or database song ID if there is no Spotify ID), so publication IDs are never compared to music catalog IDs.

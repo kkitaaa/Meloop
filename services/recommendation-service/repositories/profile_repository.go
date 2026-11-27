@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -22,7 +21,7 @@ type PopularityRepository interface {
 }
 
 type FriendRecommendationEligibilityRepository interface {
-	FilterEligibleFriendCandidates(ctx context.Context, userID string, candidateIDs []int) (map[int]struct{}, error)
+	FilterEligibleFriendCandidates(ctx context.Context, userID string, candidateIDs []string) (map[string]struct{}, error)
 }
 
 type MusicCatalogRepository interface {
@@ -90,8 +89,14 @@ func (repository *postgresUserProfileRepository) Get(ctx context.Context, userID
 	}
 
 	rows, err = repository.pool.Query(ctx, `
-		SELECT COALESCE(LOWER(TRIM(i.tipo)), ''), i.id_publicacion
+		SELECT COALESCE(LOWER(TRIM(i.tipo)), ''),
+		       CASE WHEN LOWER(TRIM(COALESCE(i.tipo, ''))) = 'like'
+		            THEN COALESCE(NULLIF(TRIM(c.spotify_id), ''), c.id_cancion::text, '')
+		            ELSE i.id_publicacion::text
+		       END
 		FROM INTERACCION i
+		LEFT JOIN PUBLICACION p ON p.id_publicacion = i.id_publicacion
+		LEFT JOIN CANCION c ON c.id_cancion = p.id_cancion
 		WHERE i.id_usuario = $1
 		  AND i.fecha_creacion >= now() - ($2 * interval '1 second')
 		  AND NOT EXISTS (
@@ -108,12 +113,10 @@ func (repository *postgresUserProfileRepository) Get(ctx context.Context, userID
 	var interactions []models.Interaction
 	for rows.Next() {
 		var interaction models.Interaction
-		var targetID string
-		if err := rows.Scan(&interaction.Type, &targetID); err != nil {
+		if err := rows.Scan(&interaction.Type, &interaction.TargetID); err != nil {
 			return models.UserProfile{}, nil, fmt.Errorf("scan recent user interaction: %w", err)
 		}
-		interaction.TargetID, err = strconv.Atoi(targetID)
-		if err != nil || interaction.TargetID < 1 {
+		if interaction.TargetID == "" {
 			continue
 		}
 		if recommendationType == "music" && interaction.Type != "like" {
@@ -224,23 +227,13 @@ func (repository *postgresUserProfileRepository) GetPopular(ctx context.Context,
 	return popular, nil
 }
 
-func (repository *postgresUserProfileRepository) FilterEligibleFriendCandidates(ctx context.Context, userID string, candidateIDs []int) (map[int]struct{}, error) {
+func (repository *postgresUserProfileRepository) FilterEligibleFriendCandidates(ctx context.Context, userID string, candidateIDs []string) (map[string]struct{}, error) {
 	if repository.pool == nil {
 		return nil, errors.New("database connection pool is not initialized")
 	}
 
-	eligible := make(map[int]struct{}, len(candidateIDs))
+	eligible := make(map[string]struct{}, len(candidateIDs))
 	if len(candidateIDs) == 0 {
-		return eligible, nil
-	}
-
-	candidateUserIDs := make([]string, 0, len(candidateIDs))
-	for _, candidateID := range candidateIDs {
-		if candidateID > 0 {
-			candidateUserIDs = append(candidateUserIDs, strconv.Itoa(candidateID))
-		}
-	}
-	if len(candidateUserIDs) == 0 {
 		return eligible, nil
 	}
 
@@ -267,7 +260,7 @@ func (repository *postgresUserProfileRepository) FilterEligibleFriendCandidates(
 			WHERE ((a.id_usuario_1::text = $1 AND a.id_usuario_2::text = u.id_usuario::text)
 			    OR (a.id_usuario_1::text = u.id_usuario::text AND a.id_usuario_2::text = $1))
 			  AND UPPER(TRIM(COALESCE(a.estado, ''))) = 'ACEPTADA'
-		  )`, userID, candidateUserIDs)
+		  )`, userID, candidateIDs)
 	if err != nil {
 		return nil, fmt.Errorf("filter ineligible friend recommendation candidates: %w", err)
 	}
@@ -278,11 +271,7 @@ func (repository *postgresUserProfileRepository) FilterEligibleFriendCandidates(
 		if err := rows.Scan(&candidateID); err != nil {
 			return nil, fmt.Errorf("scan eligible friend recommendation candidate: %w", err)
 		}
-		id, err := strconv.Atoi(candidateID)
-		if err != nil {
-			return nil, fmt.Errorf("parse eligible friend recommendation candidate id %q: %w", candidateID, err)
-		}
-		eligible[id] = struct{}{}
+		eligible[candidateID] = struct{}{}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("read eligible friend recommendation candidates: %w", err)
@@ -299,13 +288,13 @@ func (repository *postgresUserProfileRepository) GetMusicCatalog(ctx context.Con
 	}
 
 	rows, err := repository.pool.Query(ctx, `
-		SELECT id_cancion, COALESCE(NULLIF(TRIM(artista_nombre), ''), '')
+		SELECT COALESCE(NULLIF(TRIM(spotify_id), ''), id_cancion::text),
+		       COALESCE(NULLIF(TRIM(artista_nombre), ''), '')
 		FROM CANCION
-		WHERE id_cancion ~ '^[0-9]+$'
-		ORDER BY id_cancion
+		ORDER BY titulo, id_cancion
 		LIMIT $1`, limit)
 	if err != nil {
-		return nil, fmt.Errorf("query numeric music catalog: %w", err)
+		return nil, fmt.Errorf("query music catalog: %w", err)
 	}
 	defer rows.Close()
 
@@ -315,11 +304,10 @@ func (repository *postgresUserProfileRepository) GetMusicCatalog(ctx context.Con
 		if err := rows.Scan(&rawID, &artist); err != nil {
 			return nil, fmt.Errorf("scan music catalog item: %w", err)
 		}
-		itemID, err := strconv.Atoi(rawID)
-		if err != nil || itemID < 1 {
+		if rawID == "" {
 			continue
 		}
-		item := models.MusicCatalogItem{ItemID: itemID, Profile: models.UserProfile{Genres: []string{}, Artists: []string{}, Songs: []string{rawID}}}
+		item := models.MusicCatalogItem{ItemID: rawID, Profile: models.UserProfile{Genres: []string{}, Artists: []string{}, Songs: []string{rawID}}}
 		if artist != "" {
 			item.Profile.Artists = append(item.Profile.Artists, artist)
 		}
@@ -344,8 +332,7 @@ func (repository *postgresUserProfileRepository) GetFriendRecommendationCandidat
 		SELECT u.id_usuario::text AS user_id
 		FROM USUARIO u
 		LEFT JOIN CONFIGURACION_PRIVACIDAD privacy ON privacy.id_usuario = u.id_usuario
-		WHERE u.id_usuario::text ~ '^[0-9]+$'
-		  AND u.id_usuario::text <> $1
+		WHERE u.id_usuario::text <> $1
 		  AND UPPER(TRIM(COALESCE(privacy.visibilidad_perfil, 'PUBLICO'))) = 'PUBLICO'
 		  AND NOT EXISTS (
 			SELECT 1 FROM BLOQUEO b
@@ -379,23 +366,22 @@ func (repository *postgresUserProfileRepository) GetFriendRecommendationCandidat
 	defer rows.Close()
 
 	candidates := make([]models.CandidateProfile, 0, limit)
-	indexes := make(map[int]int, limit)
+	indexes := make(map[string]int, limit)
 	for rows.Next() {
 		var rawID string
 		var preferenceType, value string
 		if err := rows.Scan(&rawID, &preferenceType, &value); err != nil {
 			return nil, fmt.Errorf("scan friend recommendation candidate: %w", err)
 		}
-		candidateID, err := strconv.Atoi(rawID)
-		if err != nil || candidateID < 1 {
+		if rawID == "" {
 			continue
 		}
-		index, exists := indexes[candidateID]
+		index, exists := indexes[rawID]
 		if !exists {
 			index = len(candidates)
-			indexes[candidateID] = index
+			indexes[rawID] = index
 			candidates = append(candidates, models.CandidateProfile{
-				UserID: candidateID,
+				UserID: rawID,
 				Profile: models.UserProfile{
 					Genres: []string{}, Artists: []string{}, Songs: []string{},
 				},

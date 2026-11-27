@@ -1,7 +1,7 @@
 package services
 
 import (
-	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -48,12 +48,12 @@ func (cache *RecommendationCache) Delete(key string) {
 	cache.mu.Unlock()
 }
 
-func (cache *RecommendationCache) InvalidateUser(userID int) {
+func (cache *RecommendationCache) InvalidateUser(userID string) {
 	cache.mu.Lock()
 	defer cache.mu.Unlock()
+	prefix := "user:" + userID + ":"
 	for key := range cache.entries {
-		var cachedUserID int
-		if _, err := fmt.Sscanf(key, "user:%d:", &cachedUserID); err == nil && cachedUserID == userID {
+		if strings.HasPrefix(key, prefix) {
 			delete(cache.entries, key)
 		}
 	}

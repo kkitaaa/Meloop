@@ -4,7 +4,7 @@ import "time"
 
 type Interaction struct {
 	Type     string `json:"type"`
-	TargetID int    `json:"target_id"`
+	TargetID string `json:"target_id"`
 }
 
 type UserProfile struct {
@@ -22,7 +22,7 @@ type PopularContent struct {
 }
 
 type RecommendationRequest struct {
-	UserID            int                `json:"user_id"`
+	UserID            string             `json:"user_id"`
 	Limit             int                `json:"limit"`
 	Type              string             `json:"type,omitempty"`
 	Preferences       []string           `json:"preferences"`
@@ -33,17 +33,17 @@ type RecommendationRequest struct {
 }
 
 type CandidateProfile struct {
-	UserID  int         `json:"user_id"`
+	UserID  string      `json:"user_id"`
 	Profile UserProfile `json:"profile"`
 }
 
 type MusicCatalogItem struct {
-	ItemID  int         `json:"item_id"`
+	ItemID  string      `json:"item_id"`
 	Profile UserProfile `json:"profile"`
 }
 
 type RecommendationItem struct {
-	ItemID  int     `json:"item_id,omitempty"`
+	ItemID  string  `json:"item_id,omitempty"`
 	ItemKey string  `json:"item_key,omitempty"`
 	Type    string  `json:"type,omitempty"`
 	Name    string  `json:"name,omitempty"`
@@ -52,7 +52,7 @@ type RecommendationItem struct {
 }
 
 type RecommendationResponse struct {
-	UserID           int                  `json:"user_id"`
+	UserID           string               `json:"user_id"`
 	Recommendations  []RecommendationItem `json:"recommendations"`
 	Model            string               `json:"model"`
 	ModelVersion     string               `json:"model_version"`

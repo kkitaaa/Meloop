@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/meloop/recommendation-service/repositories"
@@ -118,18 +117,14 @@ func firstIdentifier(payload activityPayload, keys ...string) string {
 }
 
 func (service *RecommendationService) MarkRecommendationsStale(ctx context.Context, userID string) error {
-	if parsedUserID, err := strconv.Atoi(userID); err == nil {
-		service.cache.InvalidateUser(parsedUserID)
-	}
+	service.cache.InvalidateUser(userID)
 	if cacheStore, ok := service.store.(interface {
 		InvalidateCachedForUser(context.Context, string) error
 	}); ok {
 		return cacheStore.InvalidateCachedForUser(ctx, userID)
 	}
 	if cacheStore, ok := service.store.(RecommendationCacheStore); ok {
-		if parsedUserID, err := strconv.Atoi(userID); err == nil {
-			return cacheStore.InvalidateCached(ctx, parsedUserID)
-		}
+		return cacheStore.InvalidateCached(ctx, userID)
 	}
 	return nil
 }

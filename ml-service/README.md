@@ -59,7 +59,7 @@ Ejemplo de petición:
 
 ```json
 {
-	"user_id": 42,
+	"user_id": "a0000000000000000000000000000001",
 	"limit": 2,
 	"profile": {
 		"genres": ["rock"],
@@ -67,8 +67,8 @@ Ejemplo de petición:
 		"songs": []
 	},
 	"catalog": [
-		{"item_id": 101, "profile": {"genres": ["rock"], "artists": ["Arctic Monkeys"]}},
-		{"item_id": 102, "profile": {"genres": ["jazz"], "artists": ["Miles Davis"]}}
+		{"item_id": "spotify-track-101", "profile": {"genres": ["rock"], "artists": ["Arctic Monkeys"]}},
+		{"item_id": "spotify-track-102", "profile": {"genres": ["jazz"], "artists": ["Miles Davis"]}}
 	]
 }
 ```
@@ -77,6 +77,10 @@ La respuesta usa el contrato común de recomendaciones (`user_id`, `recommendati
 `model`, `model_version` e `interaction_count`). Cada recomendación incluye `item_id`, `score` y una
 razón basada en las preferencias compartidas. `catalog` debe contener al menos un
 elemento y `limit` está restringido al intervalo 1-50.
+
+Los campos `user_id`, `candidate_profiles[].user_id`, `catalog[].item_id` e
+`interactions[].target_id` son cadenas para conservar los IDs de Auth y los
+identificadores Spotify/PostgreSQL sin conversiones numéricas.
 
 ### Recomendaciones de amigos
 
@@ -89,7 +93,7 @@ Ejemplo de petición:
 
 ```json
 {
-	"user_id": 42,
+	"user_id": "a0000000000000000000000000000001",
 	"limit": 5,
 	"profile": {
 		"genres": ["rock"],
@@ -98,7 +102,7 @@ Ejemplo de petición:
 	},
 	"candidate_profiles": [
 		{
-			"user_id": 7,
+			"user_id": "b0000000000000000000000000000002",
 			"profile": {"genres": ["rock"], "artists": ["Radiohead"], "songs": []}
 		}
 	]
@@ -106,7 +110,7 @@ Ejemplo de petición:
 ```
 
 Si el usuario no tiene géneros, artistas, canciones o preferencias, el servicio responde
-`200` con `recommendations: []` y no inventa candidatos. Los IDs deben ser positivos y
+`200` con `recommendations: []` y no inventa candidatos. Los IDs deben ser cadenas no vacías y
 `limit` está restringido al intervalo 1-50.
 
 ## Estructura

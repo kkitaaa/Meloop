@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"strconv"
 	"sync"
 	"time"
 
@@ -27,7 +26,7 @@ type RecommendationService struct {
 	popular  repositories.PopularityRepository
 	store    RecommendationStore
 	mu       sync.RWMutex
-	users    map[int]userState
+	users    map[string]userState
 }
 
 func NewRecommendationService(mlClient *MLClient, cacheTTL time.Duration) *RecommendationService {
@@ -46,22 +45,22 @@ func NewRecommendationServiceWithRepositoryAndStore(mlClient *MLClient, cacheTTL
 		profiles: profiles,
 		popular:  popular,
 		store:    store,
-		users:    make(map[int]userState),
+		users:    make(map[string]userState),
 	}
 }
 
-func (service *RecommendationService) Get(ctx context.Context, userID, limit int) (models.RecommendationResponse, bool, error) {
+func (service *RecommendationService) Get(ctx context.Context, userID string, limit int) (models.RecommendationResponse, bool, error) {
 	return service.GetByType(ctx, userID, "all", limit)
 }
 
-func (service *RecommendationService) GetByType(ctx context.Context, userID int, recommendationType string, limit int) (models.RecommendationResponse, bool, error) {
+func (service *RecommendationService) GetByType(ctx context.Context, userID string, recommendationType string, limit int) (models.RecommendationResponse, bool, error) {
 	service.mu.RLock()
 	state := service.users[userID]
 	service.mu.RUnlock()
 	profile := models.UserProfile{}
 	interactions := state.interactions
 	if service.profiles != nil {
-		persistedProfile, persistedInteractions, err := service.profiles.Get(ctx, strconv.Itoa(userID), recommendationType)
+		persistedProfile, persistedInteractions, err := service.profiles.Get(ctx, userID, recommendationType)
 		if err != nil {
 			return models.RecommendationResponse{}, false, fmt.Errorf("load recommendation profile: %w", err)
 		}
@@ -83,7 +82,7 @@ func (service *RecommendationService) GetByType(ctx context.Context, userID int,
 	candidateProfiles := []models.CandidateProfile{}
 	if recommendationType == "friends" {
 		if repository, ok := service.profiles.(repositories.FriendRecommendationCandidatesRepository); ok {
-			candidateProfiles, err = repository.GetFriendRecommendationCandidates(ctx, strconv.Itoa(userID), recommendationCacheLimit)
+			candidateProfiles, err = repository.GetFriendRecommendationCandidates(ctx, userID, recommendationCacheLimit)
 			if err != nil {
 				return models.RecommendationResponse{}, false, fmt.Errorf("load friend recommendation candidates: %w", err)
 			}
@@ -118,10 +117,11 @@ func (service *RecommendationService) GetByType(ctx context.Context, userID int,
 	if recommendationType != "friends" &&
 		personalSignalCount(preferences, filteredInteractions, profile.InteractionCount) < minimumPersonalSignals &&
 		service.popular != nil {
-		popular, err := service.popular.GetPopular(ctx, strconv.Itoa(userID), recommendationCacheLimit)
+		popular, err := service.popular.GetPopular(ctx, userID, recommendationCacheLimit)
 		if err != nil {
 			return models.RecommendationResponse{}, false, fmt.Errorf("load popular recommendations: %w", err)
 		}
+		popular = excludeLikedSongs(popular, filteredInteractions)
 		if len(popular) > 0 {
 			response := popularRecommendationResponse(userID, popular)
 			service.saveRecommendationCache(ctx, userID, recommendationType, fingerprint, response)
@@ -168,6 +168,29 @@ func (service *RecommendationService) GetByType(ctx context.Context, userID int,
 	return filtered, false, err
 }
 
+func excludeLikedSongs(popular []models.PopularContent, interactions []models.Interaction) []models.PopularContent {
+	likedSongs := make(map[string]struct{})
+	for _, interaction := range interactions {
+		if interaction.Type == "like" && interaction.TargetID != "" {
+			likedSongs[interaction.TargetID] = struct{}{}
+		}
+	}
+	if len(likedSongs) == 0 {
+		return popular
+	}
+
+	filtered := make([]models.PopularContent, 0, len(popular))
+	for _, item := range popular {
+		if item.Type == "song" {
+			if _, liked := likedSongs[item.ID]; liked {
+				continue
+			}
+		}
+		filtered = append(filtered, item)
+	}
+	return filtered
+}
+
 const minimumPersonalSignals = 3
 const recommendationCacheTTL = 24 * time.Hour
 const recommendationCacheLimit = 50
@@ -195,19 +218,19 @@ func recommendationFingerprint(preferences []string, interactions []models.Inter
 	return hex.EncodeToString(hash[:]), nil
 }
 
-func recommendationCacheKey(userID int, recommendationType string) string {
-	return recommendationCacheKeyForUser(strconv.Itoa(userID), recommendationType)
+func recommendationCacheKey(userID string, recommendationType string) string {
+	return recommendationCacheKeyForUser(userID, recommendationType)
 }
 
 func recommendationCacheKeyForUser(userID, recommendationType string) string {
 	return fmt.Sprintf("recommendations:calculated:%s:%s", userID, recommendationType)
 }
 
-func localRecommendationCacheKey(userID int, recommendationType, fingerprint string) string {
-	return fmt.Sprintf("user:%d:%s:%s", userID, recommendationType, fingerprint)
+func localRecommendationCacheKey(userID string, recommendationType, fingerprint string) string {
+	return fmt.Sprintf("user:%s:%s:%s", userID, recommendationType, fingerprint)
 }
 
-func (service *RecommendationService) saveRecommendationCache(ctx context.Context, userID int, recommendationType, fingerprint string, response models.RecommendationResponse) {
+func (service *RecommendationService) saveRecommendationCache(ctx context.Context, userID string, recommendationType, fingerprint string, response models.RecommendationResponse) {
 	service.cache.Set(localRecommendationCacheKey(userID, recommendationType, fingerprint), response)
 	if cacheStore, ok := service.store.(RecommendationCacheStore); ok {
 		if err := cacheStore.SetCached(ctx, recommendationCacheKey(userID, recommendationType), CachedRecommendation{
@@ -227,7 +250,7 @@ func personalSignalCount(preferences []string, interactions []models.Interaction
 	return len(preferences) + interactionCount
 }
 
-func popularRecommendationResponse(userID int, popular []models.PopularContent) models.RecommendationResponse {
+func popularRecommendationResponse(userID string, popular []models.PopularContent) models.RecommendationResponse {
 	maxCount := int64(0)
 	for _, item := range popular {
 		if item.UsageCount > maxCount {
@@ -258,8 +281,8 @@ func popularRecommendationResponse(userID int, popular []models.PopularContent) 
 	}
 }
 
-func recommendationStoreKey(userID int, recommendationType string) string {
-	return recommendationStoreKeyForUser(strconv.Itoa(userID), recommendationType)
+func recommendationStoreKey(userID string, recommendationType string) string {
+	return recommendationStoreKeyForUser(userID, recommendationType)
 }
 
 func recommendationStoreKeyForUser(userID, recommendationType string) string {
@@ -273,7 +296,7 @@ func limitRecommendations(response models.RecommendationResponse, limit int) mod
 	return response
 }
 
-func (service *RecommendationService) filterFriendRecommendations(ctx context.Context, userID int, recommendationType string, response models.RecommendationResponse, limit int) (models.RecommendationResponse, error) {
+func (service *RecommendationService) filterFriendRecommendations(ctx context.Context, userID string, recommendationType string, response models.RecommendationResponse, limit int) (models.RecommendationResponse, error) {
 	if recommendationType != "friends" {
 		return limitRecommendations(response, limit), nil
 	}
@@ -282,10 +305,10 @@ func (service *RecommendationService) filterFriendRecommendations(ctx context.Co
 		return response, nil
 	}
 
-	candidateIDs := make([]int, 0, len(response.Recommendations))
-	seen := make(map[int]struct{}, len(response.Recommendations))
+	candidateIDs := make([]string, 0, len(response.Recommendations))
+	seen := make(map[string]struct{}, len(response.Recommendations))
 	for _, candidate := range response.Recommendations {
-		if candidate.ItemID < 1 || candidate.ItemID == userID {
+		if candidate.ItemID == "" || candidate.ItemID == userID {
 			continue
 		}
 		if _, exists := seen[candidate.ItemID]; exists {
@@ -295,14 +318,14 @@ func (service *RecommendationService) filterFriendRecommendations(ctx context.Co
 		candidateIDs = append(candidateIDs, candidate.ItemID)
 	}
 
-	eligibleIDs := make(map[int]struct{}, len(candidateIDs))
+	eligibleIDs := make(map[string]struct{}, len(candidateIDs))
 	if len(candidateIDs) > 0 {
 		repository, ok := service.profiles.(repositories.FriendRecommendationEligibilityRepository)
 		if !ok {
 			return models.RecommendationResponse{}, fmt.Errorf("friend recommendation eligibility repository is not configured")
 		}
 		var err error
-		eligibleIDs, err = repository.FilterEligibleFriendCandidates(ctx, strconv.Itoa(userID), candidateIDs)
+		eligibleIDs, err = repository.FilterEligibleFriendCandidates(ctx, userID, candidateIDs)
 		if err != nil {
 			return models.RecommendationResponse{}, fmt.Errorf("validate friend recommendation candidates: %w", err)
 		}
@@ -313,7 +336,7 @@ func (service *RecommendationService) filterFriendRecommendations(ctx context.Co
 		capacity = limit
 	}
 	filtered := make([]models.RecommendationItem, 0, capacity)
-	added := make(map[int]struct{}, capacity)
+	added := make(map[string]struct{}, capacity)
 	for _, candidate := range response.Recommendations {
 		if _, isEligible := eligibleIDs[candidate.ItemID]; !isEligible {
 			continue
@@ -345,7 +368,7 @@ func profilePreferences(profile models.UserProfile, local []string) []string {
 	return append(preferences, local...)
 }
 
-func (service *RecommendationService) RecordInteraction(ctx context.Context, userID int, interaction models.Interaction, limit int) (models.RecommendationResponse, error) {
+func (service *RecommendationService) RecordInteraction(ctx context.Context, userID string, interaction models.Interaction, limit int) (models.RecommendationResponse, error) {
 	if interaction.Type != "like" && interaction.Type != "friend_added" && interaction.Type != "comment" && interaction.Type != "post_interaction" {
 		return models.RecommendationResponse{}, fmt.Errorf("unsupported interaction type %q", interaction.Type)
 	}
@@ -379,7 +402,7 @@ func filterInteractions(interactions []models.Interaction, recommendationType st
 	return filtered
 }
 
-func fallbackResponse(userID int, recommendationType string, limit int) models.RecommendationResponse {
+func fallbackResponse(userID string, recommendationType string, limit int) models.RecommendationResponse {
 	return models.RecommendationResponse{
 		UserID:          userID,
 		Recommendations: []models.RecommendationItem{},
