@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/meloop/post-service/messaging"
+	"github.com/meloop/post-service/middlewares"
 	"github.com/meloop/post-service/models"
 	"github.com/meloop/post-service/repositories"
 	"github.com/meloop/post-service/services"
@@ -69,7 +71,19 @@ func (s *stubCommentRepo) Delete(commentID, authorID string) error {
 	return nil
 }
 
-func TestCommentAndReply_PersistsAtomicOutboxWithRealTargetAuthor(t *testing.T) {
+type stubSessionValidator struct {
+	tokens map[string]string
+}
+
+func (s *stubSessionValidator) ValidateToken(ctx context.Context, token string) (services.ValidatedSession, error) {
+	uid, ok := s.tokens[token]
+	if !ok {
+		return services.ValidatedSession{}, services.ErrInvalidSession
+	}
+	return services.ValidatedSession{UserID: uid, Role: "usuario"}, nil
+}
+
+func TestCommentAndReply_RequiresBearerAuthAndPersistsAtomicOutbox(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	repo := &stubCommentRepo{
 		postAuthors:    map[string]string{"post-99": "author-post-owner"},
@@ -83,20 +97,34 @@ func TestCommentAndReply_PersistsAtomicOutboxWithRealTargetAuthor(t *testing.T) 
 		notifyCalls++
 	})
 
-	r := gin.New()
-	r.Use(func(c *gin.Context) {
-		if uid := c.GetHeader("X-User-ID"); uid != "" {
-			c.Set("userID", uid)
-		}
-		c.Next()
-	})
-	r.POST("/api/v1/posts/:id/comments", ctrl.CreateComment)
-	r.POST("/api/v1/posts/:id/comments/:commentId/replies", ctrl.CreateReply)
+	validator := &stubSessionValidator{
+		tokens: map[string]string{
+			"token-commenter": "user-commenter",
+			"token-replier":   "user-replier",
+		},
+	}
 
-	// 1. Crear comentario en post-99 por user-commenter
+	r := gin.New()
+	protected := r.Group("/api/v1/posts", middlewares.AuthRequired(validator))
+	protected.POST("/:id/comments", ctrl.CreateComment)
+	protected.POST("/:id/comments/:commentId/replies", ctrl.CreateReply)
+
+	// 0. Intentar suplantar identidad enviando solo X-User-ID sin Bearer token -> debe devolver 401
+	reqSpoof, _ := http.NewRequest(http.MethodPost, "/api/v1/posts/post-99/comments", bytes.NewBufferString(`{"content":"Intento suplantado"}`))
+	reqSpoof.Header.Set("Content-Type", "application/json")
+	reqSpoof.Header.Set("X-User-ID", "user-commenter")
+	wSpoof := httptest.NewRecorder()
+	r.ServeHTTP(wSpoof, reqSpoof)
+
+	if wSpoof.Code != http.StatusUnauthorized {
+		t.Fatalf("esperado 401 al enviar X-User-ID sin Bearer token, obtenido %d", wSpoof.Code)
+	}
+
+	// 1. Crear comentario en post-99 con Bearer token válido (y X-User-ID falso que debe ignorarse)
 	req1, _ := http.NewRequest(http.MethodPost, "/api/v1/posts/post-99/comments", bytes.NewBufferString(`{"content":"Gran canción"}`))
 	req1.Header.Set("Content-Type", "application/json")
-	req1.Header.Set("X-User-ID", "user-commenter")
+	req1.Header.Set("Authorization", "Bearer token-commenter")
+	req1.Header.Set("X-User-ID", "attacker-999")
 	w1 := httptest.NewRecorder()
 	r.ServeHTTP(w1, req1)
 
@@ -104,10 +132,10 @@ func TestCommentAndReply_PersistsAtomicOutboxWithRealTargetAuthor(t *testing.T) 
 		t.Fatalf("esperado 201 en CreateComment, obtenido %d", w1.Code)
 	}
 
-	// 2. Crear respuesta a comment-50 por user-replier
+	// 2. Crear respuesta a comment-50 con Bearer token válido
 	req2, _ := http.NewRequest(http.MethodPost, "/api/v1/posts/post-99/comments/comment-50/replies", bytes.NewBufferString(`{"content":"Totalmente de acuerdo"}`))
 	req2.Header.Set("Content-Type", "application/json")
-	req2.Header.Set("X-User-ID", "user-replier")
+	req2.Header.Set("Authorization", "Bearer token-replier")
 	w2 := httptest.NewRecorder()
 	r.ServeHTTP(w2, req2)
 
@@ -123,7 +151,8 @@ func TestCommentAndReply_PersistsAtomicOutboxWithRealTargetAuthor(t *testing.T) 
 		t.Fatalf("esperados 2 registros en outbox_events, obtenidos %d", len(repo.outboxEvents))
 	}
 
-	for _, outboxEv := range repo.outboxEvents {
+	expectedActors := []string{"user-commenter", "user-replier"}
+	for idx, outboxEv := range repo.outboxEvents {
 		if outboxEv.Status != models.OutboxStatusPending || outboxEv.RoutingKey != "comment.created" {
 			t.Fatalf("estado o routing_key inválido en outbox: %+v", outboxEv)
 		}
@@ -131,6 +160,12 @@ func TestCommentAndReply_PersistsAtomicOutboxWithRealTargetAuthor(t *testing.T) 
 		var ev messaging.CommentCreatedEvent
 		if err := json.Unmarshal([]byte(outboxEv.Payload), &ev); err != nil {
 			t.Fatalf("error deserializando payload outbox: %v", err)
+		}
+		if ev.EventID == "" {
+			t.Fatalf("event_id vacío en payload outbox")
+		}
+		if ev.ActorID != expectedActors[idx] {
+			t.Fatalf("esperado actor_id %s (desde sesión Bearer), obtenido %s", expectedActors[idx], ev.ActorID)
 		}
 		if ev.TargetAuthorID == "placeholder_post_author_id" || ev.TargetAuthorID == "placeholder_comment_author_id" {
 			t.Fatalf("se detectó placeholder en TargetAuthorID: %s", ev.TargetAuthorID)

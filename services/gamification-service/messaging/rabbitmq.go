@@ -2,11 +2,16 @@ package messaging
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/meloop/gamification-service/models"
+	"github.com/meloop/gamification-service/repositories"
 	"github.com/meloop/services/common/logging"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
@@ -25,9 +30,32 @@ var consumerRoutingKeys = []string{
 	"comment.created",
 }
 
+// permanentEventError identifica errores no recuperables del payload (no deben reencolarse).
+type permanentEventError struct {
+	err error
+}
+
+func (e *permanentEventError) Error() string {
+	return e.err.Error()
+}
+
+func (e *permanentEventError) Unwrap() error {
+	return e.err
+}
+
+func isPermanentEventError(err error) bool {
+	var perm *permanentEventError
+	return errors.As(err, &perm) || errors.Is(err, repositories.ErrUserNotFound)
+}
+
 // ExperienceProcessor es la interfaz utilizada por el consumidor para procesar XP
 type ExperienceProcessor interface {
 	ProcessExperience(ctx context.Context, userID string, amount int) (*models.ExperienceResult, error)
+}
+
+// IdempotentExperienceProcessor extiende ExperienceProcessor con deduplicación por event_id y tipo de recompensa.
+type IdempotentExperienceProcessor interface {
+	ProcessExperienceIdempotent(ctx context.Context, eventID, rewardType, userID string, amount int) (*models.ExperienceResult, error)
 }
 
 // Publisher maneja la publicación de eventos RabbitMQ
@@ -199,8 +227,15 @@ func StartConsumer(ctx context.Context, rabbitURL string, processor ExperiencePr
 			logger.Info("event_consumed", "event", msg.RoutingKey, "payload_bytes", len(msg.Body))
 
 			if err := handleConsumedMessage(ctx, msg.RoutingKey, msg.Body, processor); err != nil {
-				logger.Error("event_consume_failed", "event", msg.RoutingKey, "error", err)
-				_ = msg.Nack(false, false)
+				if isPermanentEventError(err) {
+					logger.Error("event_consume_discarded_permanent", "event", msg.RoutingKey, "error", err)
+					_ = msg.Nack(false, false)
+					continue
+				}
+
+				logger.Error("event_consume_requeued_transient", "event", msg.RoutingKey, "error", err)
+				time.Sleep(250 * time.Millisecond)
+				_ = msg.Nack(false, true)
 				continue
 			}
 
@@ -218,8 +253,29 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
+func grantExperience(ctx context.Context, processor ExperienceProcessor, eventID, rewardType, userID string, amount int) error {
+	if idemProc, ok := processor.(IdempotentExperienceProcessor); ok {
+		_, err := idemProc.ProcessExperienceIdempotent(ctx, eventID, rewardType, userID, amount)
+		return err
+	}
+	_, err := processor.ProcessExperience(ctx, userID, amount)
+	return err
+}
+
+func deriveEventID(routingKey, explicitID, commentID, actorID, postID string) string {
+	if id := firstNonEmpty(explicitID, commentID); id != "" {
+		return id
+	}
+	sum := sha256.Sum256([]byte(fmt.Sprintf("%s:%s:%s", routingKey, actorID, postID)))
+	return "legacy_" + hex.EncodeToString(sum[:16])
+}
+
 func handleConsumedMessage(ctx context.Context, routingKey string, body []byte, processor ExperienceProcessor) error {
 	var payload struct {
+		EventID         string `json:"event_id"`
+		CommentID       string `json:"comment_id"`
+		PostID          string `json:"postId"`
+		PostIDSnake     string `json:"post_id"`
 		ActorID         string `json:"actor_id"`
 		CommentAuthorID string `json:"comment_author_id"`
 		UserID          string `json:"userId"`
@@ -229,35 +285,38 @@ func handleConsumedMessage(ctx context.Context, routingKey string, body []byte, 
 	}
 
 	if err := json.Unmarshal(body, &payload); err != nil {
-		return fmt.Errorf("error deserializando evento %s: %w", routingKey, err)
+		return &permanentEventError{err: fmt.Errorf("error deserializando evento %s: %w", routingKey, err)}
 	}
 
 	actorID := firstNonEmpty(payload.ActorID, payload.CommentAuthorID, payload.UserIDSnake, payload.UserID)
 	if actorID == "" {
-		return fmt.Errorf("evento %s sin identificador de actor/usuario válido", routingKey)
+		return &permanentEventError{err: fmt.Errorf("evento %s sin identificador de actor/usuario válido", routingKey)}
 	}
 
 	if processor == nil {
 		return nil
 	}
 
+	postID := firstNonEmpty(payload.PostIDSnake, payload.PostID)
+	eventID := deriveEventID(routingKey, payload.EventID, payload.CommentID, actorID, postID)
+
 	if routingKey == "comment.created" {
 		targetOwnerID := firstNonEmpty(payload.TargetOwnerID, payload.TargetAuthorID)
 
 		// Regla anti-autofarmeo (RN-20): no se otorga XP por comentar contenido propio
 		if targetOwnerID != "" && actorID == targetOwnerID {
-			logging.New("gamification-service").Info("self_comment_ignored", "actor_id", actorID)
+			logging.New("gamification-service").Info("self_comment_ignored", "actor_id", actorID, "event_id", eventID)
 			return nil
 		}
 
-		// +3 XP para quien comenta (RF-21/RF-22)
-		if _, err := processor.ProcessExperience(ctx, actorID, 3); err != nil {
+		// +3 XP para quien comenta (RF-21/RF-22) con idempotencia por (event_id, "comment_actor")
+		if err := grantExperience(ctx, processor, eventID, "comment_actor", actorID, 3); err != nil {
 			return fmt.Errorf("error asignando XP al autor del comentario: %w", err)
 		}
 
-		// +4 XP para el autor de la publicación o comentario padre
+		// +4 XP para el autor de la publicación o comentario padre con idempotencia por (event_id, "comment_target")
 		if targetOwnerID != "" {
-			if _, err := processor.ProcessExperience(ctx, targetOwnerID, 4); err != nil {
+			if err := grantExperience(ctx, processor, eventID, "comment_target", targetOwnerID, 4); err != nil {
 				return fmt.Errorf("error asignando XP al destinatario del comentario: %w", err)
 			}
 		}
@@ -265,6 +324,5 @@ func handleConsumedMessage(ctx context.Context, routingKey string, body []byte, 
 	}
 
 	// Eventos de interacción simples (ej. post.liked)
-	_, err := processor.ProcessExperience(ctx, actorID, 10)
-	return err
+	return grantExperience(ctx, processor, eventID, routingKey, actorID, 10)
 }

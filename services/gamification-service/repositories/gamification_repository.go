@@ -21,6 +21,7 @@ var (
 
 type GamificationRepository interface {
 	AddExperience(ctx context.Context, userID string, amount int) (*models.ExperienceResult, error)
+	AddExperienceIdempotent(ctx context.Context, eventID, rewardType, userID string, amount int) (*models.ExperienceResult, bool, error)
 	GetUserProgress(ctx context.Context, userID string) (*models.UserProgress, error)
 	ListRewards(ctx context.Context) ([]models.Reward, error)
 	CreateReward(ctx context.Context, reward *models.RewardCreateRequest) (*models.Reward, error)
@@ -36,19 +37,75 @@ func NewGamificationRepository(pool *pgxpool.Pool) GamificationRepository {
 	return &postgresGamificationRepository{pool: pool}
 }
 
-func (r *postgresGamificationRepository) AddExperience(ctx context.Context, userID string, amount int) (*models.ExperienceResult, error) {
+func (r *postgresGamificationRepository) ensureProcessedEventsTable(ctx context.Context) error {
 	if r.pool == nil {
-		return nil, errors.New("database connection pool is not initialized")
+		return errors.New("database connection pool is not initialized")
+	}
+	_, err := r.pool.Exec(ctx, `
+		CREATE TABLE IF NOT EXISTS gamification_processed_events (
+			event_id VARCHAR(128) NOT NULL,
+			reward_type VARCHAR(64) NOT NULL,
+			user_id VARCHAR(64) NOT NULL,
+			xp_amount INT NOT NULL,
+			processed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			PRIMARY KEY (event_id, reward_type)
+		)
+	`)
+	return err
+}
+
+func (r *postgresGamificationRepository) AddExperience(ctx context.Context, userID string, amount int) (*models.ExperienceResult, error) {
+	result, _, err := r.addExperienceTx(ctx, "", "", userID, amount)
+	return result, err
+}
+
+func (r *postgresGamificationRepository) AddExperienceIdempotent(ctx context.Context, eventID, rewardType, userID string, amount int) (*models.ExperienceResult, bool, error) {
+	eventID = strings.TrimSpace(eventID)
+	rewardType = strings.TrimSpace(rewardType)
+	if eventID == "" {
+		result, err := r.AddExperience(ctx, userID, amount)
+		return result, false, err
+	}
+	if rewardType == "" {
+		rewardType = "default"
+	}
+	if err := r.ensureProcessedEventsTable(ctx); err != nil {
+		return nil, false, fmt.Errorf("ensure processed events table: %w", err)
+	}
+	return r.addExperienceTx(ctx, eventID, rewardType, userID, amount)
+}
+
+func (r *postgresGamificationRepository) addExperienceTx(ctx context.Context, eventID, rewardType, userID string, amount int) (*models.ExperienceResult, bool, error) {
+	if r.pool == nil {
+		return nil, false, errors.New("database connection pool is not initialized")
 	}
 	if amount <= 0 {
-		return nil, ErrInvalidExperience
+		return nil, false, ErrInvalidExperience
 	}
 
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("begin transaction: %w", err)
+		return nil, false, fmt.Errorf("begin transaction: %w", err)
 	}
 	defer tx.Rollback(ctx)
+
+	if eventID != "" {
+		tag, err := tx.Exec(ctx, `
+			INSERT INTO gamification_processed_events (event_id, reward_type, user_id, xp_amount)
+			VALUES ($1, $2, $3, $4)
+			ON CONFLICT (event_id, reward_type) DO NOTHING`,
+			eventID, rewardType, userID, amount,
+		)
+		if err != nil {
+			return nil, false, fmt.Errorf("record processed event: %w", err)
+		}
+		if tag.RowsAffected() == 0 {
+			if err := tx.Commit(ctx); err != nil {
+				return nil, false, fmt.Errorf("commit duplicate check: %w", err)
+			}
+			return &models.ExperienceResult{UserID: userID}, true, nil
+		}
+	}
 
 	var currentXP int
 	var currentNivelID int
@@ -62,10 +119,10 @@ func (r *postgresGamificationRepository) AddExperience(ctx context.Context, user
 		FOR UPDATE OF u`, userID).Scan(&currentXP, &currentNivelID, &currentLevelNumber)
 
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, ErrUserNotFound
+		return nil, false, ErrUserNotFound
 	}
 	if err != nil {
-		return nil, fmt.Errorf("query user xp: %w", err)
+		return nil, false, fmt.Errorf("query user xp: %w", err)
 	}
 
 	newXP := currentXP + amount
@@ -84,7 +141,7 @@ func (r *postgresGamificationRepository) AddExperience(ctx context.Context, user
 		newNivelID = currentNivelID
 		newLevelNumber = currentLevelNumber
 	} else if err != nil {
-		return nil, fmt.Errorf("calculate level: %w", err)
+		return nil, false, fmt.Errorf("calculate level: %w", err)
 	}
 
 	leveledUp := newLevelNumber > currentLevelNumber
@@ -94,7 +151,7 @@ func (r *postgresGamificationRepository) AddExperience(ctx context.Context, user
 		SET experiencia = $1, id_nivel = $2
 		WHERE id_usuario = $3`, newXP, newNivelID, userID)
 	if err != nil {
-		return nil, fmt.Errorf("update user xp and level: %w", err)
+		return nil, false, fmt.Errorf("update user xp and level: %w", err)
 	}
 
 	unlockedRewards := make([]models.Reward, 0)
@@ -105,7 +162,7 @@ func (r *postgresGamificationRepository) AddExperience(ctx context.Context, user
 			WHERE id_nivel > $1 AND id_nivel <= $2
 			ORDER BY id_nivel ASC, id_recompensa ASC`, currentNivelID, newNivelID)
 		if err != nil {
-			return nil, fmt.Errorf("query rewards: %w", err)
+			return nil, false, fmt.Errorf("query rewards: %w", err)
 		}
 		defer rows.Close()
 
@@ -113,12 +170,12 @@ func (r *postgresGamificationRepository) AddExperience(ctx context.Context, user
 		for rows.Next() {
 			var rew models.Reward
 			if err := rows.Scan(&rew.IDRecompensa, &rew.Tipo, &rew.IDNivel); err != nil {
-				return nil, fmt.Errorf("scan reward: %w", err)
+				return nil, false, fmt.Errorf("scan reward: %w", err)
 			}
 			rewards = append(rewards, rew)
 		}
 		if err := rows.Err(); err != nil {
-			return nil, fmt.Errorf("rewards iteration: %w", err)
+			return nil, false, fmt.Errorf("rewards iteration: %w", err)
 		}
 
 		for _, rew := range rewards {
@@ -129,7 +186,7 @@ func (r *postgresGamificationRepository) AddExperience(ctx context.Context, user
 					WHERE id_usuario = $1 AND id_recompensa = $2
 				)`, userID, rew.IDRecompensa).Scan(&alreadyInInventory)
 			if err != nil {
-				return nil, fmt.Errorf("check inventory: %w", err)
+				return nil, false, fmt.Errorf("check inventory: %w", err)
 			}
 
 			if !alreadyInInventory {
@@ -138,7 +195,7 @@ func (r *postgresGamificationRepository) AddExperience(ctx context.Context, user
 					INSERT INTO inventario (id_inventario, id_usuario, id_recompensa, equipada)
 					VALUES ($1, $2, $3, false)`, invID, userID, rew.IDRecompensa)
 				if err != nil {
-					return nil, fmt.Errorf("insert inventory item: %w", err)
+					return nil, false, fmt.Errorf("insert inventory item: %w", err)
 				}
 				unlockedRewards = append(unlockedRewards, rew)
 			}
@@ -146,7 +203,7 @@ func (r *postgresGamificationRepository) AddExperience(ctx context.Context, user
 	}
 
 	if err := tx.Commit(ctx); err != nil {
-		return nil, fmt.Errorf("commit transaction: %w", err)
+		return nil, false, fmt.Errorf("commit transaction: %w", err)
 	}
 
 	return &models.ExperienceResult{
@@ -157,7 +214,7 @@ func (r *postgresGamificationRepository) AddExperience(ctx context.Context, user
 		CurrentLevel:    newLevelNumber,
 		LeveledUp:       leveledUp,
 		UnlockedRewards: unlockedRewards,
-	}, nil
+	}, false, nil
 }
 
 func (r *postgresGamificationRepository) GetUserProgress(ctx context.Context, userID string) (*models.UserProgress, error) {

@@ -2,6 +2,8 @@ package services
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/meloop/post-service/repositories"
@@ -60,6 +62,29 @@ func (w *OutboxWorker) Start(ctx context.Context) {
 	}
 }
 
+func ensureOutboxEventID(outboxID, rawPayload string) []byte {
+	id := strings.TrimSpace(outboxID)
+	if id == "" {
+		return []byte(rawPayload)
+	}
+
+	var obj map[string]any
+	if err := json.Unmarshal([]byte(rawPayload), &obj); err != nil || obj == nil {
+		return []byte(rawPayload)
+	}
+
+	if existing, ok := obj["event_id"].(string); ok && strings.TrimSpace(existing) != "" {
+		return []byte(rawPayload)
+	}
+
+	obj["event_id"] = id
+	enriched, err := json.Marshal(obj)
+	if err != nil {
+		return []byte(rawPayload)
+	}
+	return enriched
+}
+
 // ProcessPendingOnce reclama y publica un lote de eventos pendientes
 func (w *OutboxWorker) ProcessPendingOnce(ctx context.Context) (int, error) {
 	logger := logging.New("post-service")
@@ -72,7 +97,8 @@ func (w *OutboxWorker) ProcessPendingOnce(ctx context.Context) (int, error) {
 
 	publishedCount := 0
 	for _, ev := range events {
-		if err := w.publishFn(ev.RoutingKey, []byte(ev.Payload)); err != nil {
+		payloadBytes := ensureOutboxEventID(ev.ID, ev.Payload)
+		if err := w.publishFn(ev.RoutingKey, payloadBytes); err != nil {
 			nextAttempt := ev.Attempts + 1
 			backoff := computeOutboxBackoff(nextAttempt)
 			nextRetry := time.Now().UTC().Add(backoff)

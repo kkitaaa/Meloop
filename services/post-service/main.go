@@ -88,18 +88,17 @@ func main() {
 	feedService := services.NewFeedService(feedRepo)
 	feedController := controllers.NewFeedController(feedService)
 
-	// 10. Configurar Rutas
+	// 10. Cliente de autenticación hacia auth-service
+	authServiceURL := os.Getenv("AUTH_SERVICE_URL")
+	if authServiceURL == "" {
+		authServiceURL = "http://localhost:8083"
+	}
+	authClient := services.NewAuthClient(authServiceURL)
+
+	// 11. Configurar Rutas
 	router := gin.Default()
 
-	router.Use(func(c *gin.Context) {
-		userID := c.GetHeader("X-User-ID")
-		if userID != "" {
-			c.Set("userID", userID)
-		}
-		c.Next()
-	})
-
-	routes.SetupRoutes(router, likeController, commentController, postController, minioClient)
+	routes.SetupRoutes(router, likeController, commentController, postController, minioClient, authClient)
 
 	router.GET("/v1/feed", feedController.GetMainFeed)
 	router.POST("/v1/posts/:id/like", postController.LikePost)
