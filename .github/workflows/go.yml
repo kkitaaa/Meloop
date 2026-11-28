@@ -69,6 +69,7 @@ jobs:
       - name: Check formatting and run tests for every module
         shell: bash
         run: |
+          cd "${GITHUB_WORKSPACE:-$PWD}"
           failed=0
           if [ ! -d services ]; then
             echo "::error::services/ directory not found from $(pwd)"
@@ -85,7 +86,7 @@ jobs:
           for go_mod in "${go_mod_files[@]}"; do
             module="${go_mod%/go.mod}"
             echo "::group::$module"
-            unformatted=$(gofmt -l "$module")
+            unformatted=$(find "$module" -type f -name '*.go' -print0 | xargs -0 -r gofmt -l)
             if [ -n "$unformatted" ]; then
               echo "$unformatted"
               failed=1
