@@ -803,3 +803,109 @@ notification-service
 ```
 
 De esta manera, un servicio puede reaccionar a eventos de otro sin asumir la responsabilidad del dominio que originó dicho evento.
+
+---
+
+# 17. Roles y autorización
+
+## 17.1 Roles canónicos y fuente de autoridad
+
+Los roles canónicos son `usuario`, `moderador` y `admin`, definidos en
+`services/common/authz/roles.go`. Los alias reconocidos se normalizan así:
+
+| Valor recibido | Rol canónico |
+| -------------- | ------------ |
+| `usuario`      | `usuario`    |
+| `moderador`, `moderator` | `moderador` |
+| `admin`, `administrador`, `administrator` | `admin` |
+
+Cualquier valor desconocido se considera inválido y no concede permisos.
+
+La fuente de autoridad es `USUARIO.rol` en PostgreSQL. La migración
+`supabase/migrations/20261126000000_usuario_rol_check.sql` añade los CHECK
+`usuario_rol_canonico` y `usuario_es_moderador_coherente`, de modo que
+`es_moderador` siempre se deriva del rol: solo `moderador` lo tiene en `true`.
+
+`auth-service` expone `GET /auth/validate`, consulta el rol vigente en PostgreSQL,
+lo normaliza y lo devuelve en `data.role`. Ni las cabeceras enviadas por el
+cliente ni los datos del token son fuente de autoridad.
+
+## 17.2 Matriz de permisos
+
+| Servicio | Endpoint | `usuario` | `moderador` | `admin` |
+| -------- | -------- | :-------: | :---------: | :-----: |
+| `user-service` | `GET /users/admin/users` | No | Sí | Sí |
+| `user-service` | `PATCH /users/admin/users/:id/suspend` | No | Sí | Sí |
+| `user-service` | `PATCH /users/admin/users/:id/reactivate` | No | Sí | Sí |
+| `user-service` | `PATCH /users/admin/users/:id/moderation` | No | No | Sí |
+| `gamification-service` | `GET /api/v1/gamification/admin/rewards` | No | No | Sí |
+
+Reglas adicionales:
+
+- Sin token o con un token inválido, cualquier endpoint administrativo responde
+  `401`.
+- Un `403` indica sesión válida sin permisos suficientes.
+- Las cabeceras `X-User-ID`, `X-User-Role` y `X-Role` se descartan y se vuelven
+  a establecer a partir de la sesión validada; no permiten suplantación.
+- Un administrador no puede cambiar su propio rol.
+- Los cambios de rol se aplican a la sesión activa: la siguiente autorización
+  consulta el rol vigente en PostgreSQL.
+
+## 17.3 Uso del middleware reutilizable
+
+- `services/common/authz` define `NormalizeRole`, `RequireRoles` y las claves de
+  contexto `user_id` y `user_role`. `RequireRoles` decide únicamente con el rol
+  del contexto y falla cerrado.
+- `user-service`: `AuthRequired` valida el token contra `auth-service`;
+  `requireRoleFromBackend` consulta el rol en PostgreSQL, elimina las cabeceras
+  de rol del cliente y delega en `authz.RequireRoles`. Sobre esa base,
+  `AdminRequired` permite `moderador`/`admin` y `AdminOnly` permite solo `admin`.
+- `gamification-service`: `SessionAuth` obtiene identidad y rol de
+  `/auth/validate`, descarta cabeceras suplantadas y aplica
+  `authz.RequireRoles(RoleAdmin)` al subárbol `/admin`.
+- `api-gateway`: `SessionAuth` valida la sesión, normaliza el rol y reescribe las
+  cabeceras antes de proxyar. `RequireGamificationAdmin()` refuerza el subárbol
+  administrativo de gamificación.
+- El acceso directo a los servicios queda protegido por los mismos middlewares;
+  el Gateway no es el único punto de control.
+
+## 17.4 Procedimiento de pruebas
+
+1. Crear una base PostgreSQL local aislada y aplicar todas las migraciones de
+   `supabase/migrations` en orden.
+2. Iniciar Redis y los servicios `auth-service`, `user-service`,
+   `gamification-service` y `api-gateway` apuntando solo a esa base.
+3. Registrar tres cuentas de prueba y verificar en PostgreSQL que el rol
+   predeterminado es `usuario`.
+4. Aprovisionar la cuenta administrativa con SQL autorizado sobre la base
+   aislada y promover la cuenta moderadora mediante el endpoint administrativo.
+5. Ejecutar la matriz anterior por HTTP real, tanto directo como por Gateway,
+   con tokens válidos, sin token, token inválido y cabeceras suplantadas.
+6. Verificar el cambio de rol durante una sesión activa y el rechazo del
+   autocambio de rol.
+7. Ejecutar las suites Go de los módulos modificados. Las pruebas de
+   persistencia requieren `USER_SERVICE_TEST_DATABASE_URL` apuntando a la base
+   aislada:
+
+   ```sh
+   USER_SERVICE_TEST_DATABASE_URL=<url-local-aislada> go test -count=1 ./...
+   ```
+
+8. Retirar contenedores, procesos y la base temporal al finalizar.
+
+## 17.5 Limitaciones conocidas
+
+- No existe aprovisionamiento automático de administradores; debe hacerse con
+  SQL controlado sobre una cuenta de prueba. No se guardan credenciales de
+  administrador en el repositorio.
+- `auth-service` no consulta `suspendido`: al suspender, el rol se degrada a
+  `usuario` para revocar privilegios, y la reactivación no restaura un rol
+  moderador previo.
+- `motivo_suspension` es nullable. El repositorio normaliza `NULL` a cadena
+  vacía al leerlo, conservando el contrato `string` del modelo y omitiendo el
+  campo vacío en JSON.
+- Las suites con mocks son pruebas unitarias; la evidencia de integración es la
+  matriz HTTP ejecutada contra servicios reales.
+- Las pruebas de persistencia se omiten si no se define
+  `USER_SERVICE_TEST_DATABASE_URL`.
+- La verificación B6 no cubre Flutter, Kubernetes ni despliegues remotos.

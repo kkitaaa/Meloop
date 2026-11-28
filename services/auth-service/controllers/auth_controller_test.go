@@ -20,6 +20,8 @@ type mockAuthService struct {
 	loginFunc                   func(ctx context.Context, req *models.LoginRequest) (*models.LoginResponse, error)
 	logoutFunc                  func(ctx context.Context, token string) error
 	validateSessionFunc         func(ctx context.Context, token string) (*models.SessionUser, error)
+	getRoleByIDFunc             func(ctx context.Context, userID string) (string, error)
+	refreshSessionFunc          func(ctx context.Context, token string) (*models.LoginResponse, error)
 	changePasswordFunc          func(ctx context.Context, userID string, req *models.ChangePasswordRequest) error
 	requestPasswordRecoveryFunc func(ctx context.Context, req *models.PasswordRecoveryRequest) error
 	resetPasswordFunc           func(ctx context.Context, req *models.ResetPasswordRequest) error
@@ -70,6 +72,28 @@ func (m *mockAuthService) ValidateSession(ctx context.Context, token string) (*m
 		}, nil
 	}
 	return nil, errors.New("invalid token")
+}
+
+func (m *mockAuthService) GetRoleByID(ctx context.Context, userID string) (string, error) {
+	if m.getRoleByIDFunc != nil {
+		return m.getRoleByIDFunc(ctx, userID)
+	}
+	return "usuario", nil
+}
+
+func (m *mockAuthService) RefreshSession(ctx context.Context, token string) (*models.LoginResponse, error) {
+	if m.refreshSessionFunc != nil {
+		return m.refreshSessionFunc(ctx, token)
+	}
+	return &models.LoginResponse{
+		SessionToken: token,
+		ExpiresIn:    86400,
+		User: models.SessionUser{
+			ID:       "mock-uuid-123",
+			Username: "mockuser",
+			Email:    "mock@example.com",
+		},
+	}, nil
 }
 
 func (m *mockAuthService) ChangePassword(ctx context.Context, userID string, req *models.ChangePasswordRequest) error {
@@ -442,6 +466,51 @@ func TestLogout_HTTP_InvalidOrMissingToken(t *testing.T) {
 
 	if w2.Code != http.StatusUnauthorized {
 		t.Errorf("expected 401 Unauthorized for invalid token, got %d", w2.Code)
+	}
+}
+
+func TestRefreshSession_HTTP_RequiresActiveSession(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	srv := &mockAuthService{
+		refreshSessionFunc: func(
+			ctx context.Context,
+			token string,
+		) (*models.LoginResponse, error) {
+			if token != "valid-session-token" {
+				t.Fatalf("unexpected session token: %q", token)
+			}
+			return &models.LoginResponse{
+				SessionToken: token,
+				ExpiresIn:    3600,
+				User: models.SessionUser{
+					ID:       "mock-uuid-123",
+					Username: "mockuser",
+					Email:    "mock@example.com",
+				},
+			}, nil
+		},
+	}
+	ctrl := controllers.NewAuthController(srv)
+	protected := router.Group("")
+	protected.Use(ctrl.AuthRequired())
+	protected.POST("/auth/refresh", ctrl.Refresh)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/auth/refresh", nil)
+	req.Header.Set("Authorization", "Bearer valid-session-token")
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d: %s", w.Code, w.Body.String())
+	}
+	var response map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	data, ok := response["data"].(map[string]any)
+	if !ok || data["session_token"] != "valid-session-token" {
+		t.Fatalf("unexpected refresh response: %v", response)
 	}
 }
 

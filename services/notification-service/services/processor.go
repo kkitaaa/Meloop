@@ -77,6 +77,10 @@ func (p *Processor) Process(ctx context.Context, routingKey, messageID string, b
 	if fields.actor == fields.recipient {
 		return nil
 	}
+	preference := preferenceType(typeName)
+	if preference == "" {
+		return permanentError{fmt.Errorf("notification event %q has no preference mapping", typeName)}
+	}
 	eventID := firstNonEmpty(messageID, event.ID)
 	if eventID == "" {
 		digest := sha256.Sum256(append([]byte(typeName+":"), body...))
@@ -84,10 +88,11 @@ func (p *Processor) Process(ctx context.Context, routingKey, messageID string, b
 	}
 
 	notification := models.Notification{
-		EventID:   eventID,
-		Recipient: fields.recipient,
-		Type:      typeName,
-		Data:      body,
+		EventID:        eventID,
+		Recipient:      fields.recipient,
+		Type:           typeName,
+		PreferenceType: preference,
+		Data:           body,
 	}
 	if fields.actor != "" {
 		notification.Actor = &fields.actor
@@ -96,6 +101,31 @@ func (p *Processor) Process(ctx context.Context, routingKey, messageID string, b
 		notification.TargetID = &fields.targetID
 	}
 	return p.repository.Create(ctx, notification)
+}
+
+func preferenceType(eventType string) string {
+	switch eventType {
+	case eventPostLiked:
+		return "LIKE"
+	case eventCommentCreated, eventCommentCommented:
+		return "COMENTARIO"
+	case eventCommentReplied:
+		return "RESPUESTA"
+	case eventFriendRequested:
+		return "SOLICITUD_AMISTAD"
+	case eventFriendAccepted:
+		return "SOLICITUD_AMISTAD_ACEPTADA"
+	case eventMessageSent:
+		return "MENSAJE"
+	case eventReportCreated, eventModerationAction:
+		return "ACCION_MODERACION"
+	case eventUserLevelUp:
+		return "SUBIDA_NIVEL"
+	case eventRewardUnlocked:
+		return "RECOMPENSA_DESBLOQUEADA"
+	default:
+		return ""
+	}
 }
 
 func (p *Processor) resolveFields(ctx context.Context, typeName string, event models.Event) (notificationFields, error) {

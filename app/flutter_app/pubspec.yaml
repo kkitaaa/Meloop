@@ -37,9 +37,17 @@ dependencies:
   just_audio: ^0.10.6
   youtube_explode_dart: ^3.1.0
   just_audio_windows: ^0.2.3
+  http: ^1.6.0
+  file_picker: ^13.3.1
+  dio: ^5.11.1
+  url_launcher: ^6.3.2
+  flutter_secure_storage: ^11.2.0
+  google_fonts: ^9.0.0
 
 dev_dependencies:
   flutter_test:
+    sdk: flutter
+  integration_test:
     sdk: flutter
 
   # The "flutter_lints" package below contains a set of recommended lints to
@@ -48,6 +56,9 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  
+  # Añadimos mocktail aquí mismo para las pruebas, sin duplicar la categoría
+  mocktail: ^1.0.0
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
