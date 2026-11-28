@@ -396,20 +396,33 @@ conexión y credenciales válidas.
 
 - **Puerto:** `8084`.
 - **Dependencias:** PostgreSQL, Redis, MinIO y RabbitMQ; `social-service` para
-  exclusión bidireccional de bloqueos. `recommendation-service` es opcional para
-  el feed. Configura `DATABASE_URL` (acepta `DB_URL` como alternativa),
-  `REDIS_URL` (o `REDIS_PASSWORD`), `SOCIAL_SERVICE_URL`,
-  `RECOMMENDATION_SERVICE_URL`, `MINIO_*` y `RABBITMQ_URL`. El servicio puede
-  continuar aunque falle la publicación de un evento a RabbitMQ; registra una
-  advertencia.
+  exclusión bidireccional de bloqueos y `auth-service` para verificar la sesión
+  del feed. `recommendation-service` es opcional. Configura `DATABASE_URL`
+  (acepta `DB_URL` como alternativa), `REDIS_URL` (o `REDIS_PASSWORD`),
+  `AUTH_SERVICE_URL`, `SOCIAL_SERVICE_URL`, `RECOMMENDATION_SERVICE_URL`,
+  `FEED_REQUEST_TIMEOUT`, `FEED_AUTH_TIMEOUT`, `FEED_RECOMMENDATION_TIMEOUT`,
+  `FEED_POSTGRES_TIMEOUT`, `FEED_SOCIAL_TIMEOUT`, `FEED_REDIS_TIMEOUT`,
+  `MINIO_*` y `RABBITMQ_URL`. Los timeout del feed aceptan duraciones Go como
+  `80ms`; sus valores predeterminados son 480, 60, 50, 220, 100 y 50 ms,
+  respectivamente. El servicio puede continuar aunque falle la publicación de
+  un evento a RabbitMQ; registra una advertencia.
 - **Rutas:** `GET /health`, operaciones de publicaciones, likes y comentarios
   bajo `/api/v1/posts`, y `GET /v1/feed?limit=20&cursor=`. El feed mezcla
   publicaciones propias, públicas y de amigos aceptados de los últimos siete
-  días; elimina bloqueos mediante `/internal/blocks/exclude`, aplica privacidad
-  y moderación, deduplica y conserva hasta 200 IDs ordenados en Redis como
-  `feed:{userID}` durante dos minutos. `next_cursor` pagina sobre esa instantánea;
-  si expiró, responde `410 Gone` y el cliente debe iniciar una nueva consulta.
-  Cada elemento usa el mismo formato JSON que el detalle de publicación.
+  días; aplica privacidad y moderación, deduplica y conserva hasta 200 IDs
+  ordenados en Redis como `feed:{userID}` durante dos minutos. Cada solicitud
+  del feed verifica el token con `auth-service` y exige que el `X-User-ID`
+  reenviado por el Gateway coincida con la identidad verificada.
+
+  Los bloqueos se consultan primero en `social-service` por
+  `/internal/blocks/exclude`; si falla, el servicio consulta PostgreSQL con la
+  misma semántica bidireccional. Si fallan ambas fuentes, el feed falla cerrado
+  y no devuelve publicaciones. Redis es best-effort: si no está disponible, se
+  conserva la instantánea en memoria local durante dos minutos; esa paginación
+  de respaldo solo es compartida por solicitudes que lleguen a la misma
+  instancia. Los posts eliminados o cuya visibilidad cambió después de la
+  instantánea se omiten al leer cada página. Si el cursor expiró o su instantánea
+  no está disponible en esta instancia, responde `410 Gone`.
 
   La llamada a recomendaciones tiene un timeout breve y es best-effort: si el
   servicio falla, se omite esa fuente. El servicio de recomendaciones actual
@@ -424,6 +437,7 @@ conexión y credenciales válidas.
 ```powershell
 $env:DATABASE_URL = "postgresql://postgres:<contraseña-local>@127.0.0.1:15422/postgres?sslmode=disable"
 $env:REDIS_URL = "redis://:<contraseña-local-de-redis>@127.0.0.1:6379"
+$env:AUTH_SERVICE_URL = "http://localhost:8083"
 $env:SOCIAL_SERVICE_URL = "http://localhost:8086"
 $env:RECOMMENDATION_SERVICE_URL = "http://localhost:8087"
 $env:RABBITMQ_URL = "amqp://<usuario>:<contraseña>@localhost:5672/"
@@ -433,6 +447,10 @@ go mod download
 go test ./...
 go run .
 ```
+
+Para comprobar la forma de las consultas contra una base Supabase migrada,
+define opcionalmente `TEST_DATABASE_URL` al ejecutar `go test ./...`. Las pruebas
+de integración ejercitan las consultas del feed sin modificar registros.
 
 En otra terminal, verifica `http://localhost:8084/health`. Para probar el feed,
 envía `X-User-ID` y solicita por ejemplo

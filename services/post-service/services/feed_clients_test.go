@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"testing"
+	"time"
 )
 
 func TestSocialFeedClientUsesCentralBlockExclusionEndpoint(t *testing.T) {
@@ -68,5 +69,50 @@ func TestRecommendationProviderSkipsNonNumericUserIDs(t *testing.T) {
 	}
 	if len(recommendations) != 0 {
 		t.Fatalf("recommendations = %+v, want empty", recommendations)
+	}
+}
+
+func TestRecommendationProviderReturnsErrorWhenServiceIsDown(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		http.Error(writer, "unavailable", http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+
+	client := &HTTPFeedRecommendationProvider{baseURL: server.URL, client: server.Client()}
+	if _, err := client.GetPostRecommendations(context.Background(), "42", 200); err == nil {
+		t.Fatal("expected an error from unavailable recommendation-service")
+	}
+}
+
+func TestFeedIdentityVerifierUsesAuthenticatedSession(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/auth/validate" || request.Header.Get("Authorization") != "Bearer valid-session" {
+			t.Errorf("validation request = %s with authorization %q", request.URL.Path, request.Header.Get("Authorization"))
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{"success":true,"data":{"id":"user-42"}}`))
+	}))
+	defer server.Close()
+
+	verifier := NewHTTPFeedIdentityVerifier(server.URL, time.Second)
+	userID, err := verifier.AuthenticatedUserID(context.Background(), "Bearer valid-session")
+	if err != nil {
+		t.Fatalf("validate session: %v", err)
+	}
+	if userID != "user-42" {
+		t.Fatalf("authenticated user ID = %q, want user-42", userID)
+	}
+}
+
+func TestValidateFeedUserIDRejectsUnsafeIdentifiers(t *testing.T) {
+	for _, userID := range []string{"", " leading-space", "has\nnewline", string(make([]byte, 65))} {
+		if ValidateFeedUserID(userID) {
+			t.Errorf("ValidateFeedUserID(%q) = true, want false", userID)
+		}
+	}
+	for _, userID := range []string{"user-42", "550e8400-e29b-41d4-a716-446655440000"} {
+		if !ValidateFeedUserID(userID) {
+			t.Errorf("ValidateFeedUserID(%q) = false, want true", userID)
+		}
 	}
 }

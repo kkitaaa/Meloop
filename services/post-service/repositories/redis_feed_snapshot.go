@@ -17,15 +17,22 @@ type FeedSnapshotStore interface {
 }
 
 type RedisFeedSnapshotStore struct {
-	client *redis.Client
+	client  *redis.Client
+	timeout time.Duration
 }
 
-func NewRedisFeedSnapshotStore(client *redis.Client) *RedisFeedSnapshotStore {
-	return &RedisFeedSnapshotStore{client: client}
+func NewRedisFeedSnapshotStore(client *redis.Client, timeouts ...time.Duration) *RedisFeedSnapshotStore {
+	timeout := 50 * time.Millisecond
+	if len(timeouts) > 0 && timeouts[0] > 0 {
+		timeout = timeouts[0]
+	}
+	return &RedisFeedSnapshotStore{client: client, timeout: timeout}
 }
 
 func (store *RedisFeedSnapshotStore) Get(ctx context.Context, key string) (models.FeedSnapshot, error) {
-	value, err := store.client.Get(ctx, key).Bytes()
+	queryCtx, cancel := context.WithTimeout(ctx, store.timeout)
+	defer cancel()
+	value, err := store.client.Get(queryCtx, key).Bytes()
 	if errors.Is(err, redis.Nil) {
 		return models.FeedSnapshot{}, redis.Nil
 	}
@@ -45,7 +52,9 @@ func (store *RedisFeedSnapshotStore) Set(ctx context.Context, key string, snapsh
 	if err != nil {
 		return fmt.Errorf("encode feed snapshot for Redis: %w", err)
 	}
-	if err := store.client.Set(ctx, key, value, ttl).Err(); err != nil {
+	queryCtx, cancel := context.WithTimeout(ctx, store.timeout)
+	defer cancel()
+	if err := store.client.Set(queryCtx, key, value, ttl).Err(); err != nil {
 		return fmt.Errorf("write feed snapshot to Redis: %w", err)
 	}
 	return nil

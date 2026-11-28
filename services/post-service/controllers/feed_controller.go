@@ -1,9 +1,12 @@
 package controllers
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/meloop/post-service/repositories"
@@ -11,20 +14,39 @@ import (
 )
 
 type FeedController struct {
-	service *services.FeedService
+	service        *services.FeedService
+	identity       services.FeedIdentityVerifier
+	requestTimeout time.Duration
 }
 
-func NewFeedController(service *services.FeedService) *FeedController {
-	return &FeedController{service: service}
+func NewFeedController(service *services.FeedService, identity services.FeedIdentityVerifier, requestTimeout time.Duration) *FeedController {
+	if requestTimeout <= 0 {
+		requestTimeout = 480 * time.Millisecond
+	}
+	return &FeedController{service: service, identity: identity, requestTimeout: requestTimeout}
 }
 
 func (c *FeedController) GetMainFeed(ctx *gin.Context) {
-	userID := ctx.GetString("userID")
-	if userID == "" {
-		userID = ctx.GetHeader("X-User-ID")
+	requestCtx, cancel := context.WithTimeout(ctx.Request.Context(), c.requestTimeout)
+	defer cancel()
+
+	userID := strings.TrimSpace(ctx.GetHeader("X-User-ID"))
+	authorization := strings.TrimSpace(ctx.GetHeader("Authorization"))
+	if !services.ValidateFeedUserID(userID) || authorization == "" || c.identity == nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": services.ErrInvalidFeedIdentity.Error()})
+		return
 	}
-	if userID == "" {
-		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "X-User-ID header es requerido para identificar al usuario"})
+	authenticatedUserID, err := c.identity.AuthenticatedUserID(requestCtx, authorization)
+	if errors.Is(err, services.ErrInvalidFeedIdentity) {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": services.ErrInvalidFeedIdentity.Error()})
+		return
+	}
+	if err != nil {
+		ctx.JSON(http.StatusServiceUnavailable, gin.H{"error": "no se pudo validar la sesión"})
+		return
+	}
+	if authenticatedUserID != userID {
+		ctx.JSON(http.StatusForbidden, gin.H{"error": services.ErrInvalidFeedIdentity.Error()})
 		return
 	}
 
@@ -43,7 +65,7 @@ func (c *FeedController) GetMainFeed(ctx *gin.Context) {
 		return
 	}
 
-	page, err := c.service.GetFeed(ctx.Request.Context(), userID, limit, cursor)
+	page, err := c.service.GetFeed(requestCtx, userID, limit, cursor)
 	if err != nil {
 		switch {
 		case errors.Is(err, services.ErrInvalidFeedLimit), errors.Is(err, services.ErrInvalidFeedCursor):

@@ -17,10 +17,14 @@ type SocialFeedClient struct {
 	client  *http.Client
 }
 
-func NewSocialFeedClient(baseURL string) *SocialFeedClient {
+func NewSocialFeedClient(baseURL string, timeouts ...time.Duration) *SocialFeedClient {
+	timeout := 100 * time.Millisecond
+	if len(timeouts) > 0 && timeouts[0] > 0 {
+		timeout = timeouts[0]
+	}
 	return &SocialFeedClient{
 		baseURL: strings.TrimRight(baseURL, "/"),
-		client:  &http.Client{Timeout: 150 * time.Millisecond},
+		client:  &http.Client{Timeout: timeout},
 	}
 }
 
@@ -70,10 +74,14 @@ type HTTPFeedRecommendationProvider struct {
 	client  *http.Client
 }
 
-func NewHTTPFeedRecommendationProvider(baseURL string) *HTTPFeedRecommendationProvider {
+func NewHTTPFeedRecommendationProvider(baseURL string, timeouts ...time.Duration) *HTTPFeedRecommendationProvider {
+	timeout := 50 * time.Millisecond
+	if len(timeouts) > 0 && timeouts[0] > 0 {
+		timeout = timeouts[0]
+	}
 	return &HTTPFeedRecommendationProvider{
 		baseURL: strings.TrimRight(baseURL, "/"),
-		client:  &http.Client{Timeout: 100 * time.Millisecond},
+		client:  &http.Client{Timeout: timeout},
 	}
 }
 
@@ -118,4 +126,52 @@ func (client *HTTPFeedRecommendationProvider) GetPostRecommendations(ctx context
 		}
 	}
 	return recommendations, nil
+}
+
+type HTTPFeedIdentityVerifier struct {
+	baseURL string
+	client  *http.Client
+}
+
+func NewHTTPFeedIdentityVerifier(baseURL string, timeout time.Duration) *HTTPFeedIdentityVerifier {
+	if timeout <= 0 {
+		timeout = 60 * time.Millisecond
+	}
+	return &HTTPFeedIdentityVerifier{
+		baseURL: strings.TrimRight(baseURL, "/"),
+		client:  &http.Client{Timeout: timeout},
+	}
+}
+
+func (verifier *HTTPFeedIdentityVerifier) AuthenticatedUserID(ctx context.Context, authorization string) (string, error) {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, verifier.baseURL+"/auth/validate", nil)
+	if err != nil {
+		return "", fmt.Errorf("create feed session validation request: %w", err)
+	}
+	request.Header.Set("Authorization", authorization)
+	response, err := verifier.client.Do(request)
+	if err != nil {
+		return "", fmt.Errorf("validate feed session: %w", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode == http.StatusUnauthorized {
+		return "", ErrInvalidFeedIdentity
+	}
+	if response.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("auth-service returned status %d during feed session validation", response.StatusCode)
+	}
+
+	var result struct {
+		Success bool `json:"success"`
+		Data    struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("decode feed session validation response: %w", err)
+	}
+	if !result.Success || !ValidateFeedUserID(result.Data.ID) {
+		return "", ErrInvalidFeedIdentity
+	}
+	return result.Data.ID, nil
 }

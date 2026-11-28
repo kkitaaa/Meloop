@@ -10,6 +10,8 @@ import (
 	"math"
 	"sort"
 	"strconv"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -28,10 +30,15 @@ var (
 	ErrFeedSnapshotExpired = errors.New("el cursor del feed expiró; inicia una nueva consulta")
 	ErrInvalidFeedCursor   = errors.New("el cursor del feed no es válido")
 	ErrInvalidFeedLimit    = errors.New("limit debe ser un entero entre 1 y 50")
+	ErrInvalidFeedIdentity = errors.New("la identidad del feed no es válida o no coincide con la sesión")
 )
 
 type FeedBlockFilter interface {
 	ExcludeBlocked(ctx context.Context, userID string, authorIDs []string) ([]string, error)
+}
+
+type FeedIdentityVerifier interface {
+	AuthenticatedUserID(ctx context.Context, authorization string) (string, error)
 }
 
 type FeedRecommendation struct {
@@ -53,11 +60,18 @@ type feedCursor struct {
 	Offset     int    `json:"offset"`
 }
 
+type localFeedSnapshot struct {
+	snapshot models.FeedSnapshot
+	expires  time.Time
+}
+
 type FeedService struct {
 	repo            repositories.FeedRepository
 	snapshots       repositories.FeedSnapshotStore
 	blockFilter     FeedBlockFilter
 	recommendations FeedRecommendationProvider
+	localMu         sync.Mutex
+	localSnapshots  map[string]localFeedSnapshot
 }
 
 func NewFeedService(
@@ -71,6 +85,7 @@ func NewFeedService(
 		snapshots:       snapshots,
 		blockFilter:     blockFilter,
 		recommendations: recommendations,
+		localSnapshots:  make(map[string]localFeedSnapshot),
 	}
 }
 
@@ -81,9 +96,6 @@ func (s *FeedService) GetFeed(ctx context.Context, userID string, limit int, cur
 	if userID == "" {
 		return FeedPage{}, errors.New("el usuario es obligatorio")
 	}
-
-	ctx, cancel := context.WithTimeout(ctx, 450*time.Millisecond)
-	defer cancel()
 
 	var snapshot models.FeedSnapshot
 	offset := 0
@@ -98,10 +110,7 @@ func (s *FeedService) GetFeed(ctx context.Context, userID string, limit int, cur
 		if err != nil {
 			return FeedPage{}, err
 		}
-		snapshot, err = s.snapshots.Get(ctx, feedSnapshotKey(userID))
-		if errors.Is(err, redis.Nil) {
-			return FeedPage{}, ErrFeedSnapshotExpired
-		}
+		snapshot, err = s.getSnapshot(ctx, userID)
 		if err != nil {
 			return FeedPage{}, err
 		}
@@ -118,11 +127,11 @@ func (s *FeedService) GetFeed(ctx context.Context, userID string, limit int, cur
 		return FeedPage{Posts: []repositories.Post{}}, nil
 	}
 
-	end := offset + limit
-	if end > len(snapshot.PostIDs) {
-		end = len(snapshot.PostIDs)
+	remainingIDs := snapshot.PostIDs[offset:]
+	if len(remainingIDs) > maxFeedCandidates {
+		return FeedPage{}, ErrInvalidFeedCursor
 	}
-	pageIDs := snapshot.PostIDs[offset:end]
+	pageIDs := remainingIDs
 	posts, err := s.repo.GetPostsByIDs(ctx, userID, pageIDs)
 	if err != nil {
 		return FeedPage{}, err
@@ -132,11 +141,11 @@ func (s *FeedService) GetFeed(ctx context.Context, userID string, limit int, cur
 	if err != nil {
 		return FeedPage{}, err
 	}
-	posts = filterAndOrderPosts(posts, pageIDs, allowedAuthors)
+	posts, nextOffset := selectFeedPage(snapshot.PostIDs, offset, limit, posts, allowedAuthors)
 
 	page := FeedPage{Posts: posts}
-	if end < len(snapshot.PostIDs) {
-		page.NextCursor, err = encodeFeedCursor(feedCursor{SnapshotID: snapshot.ID, Offset: end})
+	if nextOffset < len(snapshot.PostIDs) {
+		page.NextCursor, err = encodeFeedCursor(feedCursor{SnapshotID: snapshot.ID, Offset: nextOffset})
 		if err != nil {
 			return FeedPage{}, fmt.Errorf("codificar cursor del feed: %w", err)
 		}
@@ -153,6 +162,9 @@ func (s *FeedService) createSnapshot(ctx context.Context, userID string) (models
 		if err != nil {
 			slog.Warn("feed_recommendations_unavailable", "user_id", userID, "error", err)
 		} else {
+			if len(items) > maxFeedCandidates {
+				items = items[:maxFeedCandidates]
+			}
 			recommendations = items
 			for _, item := range recommendations {
 				if item.PostID == "" {
@@ -209,8 +221,12 @@ func (s *FeedService) createSnapshot(ctx context.Context, userID string) (models
 	}
 
 	snapshot := models.FeedSnapshot{ID: uuid.NewString(), PostIDs: postIDs}
-	if err := s.snapshots.Set(ctx, feedSnapshotKey(userID), snapshot, feedSnapshotTTL); err != nil {
-		return models.FeedSnapshot{}, err
+	key := feedSnapshotKey(userID)
+	s.rememberSnapshot(key, snapshot)
+	if s.snapshots != nil {
+		if err := s.snapshots.Set(ctx, key, snapshot, feedSnapshotTTL); err != nil {
+			slog.Warn("feed_snapshot_redis_write_failed", "user_id", userID, "error", err)
+		}
 	}
 	return snapshot, nil
 }
@@ -231,15 +247,87 @@ func (s *FeedService) allowedAuthors(ctx context.Context, userID string, posts [
 	if len(authorIDs) == 0 {
 		return map[string]struct{}{}, nil
 	}
-	allowed, err := s.blockFilter.ExcludeBlocked(ctx, userID, authorIDs)
+	var allowed []string
+	var err error
+	if s.blockFilter == nil {
+		err = errors.New("social-service block filter is not configured")
+	} else {
+		allowed, err = s.blockFilter.ExcludeBlocked(ctx, userID, authorIDs)
+	}
 	if err != nil {
-		return nil, err
+		slog.Error("feed_social_block_filter_failed", "user_id", userID, "error", err)
+		allowed, err = s.repo.ExcludeBlockedAuthors(ctx, userID, authorIDs)
+		if err != nil {
+			return nil, fmt.Errorf("social-service and PostgreSQL block filtering failed: %w", err)
+		}
+		slog.Warn("feed_postgres_block_filter_fallback", "user_id", userID, "author_count", len(authorIDs))
 	}
 	allowedSet := make(map[string]struct{}, len(allowed))
 	for _, authorID := range allowed {
 		allowedSet[authorID] = struct{}{}
 	}
 	return allowedSet, nil
+}
+
+func (s *FeedService) getSnapshot(ctx context.Context, userID string) (models.FeedSnapshot, error) {
+	key := feedSnapshotKey(userID)
+	if s.snapshots != nil {
+		snapshot, err := s.snapshots.Get(ctx, key)
+		if err == nil {
+			s.rememberSnapshot(key, snapshot)
+			return snapshot, nil
+		}
+		if !errors.Is(err, redis.Nil) {
+			slog.Warn("feed_snapshot_redis_read_failed", "user_id", userID, "error", err)
+		}
+		if localSnapshot, found := s.localSnapshot(key); found {
+			return localSnapshot, nil
+		}
+		if errors.Is(err, redis.Nil) {
+			return models.FeedSnapshot{}, ErrFeedSnapshotExpired
+		}
+		return models.FeedSnapshot{}, fmt.Errorf("%w: no local snapshot is available", ErrFeedSnapshotExpired)
+	}
+	if snapshot, found := s.localSnapshot(key); found {
+		return snapshot, nil
+	}
+	return models.FeedSnapshot{}, ErrFeedSnapshotExpired
+}
+
+func (s *FeedService) rememberSnapshot(key string, snapshot models.FeedSnapshot) {
+	s.localMu.Lock()
+	defer s.localMu.Unlock()
+	now := time.Now()
+	if cached, exists := s.localSnapshots[key]; exists &&
+		cached.snapshot.ID == snapshot.ID && now.Before(cached.expires) {
+		return
+	}
+	for existingKey, cached := range s.localSnapshots {
+		if !now.Before(cached.expires) {
+			delete(s.localSnapshots, existingKey)
+		}
+	}
+	if len(s.localSnapshots) >= 5000 {
+		for existingKey := range s.localSnapshots {
+			delete(s.localSnapshots, existingKey)
+			break
+		}
+	}
+	s.localSnapshots[key] = localFeedSnapshot{snapshot: snapshot, expires: now.Add(feedSnapshotTTL)}
+}
+
+func (s *FeedService) localSnapshot(key string) (models.FeedSnapshot, bool) {
+	s.localMu.Lock()
+	defer s.localMu.Unlock()
+	cached, exists := s.localSnapshots[key]
+	if !exists {
+		return models.FeedSnapshot{}, false
+	}
+	if time.Now().After(cached.expires) {
+		delete(s.localSnapshots, key)
+		return models.FeedSnapshot{}, false
+	}
+	return cached.snapshot, true
 }
 
 func feedScore(candidate repositories.FeedCandidate, recommendationScore float64) float64 {
@@ -273,24 +361,47 @@ func filterCandidates(candidates []repositories.FeedCandidate, allowedAuthors ma
 	return filtered
 }
 
-func filterAndOrderPosts(posts []repositories.Post, requestedIDs []string, allowedAuthors map[string]struct{}) []repositories.Post {
+func selectFeedPage(
+	snapshotIDs []string,
+	offset, limit int,
+	posts []repositories.Post,
+	allowedAuthors map[string]struct{},
+) ([]repositories.Post, int) {
 	byID := make(map[string]repositories.Post, len(posts))
 	for _, post := range posts {
 		if _, ok := allowedAuthors[post.AuthorID]; ok {
 			byID[post.ID] = post
 		}
 	}
-	ordered := make([]repositories.Post, 0, len(posts))
-	for _, id := range requestedIDs {
+	ordered := make([]repositories.Post, 0, limit)
+	nextOffset := offset
+	for index := offset; index < len(snapshotIDs); index++ {
+		nextOffset = index + 1
+		id := snapshotIDs[index]
 		if post, ok := byID[id]; ok {
 			ordered = append(ordered, post)
+			if len(ordered) == limit {
+				break
+			}
 		}
 	}
-	return ordered
+	return ordered, nextOffset
 }
 
 func feedSnapshotKey(userID string) string {
 	return "feed:" + userID
+}
+
+func ValidateFeedUserID(userID string) bool {
+	if userID == "" || len(userID) > 64 || strings.TrimSpace(userID) != userID {
+		return false
+	}
+	for _, char := range userID {
+		if char < 0x20 || char == 0x7f {
+			return false
+		}
+	}
+	return true
 }
 
 func encodeFeedCursor(cursor feedCursor) (string, error) {

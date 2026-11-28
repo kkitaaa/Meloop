@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"os"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
@@ -79,7 +80,6 @@ func main() {
 	postController := controllers.NewPostController(postService)
 
 	// 8. Inyectar dependencias del nuevo FEED PRINCIPAL
-	feedRepo := repositories.NewPostgresFeedRepository(db)
 	redisURL := os.Getenv("REDIS_URL")
 	if redisURL == "" {
 		if redisPassword := os.Getenv("REDIS_PASSWORD"); redisPassword != "" {
@@ -92,6 +92,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error al configurar Redis para el feed: %v", err)
 	}
+	redisTimeout := feedTimeout("FEED_REDIS_TIMEOUT", 50*time.Millisecond)
+	redisOptions.DialTimeout = redisTimeout
+	redisOptions.ReadTimeout = redisTimeout
+	redisOptions.WriteTimeout = redisTimeout
 	redisClient := redis.NewClient(redisOptions)
 	defer redisClient.Close()
 
@@ -103,13 +107,25 @@ func main() {
 	if recommendationServiceURL == "" {
 		recommendationServiceURL = "http://localhost:8087"
 	}
+	authServiceURL := os.Getenv("AUTH_SERVICE_URL")
+	if authServiceURL == "" {
+		authServiceURL = "http://localhost:8083"
+	}
+	postgresTimeout := feedTimeout("FEED_POSTGRES_TIMEOUT", 220*time.Millisecond)
+	socialTimeout := feedTimeout("FEED_SOCIAL_TIMEOUT", 100*time.Millisecond)
+	recommendationTimeout := feedTimeout("FEED_RECOMMENDATION_TIMEOUT", 50*time.Millisecond)
+	authTimeout := feedTimeout("FEED_AUTH_TIMEOUT", 60*time.Millisecond)
 	feedService := services.NewFeedService(
-		feedRepo,
-		repositories.NewRedisFeedSnapshotStore(redisClient),
-		services.NewSocialFeedClient(socialServiceURL),
-		services.NewHTTPFeedRecommendationProvider(recommendationServiceURL),
+		repositories.NewPostgresFeedRepository(db, postgresTimeout),
+		repositories.NewRedisFeedSnapshotStore(redisClient, redisTimeout),
+		services.NewSocialFeedClient(socialServiceURL, socialTimeout),
+		services.NewHTTPFeedRecommendationProvider(recommendationServiceURL, recommendationTimeout),
 	)
-	feedController := controllers.NewFeedController(feedService)
+	feedController := controllers.NewFeedController(
+		feedService,
+		services.NewHTTPFeedIdentityVerifier(authServiceURL, authTimeout),
+		feedTimeout("FEED_REQUEST_TIMEOUT", 480*time.Millisecond),
+	)
 
 	// 9. Configurar Rutas
 	router := gin.Default()
@@ -140,4 +156,16 @@ func main() {
 	if err := router.Run(":8084"); err != nil {
 		log.Fatalf("Error al iniciar el servidor web: %v", err)
 	}
+}
+
+func feedTimeout(key string, fallback time.Duration) time.Duration {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback
+	}
+	timeout, err := time.ParseDuration(value)
+	if err != nil || timeout <= 0 {
+		log.Fatalf("Valor inválido para %s: %q", key, value)
+	}
+	return timeout
 }
