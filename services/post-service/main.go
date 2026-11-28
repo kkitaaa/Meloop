@@ -74,7 +74,7 @@ func main() {
 	}
 
 	postRepo := repositories.NewPostRepository(sqlDB)
-	postService := services.NewPostService(postRepo)
+	postService := services.NewPostService(postRepo, minioClient)
 	postController := controllers.NewPostController(postService)
 
 	// 8. Inyectar dependencias del nuevo FEED PRINCIPAL
