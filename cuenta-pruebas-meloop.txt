@@ -1,0 +1,3 @@
+Email: meloop-1c04dcf2@example.test
+Username: test_1c04dcf2
+Uso: Pruebas de integración de Meloop

@@ -17,12 +17,14 @@ import (
 )
 
 type mockUserRepository struct {
-	users              map[string]*models.Usuario
-	getByIDFunc        func(ctx context.Context, id string) (*models.Usuario, error)
-	getByUsernameFunc  func(ctx context.Context, username string) (*models.Usuario, error)
-	getByEmailFunc     func(ctx context.Context, email string) (*models.Usuario, error)
-	createFunc         func(ctx context.Context, user *models.Usuario) error
-	updatePasswordFunc func(ctx context.Context, id string, passwordHash string) error
+	users               map[string]*models.Usuario
+	getByIDFunc         func(ctx context.Context, id string) (*models.Usuario, error)
+	getByUsernameFunc   func(ctx context.Context, username string) (*models.Usuario, error)
+	getByEmailFunc      func(ctx context.Context, email string) (*models.Usuario, error)
+	getRoleByIDFunc     func(ctx context.Context, id string) (string, error)
+	createFunc          func(ctx context.Context, user *models.Usuario) error
+	updatePasswordFunc  func(ctx context.Context, id string, passwordHash string) error
+	updateLastLoginFunc func(ctx context.Context, id string) error
 }
 
 func (m *mockUserRepository) GetByID(ctx context.Context, id string) (*models.Usuario, error) {
@@ -61,6 +63,18 @@ func (m *mockUserRepository) GetByEmail(ctx context.Context, email string) (*mod
 	return nil, nil
 }
 
+func (m *mockUserRepository) GetRoleByID(ctx context.Context, id string) (string, error) {
+	if m.getRoleByIDFunc != nil {
+		return m.getRoleByIDFunc(ctx, id)
+	}
+	for _, u := range m.users {
+		if u.IDUsuario == id {
+			return "usuario", nil
+		}
+	}
+	return "", repositories.ErrUserNotFound
+}
+
 func (m *mockUserRepository) Create(ctx context.Context, user *models.Usuario) error {
 	if m.createFunc != nil {
 		return m.createFunc(ctx, user)
@@ -83,10 +97,18 @@ func (m *mockUserRepository) UpdatePassword(ctx context.Context, id string, pass
 	return nil
 }
 
+func (m *mockUserRepository) UpdateLastLogin(ctx context.Context, id string) error {
+	if m.updateLastLoginFunc != nil {
+		return m.updateLastLoginFunc(ctx, id)
+	}
+	return nil
+}
+
 type mockSessionRepository struct {
 	sessions           map[string]*models.SessionUser
 	createFunc         func(ctx context.Context, token string, user *models.SessionUser, ttl time.Duration) error
 	getFunc            func(ctx context.Context, token string) (*models.SessionUser, error)
+	renewFunc          func(ctx context.Context, token, userID string, ttl time.Duration) (bool, error)
 	deleteFunc         func(ctx context.Context, token string) error
 	deleteByUserIDFunc func(ctx context.Context, userID string) error
 }
@@ -104,6 +126,19 @@ func (m *mockSessionRepository) Get(ctx context.Context, token string) (*models.
 		return m.getFunc(ctx, token)
 	}
 	return m.sessions[token], nil
+}
+
+func (m *mockSessionRepository) Renew(
+	ctx context.Context,
+	token string,
+	userID string,
+	ttl time.Duration,
+) (bool, error) {
+	if m.renewFunc != nil {
+		return m.renewFunc(ctx, token, userID, ttl)
+	}
+	user, exists := m.sessions[token]
+	return exists && user != nil && user.ID == userID, nil
 }
 
 func (m *mockSessionRepository) Delete(ctx context.Context, token string) error {
@@ -519,6 +554,7 @@ func TestRegister_DatabaseUniqueViolationRace(t *testing.T) {
 func TestLogin_Success(t *testing.T) {
 	cfg := &config.Config{PasswordMinLength: 8, SessionTTL: 24 * time.Hour}
 	hashedPassword, _ := bcrypt.GenerateFromPassword([]byte("meloop123"), bcrypt.DefaultCost)
+	lastLoginUpdated := false
 	repo := &mockUserRepository{
 		users: map[string]*models.Usuario{
 			"alan": {
@@ -527,6 +563,10 @@ func TestLogin_Success(t *testing.T) {
 				Correo:         "alan@meloop.com",
 				ContrasenaHash: string(hashedPassword),
 			},
+		},
+		updateLastLoginFunc: func(_ context.Context, id string) error {
+			lastLoginUpdated = id == "user-uuid-1"
+			return nil
 		},
 	}
 	sessionRepo := &mockSessionRepository{sessions: make(map[string]*models.SessionUser)}
@@ -550,6 +590,9 @@ func TestLogin_Success(t *testing.T) {
 	}
 	if res.User.ID != "user-uuid-1" || res.User.Username != "alan" || res.User.Email != "alan@meloop.com" {
 		t.Errorf("unexpected user details returned: %+v", res.User)
+	}
+	if !lastLoginUpdated {
+		t.Error("expected successful login to update fecha_ultimo_login")
 	}
 
 	// Verify it was saved in session repository
@@ -667,6 +710,40 @@ func TestValidateSession(t *testing.T) {
 	_, err = srv.ValidateSession(context.Background(), "never-existed-token")
 	if err == nil {
 		t.Error("expected error for non-existent session token, got nil")
+	}
+}
+
+func TestRefreshSession_ExtendsOnlyAnActiveSession(t *testing.T) {
+	cfg := &config.Config{
+		PasswordMinLength: 8,
+		SessionTTL:        time.Hour,
+	}
+	user := &models.SessionUser{
+		ID:       "user-uuid-1",
+		Username: "alan",
+		Email:    "alan@meloop.com",
+	}
+	sessionRepo := &mockSessionRepository{
+		sessions: map[string]*models.SessionUser{"valid-token": user},
+	}
+	srv := createTestAuthService(
+		cfg,
+		&mockUserRepository{users: make(map[string]*models.Usuario)},
+		sessionRepo,
+		nil,
+		nil,
+	)
+
+	refreshed, err := srv.RefreshSession(context.Background(), "valid-token")
+	if err != nil {
+		t.Fatalf("expected active session to refresh, got %v", err)
+	}
+	if refreshed.SessionToken != "valid-token" || refreshed.ExpiresIn != 3600 {
+		t.Fatalf("unexpected refreshed session: %+v", refreshed)
+	}
+
+	if _, err := srv.RefreshSession(context.Background(), "expired-token"); !errors.Is(err, services.ErrInvalidSession) {
+		t.Fatalf("expected expired session to be rejected, got %v", err)
 	}
 }
 

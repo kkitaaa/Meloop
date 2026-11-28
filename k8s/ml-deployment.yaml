@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: ml-service
-  namespace: student-franco-araya-d52ef23de43f
+  namespace: meloop
   labels:
     app.kubernetes.io/name: ml-service
 spec:
@@ -17,8 +17,8 @@ spec:
     spec:
       containers:
         - name: ml-service
-          image: ghcr.io/kkitaaa/meloop/ml-service:latest
-          imagePullPolicy: Always
+          image: meloop-ml-service:dev
+          imagePullPolicy: IfNotPresent
           ports:
             - name: http
               containerPort: 8001

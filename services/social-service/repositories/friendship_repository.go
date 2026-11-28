@@ -3,8 +3,12 @@ package repositories
 import (
 	"context"
 	"errors"
+	"fmt"
+	"log"
+	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -20,7 +24,6 @@ var (
 	ErrRequestProcessed   = errors.New("friendship request was already processed")
 	ErrFriendshipNotFound = errors.New("friendship not found")
 	ErrSelfBlock          = errors.New("cannot block yourself")
-	ErrAlreadyBlocked     = errors.New("user is already blocked")
 	ErrNotFriends         = errors.New("users are not friends")
 	ErrNotAuthorized      = errors.New("user is not authorized for this operation")
 	ErrUserNotFound       = errors.New("user not found")
@@ -33,11 +36,19 @@ type FriendshipRepository interface {
 	Accept(ctx context.Context, requestID string, receiverID string) (*models.FriendRequest, error)
 	Reject(ctx context.Context, requestID string, receiverID string) (*models.FriendRequest, error)
 	Cancel(ctx context.Context, requestID string, senderID string) (*models.FriendRequest, error)
-	ListFriends(ctx context.Context, userID string) ([]models.Friend, error)
+	ListFriends(ctx context.Context, userID string, limit int, query string, cursor *models.FriendCursor) (models.FriendPage, error)
 	RemoveFriend(ctx context.Context, userID, targetID string) error
 	GetFriendProfile(ctx context.Context, userID, friendID string) (*models.FriendProfile, error)
-	BlockUser(ctx context.Context, blockerID, blockedID string) error
+	BlockUser(ctx context.Context, blockerID, blockedID string) ([]models.FriendRequest, error)
+	UnblockUser(ctx context.Context, blockerID, blockedID string) error
+	GetAcceptedFriendsCount(ctx context.Context, userID string) (int, error)
+	GetFriendsCount(ctx context.Context, userID string) (int, error)
+	GetBlockedUsersCount(ctx context.Context, userID string) (int, error)
+	GetBlockedCount(ctx context.Context, userID string) (int, error)
 	IsBlocked(ctx context.Context, user1ID, user2ID string) (bool, error)
+	GetMutualFriendsQuery(ctx context.Context, userID, targetID string) (models.MutualFriendsQuery, error)
+	GetMutualFriendsPage(ctx context.Context, userID, targetID, cursor string, limit int) ([]string, bool, error)
+	ListMutualFriendProfiles(ctx context.Context, userIDs []string) ([]models.MutualFriend, error)
 	ValidateInteraction(ctx context.Context, user1ID, user2ID string) error
 	GetEligibleCandidates(ctx context.Context, userID string) ([]models.CandidateUser, error)
 	GetMutualFriendsCount(ctx context.Context, userID string, candidateIDs []string) (map[string]int, error)
@@ -46,11 +57,28 @@ type FriendshipRepository interface {
 }
 
 type postgresFriendshipRepository struct {
-	pool *pgxpool.Pool
+	pool  *pgxpool.Pool
+	cache *socialCountRedisCache
 }
 
-func NewFriendshipRepository(pool *pgxpool.Pool) FriendshipRepository {
-	return &postgresFriendshipRepository{pool: pool}
+func NewFriendshipRepository(pool *pgxpool.Pool, redisURL ...string) FriendshipRepository {
+	var cache *socialCountRedisCache
+	if len(redisURL) > 0 && strings.TrimSpace(redisURL[0]) != "" {
+		parsed, err := newSocialCountRedisCache(redisURL[0])
+		if err != nil {
+			log.Printf("WARN social-count-cache init failed: %v", err)
+		} else {
+			cache = parsed
+		}
+	} else if redisEnv := strings.TrimSpace(os.Getenv("REDIS_URL")); redisEnv != "" {
+		parsed, err := newSocialCountRedisCache(redisEnv)
+		if err != nil {
+			log.Printf("WARN social-count-cache init failed: %v", err)
+		} else {
+			cache = parsed
+		}
+	}
+	return &postgresFriendshipRepository{pool: pool, cache: cache}
 }
 
 func (r *postgresFriendshipRepository) CreatePending(ctx context.Context, senderID, receiverID string) (*models.FriendRequest, error) {
@@ -207,7 +235,10 @@ func (r *postgresFriendshipRepository) process(ctx context.Context, requestID st
 	}
 
 	err = tx.QueryRow(ctx, `
-		UPDATE amistad SET estado = $1 WHERE id_amistad = $2
+		UPDATE amistad
+		SET estado = $1::varchar(50),
+		    fecha_amistad = CASE WHEN $1::text = 'ACEPTADA' THEN NOW() ELSE fecha_amistad END
+		WHERE id_amistad = $2
 		RETURNING id_amistad, id_usuario_1::text, id_usuario_2::text, estado`, newStatus, requestID).Scan(
 		&request.ID, &request.SenderID, &request.ReceiverID, &request.Status,
 	)
@@ -217,46 +248,268 @@ func (r *postgresFriendshipRepository) process(ctx context.Context, requestID st
 	if err := tx.Commit(ctx); err != nil {
 		return nil, err
 	}
+	if newStatus == models.FriendshipAccepted {
+		r.invalidateSocialCountCache(ctx, request.SenderID, request.ReceiverID)
+	}
 	return &request, nil
 }
 
-func (r *postgresFriendshipRepository) ListFriends(ctx context.Context, userID string) ([]models.Friend, error) {
-	if r.pool == nil {
-		return nil, errors.New("database connection pool is not initialized")
+func (r *postgresFriendshipRepository) GetAcceptedFriendsCount(ctx context.Context, userID string) (int, error) {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return 0, ErrUserNotFound
+	}
+	cacheKey := socialFriendsCountKey(userID)
+	return r.getSocialCount(
+		ctx,
+		cacheKey,
+		socialCountLockKey(userID, "friends"),
+		"friends",
+		func(ctx context.Context) (int, error) {
+			return r.queryAcceptedFriendsCount(ctx, userID)
+		},
+	)
+}
+
+func (r *postgresFriendshipRepository) GetBlockedUsersCount(ctx context.Context, userID string) (int, error) {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return 0, ErrUserNotFound
+	}
+	cacheKey := socialBlockedCountKey(userID)
+	return r.getSocialCount(
+		ctx,
+		cacheKey,
+		socialCountLockKey(userID, "blocked"),
+		"blocked",
+		func(ctx context.Context) (int, error) {
+			return r.queryBlockedUsersCount(ctx, userID)
+		},
+	)
+}
+
+func (r *postgresFriendshipRepository) getSocialCount(
+	ctx context.Context,
+	cacheKey, lockKey, countType string,
+	load func(context.Context) (int, error),
+) (int, error) {
+	if r.cache == nil {
+		return load(ctx)
 	}
 
+	for attempt := 0; attempt < socialCountMaxAttempts; attempt++ {
+		if value, ok, err := r.cache.getCount(ctx, cacheKey); err != nil {
+			r.cache.warnRedisFailure("read "+countType+" count", err)
+			return load(ctx)
+		} else if ok {
+			return value, nil
+		}
+
+		token, acquired, err := r.cache.acquireLock(ctx, lockKey)
+		if err != nil {
+			r.cache.warnRedisFailure("lock "+countType+" count", err)
+			return load(ctx)
+		}
+		if !acquired {
+			value, ok, err := r.cache.waitForCount(ctx, cacheKey, lockKey)
+			if err != nil {
+				if ctx.Err() != nil || errors.Is(err, errSocialCountWaitTimeout) {
+					return 0, fmt.Errorf("wait for %s count calculation: %w", countType, err)
+				}
+				r.cache.warnRedisFailure("wait for "+countType+" count", err)
+				return load(ctx)
+			}
+			if ok {
+				return value, nil
+			}
+			continue
+		}
+
+		releaseLock := func() {
+			cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
+			defer cancel()
+			if err := r.cache.releaseLock(cleanupCtx, lockKey, token); err != nil {
+				r.cache.warnRedisFailure("unlock "+countType+" count", err)
+			}
+		}
+
+		if value, ok, err := r.cache.getCount(ctx, cacheKey); err != nil {
+			releaseLock()
+			r.cache.warnRedisFailure("recheck "+countType+" count", err)
+			return load(ctx)
+		} else if ok {
+			releaseLock()
+			return value, nil
+		}
+
+		version, err := r.cache.getVersion(ctx, cacheKey)
+		if err != nil {
+			releaseLock()
+			r.cache.warnRedisFailure("read "+countType+" count version", err)
+			return load(ctx)
+		}
+
+		stopRenewal := r.cache.startLockRenewal(ctx, lockKey, token)
+		count, err := load(ctx)
+		stopRenewal()
+		if err != nil {
+			releaseLock()
+			return 0, err
+		}
+		published, err := r.cache.publishCount(ctx, cacheKey, lockKey, token, version, count, socialCountTTL)
+		releaseLock()
+		if err != nil {
+			r.cache.warnRedisFailure("write "+countType+" count", err)
+			return count, nil
+		}
+		if published {
+			return count, nil
+		}
+	}
+	return 0, fmt.Errorf("%s count changed too frequently to cache", countType)
+}
+
+func (r *postgresFriendshipRepository) GetFriendsCount(ctx context.Context, userID string) (int, error) {
+	return r.GetAcceptedFriendsCount(ctx, userID)
+}
+
+func (r *postgresFriendshipRepository) GetBlockedCount(ctx context.Context, userID string) (int, error) {
+	return r.GetBlockedUsersCount(ctx, userID)
+}
+
+func (r *postgresFriendshipRepository) queryAcceptedFriendsCount(ctx context.Context, userID string) (int, error) {
+	if r.pool == nil {
+		return 0, errors.New("database connection pool is not initialized")
+	}
+	var count int
 	query := `
-		SELECT 
-			a.id_amistad,
-			CASE WHEN a.id_usuario_1::text = $1 THEN a.id_usuario_2::text ELSE a.id_usuario_1::text END AS id_usuario,
-			COALESCE(u.username, '') AS username,
-			a.estado
-		FROM amistad a
-		LEFT JOIN usuario u ON u.id_usuario::text = (CASE WHEN a.id_usuario_1::text = $1 THEN a.id_usuario_2::text ELSE a.id_usuario_1::text END)
-		WHERE (a.id_usuario_1::text = $1 OR a.id_usuario_2::text = $1)
-		  AND a.estado = 'ACEPTADA'
-		  AND NOT EXISTS (
+		SELECT COUNT(*)
+		FROM amistad
+		WHERE (id_usuario_1::text = $1 OR id_usuario_2::text = $1)
+		  AND estado = 'ACEPTADA'`
+	queryCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	if err := r.pool.QueryRow(queryCtx, query, userID).Scan(&count); err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+func (r *postgresFriendshipRepository) queryBlockedUsersCount(ctx context.Context, userID string) (int, error) {
+	if r.pool == nil {
+		return 0, errors.New("database connection pool is not initialized")
+	}
+	var count int
+	query := `
+		SELECT COUNT(*)
+		FROM bloqueo
+		WHERE id_usuario_bloqueador::text = $1`
+	queryCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	if err := r.pool.QueryRow(queryCtx, query, userID).Scan(&count); err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+func (r *postgresFriendshipRepository) invalidateSocialCountCache(ctx context.Context, userIDs ...string) {
+	if r == nil || r.cache == nil {
+		return
+	}
+	unique := make([]string, 0, len(userIDs)*2)
+	seen := make(map[string]struct{}, len(userIDs)*2)
+	for _, userID := range userIDs {
+		trimmed := strings.TrimSpace(userID)
+		if trimmed == "" {
+			continue
+		}
+		for _, key := range []string{socialFriendsCountKey(trimmed), socialBlockedCountKey(trimmed)} {
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			unique = append(unique, key)
+		}
+	}
+	if len(unique) == 0 {
+		return
+	}
+	retryCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), socialInvalidationTimeout)
+	defer cancel()
+	err := retrySocialCountInvalidation(retryCtx, func(ctx context.Context) error {
+		return r.cache.invalidate(ctx, unique...)
+	})
+	if err != nil {
+		r.cache.warnRedisFailure("invalidate social counts; cached values may remain stale until their TTL expires", err)
+	}
+}
+
+func (r *postgresFriendshipRepository) ListFriends(ctx context.Context, userID string, limit int, query string, cursor *models.FriendCursor) (models.FriendPage, error) {
+	if r.pool == nil {
+		return models.FriendPage{}, errors.New("database connection pool is not initialized")
+	}
+
+	conditions := []string{
+		"(a.id_usuario_1::text = $1 OR a.id_usuario_2::text = $1)",
+		"a.estado = 'ACEPTADA'",
+		`NOT EXISTS (
 			SELECT 1 FROM bloqueo b
 			WHERE (b.id_usuario_bloqueador::text = $1 AND b.id_usuario_bloqueado::text = (CASE WHEN a.id_usuario_1::text = $1 THEN a.id_usuario_2::text ELSE a.id_usuario_1::text END))
 			   OR (b.id_usuario_bloqueador::text = (CASE WHEN a.id_usuario_1::text = $1 THEN a.id_usuario_2::text ELSE a.id_usuario_1::text END) AND b.id_usuario_bloqueado::text = $1)
-		  )
-		ORDER BY a.id_amistad DESC`
+		)`,
+	}
+	args := []any{userID}
+	if cursor != nil {
+		args = append(args, cursor.FechaAmistad, string(cursor.IDAmistad))
+		conditions = append(conditions, fmt.Sprintf("(a.fecha_amistad, a.id_amistad) < ($%d, $%d::varchar(64))", len(args)-1, len(args)))
+	}
+	if query != "" {
+		args = append(args, "%"+escapeLikePattern(query)+"%")
+		conditions = append(conditions, fmt.Sprintf("COALESCE(u.username, '') ILIKE $%d ESCAPE E'\\\\'", len(args)))
+	}
+	args = append(args, limit+1)
 
-	rows, err := r.pool.Query(ctx, query, userID)
+	sqlQuery := `
+		SELECT
+			a.id_amistad,
+			CASE WHEN a.id_usuario_1::text = $1 THEN a.id_usuario_2::text ELSE a.id_usuario_1::text END AS id_usuario,
+			COALESCE(u.username, '') AS username,
+			a.estado,
+			a.fecha_amistad
+		FROM amistad a
+		LEFT JOIN usuario u ON u.id_usuario::text = (CASE WHEN a.id_usuario_1::text = $1 THEN a.id_usuario_2::text ELSE a.id_usuario_1::text END)
+		WHERE ` + strings.Join(conditions, "\n\t\t  AND ") + `
+		ORDER BY a.fecha_amistad DESC, a.id_amistad DESC
+		LIMIT $` + strconv.Itoa(len(args))
+
+	rows, err := r.pool.Query(ctx, sqlQuery, args...)
 	if err != nil {
-		return nil, err
+		return models.FriendPage{}, err
 	}
 	defer rows.Close()
 
-	friends := make([]models.Friend, 0)
+	page := models.FriendPage{Friends: make([]models.Friend, 0, limit)}
 	for rows.Next() {
 		var f models.Friend
-		if err := rows.Scan(&f.IDAmistad, &f.IDUsuario, &f.Username, &f.Estado); err != nil {
-			return nil, err
+		if err := rows.Scan(&f.IDAmistad, &f.IDUsuario, &f.Username, &f.Estado, &f.FechaAmistad); err != nil {
+			return models.FriendPage{}, err
 		}
-		friends = append(friends, f)
+		if len(page.Friends) == limit {
+			page.HasMore = true
+			break
+		}
+		page.Friends = append(page.Friends, f)
 	}
-	return friends, rows.Err()
+	if err := rows.Err(); err != nil {
+		return models.FriendPage{}, err
+	}
+	return page, nil
+}
+
+func escapeLikePattern(value string) string {
+	value = strings.ReplaceAll(value, `\`, `\\`)
+	value = strings.ReplaceAll(value, `%`, `\%`)
+	return strings.ReplaceAll(value, `_`, `\_`)
 }
 
 func (r *postgresFriendshipRepository) RemoveFriend(ctx context.Context, userID, targetID string) error {
@@ -318,10 +571,104 @@ func (r *postgresFriendshipRepository) RemoveFriend(ctx context.Context, userID,
 		return err
 	}
 
-	return tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+	r.invalidateSocialCountCache(ctx, u1, u2)
+	return nil
 }
 
-func (r *postgresFriendshipRepository) BlockUser(ctx context.Context, blockerID, blockedID string) error {
+func (r *postgresFriendshipRepository) BlockUser(ctx context.Context, blockerID, blockedID string) ([]models.FriendRequest, error) {
+	if r.pool == nil {
+		return nil, errors.New("database connection pool is not initialized")
+	}
+	if blockerID == blockedID {
+		return nil, ErrSelfBlock
+	}
+
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	_, err = tx.Exec(ctx, `
+		SELECT pg_advisory_xact_lock(
+			hashtextextended(LEAST($1::text, $2::text) || ':' || GREATEST($1::text, $2::text), 0)
+		)`, blockerID, blockedID)
+	if err != nil {
+		return nil, err
+	}
+
+	var alreadyBlocked bool
+	err = tx.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM bloqueo
+			WHERE id_usuario_bloqueador::text = $1 AND id_usuario_bloqueado::text = $2
+		)`, blockerID, blockedID).Scan(&alreadyBlocked)
+	if err != nil {
+		return nil, err
+	}
+	if alreadyBlocked {
+		if err := tx.Commit(ctx); err != nil {
+			return nil, err
+		}
+		return []models.FriendRequest{}, nil
+	}
+
+	_, err = tx.Exec(ctx, `
+		INSERT INTO bloqueo (id_bloqueo, id_usuario_bloqueador, id_usuario_bloqueado)
+		VALUES (gen_random_uuid()::text, $1, $2)`, blockerID, blockedID)
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = tx.Exec(ctx, `
+		UPDATE amistad
+		SET estado = $1
+		WHERE ((id_usuario_1::text = $2 AND id_usuario_2::text = $3)
+		    OR (id_usuario_1::text = $3 AND id_usuario_2::text = $2))
+		  AND estado = 'ACEPTADA'`,
+		models.FriendshipDeleted, blockerID, blockedID)
+	if err != nil {
+		return nil, err
+	}
+
+	rows, err := tx.Query(ctx, `
+		UPDATE amistad
+		SET estado = $1
+		WHERE ((id_usuario_1::text = $2 AND id_usuario_2::text = $3)
+		    OR (id_usuario_1::text = $3 AND id_usuario_2::text = $2))
+		  AND estado = 'PENDIENTE'
+		RETURNING id_amistad, id_usuario_1::text, id_usuario_2::text, estado`,
+		models.FriendshipCanceled, blockerID, blockedID)
+	if err != nil {
+		return nil, err
+	}
+
+	cancelledRequests := make([]models.FriendRequest, 0)
+	for rows.Next() {
+		var request models.FriendRequest
+		if err := rows.Scan(&request.ID, &request.SenderID, &request.ReceiverID, &request.Status); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		cancelledRequests = append(cancelledRequests, request)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	rows.Close()
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	r.invalidateSocialCountCache(ctx, blockerID, blockedID)
+	return cancelledRequests, nil
+}
+
+func (r *postgresFriendshipRepository) UnblockUser(ctx context.Context, blockerID, blockedID string) error {
 	if r.pool == nil {
 		return errors.New("database connection pool is not initialized")
 	}
@@ -336,46 +683,17 @@ func (r *postgresFriendshipRepository) BlockUser(ctx context.Context, blockerID,
 	defer tx.Rollback(ctx)
 
 	_, err = tx.Exec(ctx, `
-		SELECT pg_advisory_xact_lock(
-			hashtextextended(LEAST($1::text, $2::text) || ':' || GREATEST($1::text, $2::text), 0)
-		)`, blockerID, blockedID)
+		DELETE FROM bloqueo
+		WHERE id_usuario_bloqueador::text = $1 AND id_usuario_bloqueado::text = $2`, blockerID, blockedID)
 	if err != nil {
 		return err
 	}
 
-	var alreadyBlocked bool
-	err = tx.QueryRow(ctx, `
-		SELECT EXISTS (
-			SELECT 1 FROM bloqueo
-			WHERE id_usuario_bloqueador::text = $1 AND id_usuario_bloqueado::text = $2
-		)`, blockerID, blockedID).Scan(&alreadyBlocked)
-	if err != nil {
+	if err := tx.Commit(ctx); err != nil {
 		return err
 	}
-	if alreadyBlocked {
-		return ErrAlreadyBlocked
-	}
-
-	_, err = tx.Exec(ctx, `
-		INSERT INTO bloqueo (id_bloqueo, id_usuario_bloqueador, id_usuario_bloqueado)
-		VALUES (gen_random_uuid()::text, $1, $2)`, blockerID, blockedID)
-	if err != nil {
-		return err
-	}
-
-	// Eliminar cualquier relación de amistad activa o pendiente entre ambos usuarios
-	_, err = tx.Exec(ctx, `
-		UPDATE amistad
-		SET estado = $1
-		WHERE ((id_usuario_1::text = $2 AND id_usuario_2::text = $3)
-		    OR (id_usuario_1::text = $3 AND id_usuario_2::text = $2))
-		  AND estado IN ('PENDIENTE', 'ACEPTADA')`,
-		models.FriendshipDeleted, blockerID, blockedID)
-	if err != nil {
-		return err
-	}
-
-	return tx.Commit(ctx)
+	r.invalidateSocialCountCache(ctx, blockerID, blockedID)
+	return nil
 }
 
 func (r *postgresFriendshipRepository) IsBlocked(ctx context.Context, user1ID, user2ID string) (bool, error) {
@@ -394,6 +712,186 @@ func (r *postgresFriendshipRepository) IsBlocked(ctx context.Context, user1ID, u
 		return false, err
 	}
 	return blocked, nil
+}
+
+const mutualFriendsCTE = `
+	WITH inactivity_threshold AS (
+		SELECT (DATE_TRUNC('day', CURRENT_TIMESTAMP) - INTERVAL '6 months') AS threshold
+	),
+	user_friends AS (
+		SELECT CASE
+			WHEN a.id_usuario_1::text = $1 THEN a.id_usuario_2::text
+			ELSE a.id_usuario_1::text
+		END AS friend_id
+		FROM amistad a
+		WHERE (a.id_usuario_1::text = $1 OR a.id_usuario_2::text = $1)
+		  AND a.estado = 'ACEPTADA'
+	),
+	target_friends AS (
+		SELECT CASE
+			WHEN a.id_usuario_1::text = $2 THEN a.id_usuario_2::text
+			ELSE a.id_usuario_1::text
+		END AS friend_id
+		FROM amistad a
+		WHERE (a.id_usuario_1::text = $2 OR a.id_usuario_2::text = $2)
+		  AND a.estado = 'ACEPTADA'
+	),
+	mutual_friends AS (
+		SELECT friend_id FROM user_friends
+		INTERSECT
+		SELECT friend_id FROM target_friends
+	),
+	active_mutual_friends AS (
+		SELECT m.friend_id
+		FROM mutual_friends m
+		JOIN usuario u ON u.id_usuario::text = m.friend_id
+		CROSS JOIN inactivity_threshold t
+		WHERE m.friend_id <> $1
+		  AND m.friend_id <> $2
+		  AND NOT EXISTS (
+			SELECT 1
+			FROM accion_moderacion am
+			WHERE am.id_usuario_afectado::text = m.friend_id
+			  AND UPPER(am.tipo_accion) IN ('BAN', 'SUSPENSION', 'INACTIVO', 'DESACTIVADO')
+		  )
+		  AND (
+			(u.fecha_creacion IS NOT NULL AND u.fecha_creacion >= t.threshold)
+			OR (u.fecha_ultimo_login IS NOT NULL AND u.fecha_ultimo_login >= t.threshold)
+			OR EXISTS (
+				SELECT 1 FROM publicacion p
+				WHERE p.id_usuario::text = m.friend_id
+				  AND p.fecha_creacion >= t.threshold
+			)
+			OR EXISTS (
+				SELECT 1 FROM interaccion i
+				WHERE i.id_usuario::text = m.friend_id
+				  AND i.fecha_creacion >= t.threshold
+			)
+			OR (
+				u.fecha_creacion IS NULL
+				AND u.fecha_ultimo_login IS NULL
+				AND NOT EXISTS (
+					SELECT 1 FROM publicacion p
+					WHERE p.id_usuario::text = m.friend_id
+				)
+				AND NOT EXISTS (
+					SELECT 1 FROM interaccion i
+					WHERE i.id_usuario::text = m.friend_id
+				)
+			)
+		  )
+	),
+	visible_mutual_friends AS (
+		SELECT m.friend_id
+		FROM active_mutual_friends m
+		WHERE NOT EXISTS (
+			SELECT 1
+			FROM bloqueo b
+			WHERE (b.id_usuario_bloqueador::text = $1 AND b.id_usuario_bloqueado::text = m.friend_id)
+			   OR (b.id_usuario_bloqueador::text = m.friend_id AND b.id_usuario_bloqueado::text = $1)
+		)
+	)
+`
+
+func (r *postgresFriendshipRepository) GetMutualFriendsQuery(ctx context.Context, userID, targetID string) (models.MutualFriendsQuery, error) {
+	if r.pool == nil {
+		return models.MutualFriendsQuery{}, errors.New("database connection pool is not initialized")
+	}
+
+	var result models.MutualFriendsQuery
+	err := r.pool.QueryRow(ctx, mutualFriendsCTE+`
+		SELECT
+			EXISTS (SELECT 1 FROM usuario WHERE id_usuario::text = $2),
+			EXISTS (
+				SELECT 1 FROM amistad
+				WHERE ((id_usuario_1::text = $1 AND id_usuario_2::text = $2)
+				    OR (id_usuario_1::text = $2 AND id_usuario_2::text = $1))
+				  AND estado = 'ACEPTADA'
+			),
+			COALESCE(
+				(SELECT visibilidad_amigos FROM configuracion_privacidad WHERE id_usuario::text = $2),
+				'PUBLICO'
+			),
+			(SELECT COUNT(*) FROM visible_mutual_friends)`,
+		userID, targetID,
+	).Scan(
+		&result.TargetExists,
+		&result.ViewerFriend,
+		&result.Visibility,
+		&result.Count,
+	)
+	if err != nil {
+		return models.MutualFriendsQuery{}, err
+	}
+	return result, nil
+}
+
+func (r *postgresFriendshipRepository) GetMutualFriendsPage(ctx context.Context, userID, targetID, cursor string, limit int) ([]string, bool, error) {
+	if r.pool == nil {
+		return nil, false, errors.New("database connection pool is not initialized")
+	}
+
+	var friendIDs []string
+	var hasMore bool
+	err := r.pool.QueryRow(ctx, mutualFriendsCTE+`,
+		page AS (
+			SELECT friend_id
+			FROM visible_mutual_friends
+			WHERE friend_id > $3
+			ORDER BY friend_id ASC
+			LIMIT $4
+		)
+		SELECT
+			COALESCE(
+				(SELECT array_agg(friend_id ORDER BY friend_id) FROM page),
+				ARRAY[]::text[]
+			),
+			(
+				SELECT COUNT(*) = $4 AND EXISTS (
+					SELECT 1
+					FROM visible_mutual_friends
+					WHERE friend_id > (SELECT MAX(friend_id) FROM page)
+				)
+				FROM page
+			)`,
+		userID, targetID, cursor, limit,
+	).Scan(&friendIDs, &hasMore)
+	if err != nil {
+		return nil, false, err
+	}
+	return friendIDs, hasMore, nil
+}
+
+func (r *postgresFriendshipRepository) ListMutualFriendProfiles(ctx context.Context, userIDs []string) ([]models.MutualFriend, error) {
+	if r.pool == nil {
+		return nil, errors.New("database connection pool is not initialized")
+	}
+	if len(userIDs) == 0 {
+		return []models.MutualFriend{}, nil
+	}
+
+	rows, err := r.pool.Query(ctx, `
+		SELECT u.id_usuario::text, u.username, COALESCE(p.foto_perfil, '')
+		FROM usuario u
+		LEFT JOIN perfil p ON p.id_usuario::text = u.id_usuario::text
+		WHERE u.id_usuario::text = ANY($1::text[])
+		ORDER BY u.id_usuario::text ASC`,
+		userIDs,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	friends := make([]models.MutualFriend, 0, len(userIDs))
+	for rows.Next() {
+		var friend models.MutualFriend
+		if err := rows.Scan(&friend.ID, &friend.Username, &friend.AvatarURL); err != nil {
+			return nil, err
+		}
+		friends = append(friends, friend)
+	}
+	return friends, rows.Err()
 }
 
 func (r *postgresFriendshipRepository) ValidateInteraction(ctx context.Context, user1ID, user2ID string) error {
@@ -479,16 +977,27 @@ func (r *postgresFriendshipRepository) GetFriendProfile(ctx context.Context, use
 		return nil, ErrBlocked
 	}
 
-	// 3. Obtener datos de perfil del usuario amigo
-	var profile models.FriendProfile
-	profile.IDAmistad = models.FriendshipID(friendshipID)
+	// 3. Aplicar la visibilidad configurada por el titular.
+	visibility := "PUBLICO"
 	err = r.pool.QueryRow(ctx, `
-		SELECT id_usuario::text, username, correo, id_nivel, experiencia
+		SELECT COALESCE(visibilidad_perfil, 'PUBLICO')
+		FROM configuracion_privacidad
+		WHERE id_usuario = $1
+	`, resolvedFriendID).Scan(&visibility)
+	if errors.Is(err, pgx.ErrNoRows) {
+		visibility = "PUBLICO"
+	} else if err != nil {
+		return nil, err
+	}
+
+	// 4. Obtener únicamente los campos permitidos por el perfil.
+	var profile models.FriendProfile
+	err = r.pool.QueryRow(ctx, `
+		SELECT id_usuario::text, username, id_nivel, experiencia
 		FROM usuario
 		WHERE id_usuario::text = $1`, resolvedFriendID).Scan(
 		&profile.IDUsuario,
 		&profile.Username,
-		&profile.Correo,
 		&profile.IDNivel,
 		&profile.Experiencia,
 	)
@@ -499,6 +1008,9 @@ func (r *postgresFriendshipRepository) GetFriendProfile(ctx context.Context, use
 		return nil, err
 	}
 
+	if strings.ToUpper(strings.TrimSpace(visibility)) != "PRIVADO" {
+		profile.IDAmistad = models.FriendshipID(friendshipID)
+	}
 	return &profile, nil
 }
 

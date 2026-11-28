@@ -1,50 +1,72 @@
 package controllers
 
 import (
+	"context"
+	"errors"
+	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/meloop/gamification-service/services"
+	"github.com/meloop/services/common/authz"
 	"github.com/meloop/services/common/httpresponse"
 )
 
-const contextUserRoleKey = "user_role"
+// SessionValidator valida el token de sesión contra auth-service.
+type SessionValidator interface {
+	ValidateToken(ctx context.Context, token string) (services.ValidatedSession, error)
+}
 
-func AdminRequired() gin.HandlerFunc {
+// SessionAuth obtiene la identidad y el rol exclusivamente de /auth/validate.
+// Las cabeceras de identidad o rol enviadas por el cliente se descartan, de modo
+// que un acceso directo al servicio no puede suplantar a un administrador.
+func SessionAuth(validator SessionValidator) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		roleValue := strings.TrimSpace(c.GetHeader("X-User-Role"))
-		if roleValue == "" {
-			roleValue = strings.TrimSpace(c.GetHeader("X-Role"))
-		}
-		if roleValue == "" {
-			if value, exists := c.Get(contextUserRoleKey); exists {
-				if role, ok := value.(string); ok {
-					roleValue = role
-				}
-			}
-		}
-		if roleValue == "" {
-			httpresponse.ForbiddenGin(c, "Se requieren permisos de administrador")
+		authHeader := strings.TrimSpace(c.GetHeader("Authorization"))
+		if !strings.HasPrefix(strings.ToLower(authHeader), "bearer ") {
+			httpresponse.UnauthorizedGin(c, "Token de sesión no proporcionado")
 			c.Abort()
 			return
 		}
 
-		roles := strings.FieldsFunc(strings.ToLower(roleValue), func(r rune) bool {
-			return r == ',' || r == ';' || r == '|' || r == ' '
-		})
-		isAllowed := false
-		for _, role := range roles {
-			if role == "admin" || role == "administrator" || role == "administrador" || role == "moderator" || role == "moderador" {
-				isAllowed = true
-				break
-			}
+		token := strings.TrimSpace(authHeader[len("Bearer "):])
+		if token == "" {
+			httpresponse.UnauthorizedGin(c, "Token de sesión no proporcionado")
+			c.Abort()
+			return
 		}
-		if !isAllowed {
-			httpresponse.ForbiddenGin(c, "Se requieren permisos de administrador")
+		if validator == nil {
+			httpresponse.ErrorGin(c, http.StatusServiceUnavailable, "AUTH_UNAVAILABLE", "Servicio de autenticación no disponible")
 			c.Abort()
 			return
 		}
 
-		c.Set(contextUserRoleKey, strings.ToLower(roleValue))
+		session, err := validator.ValidateToken(c.Request.Context(), token)
+		if errors.Is(err, services.ErrInvalidSession) {
+			httpresponse.UnauthorizedGin(c, "Sesión inválida o expirada")
+			c.Abort()
+			return
+		}
+		if err != nil {
+			httpresponse.ErrorGin(c, http.StatusServiceUnavailable, "AUTH_UNAVAILABLE", "Servicio de autenticación no disponible")
+			c.Abort()
+			return
+		}
+
+		userID := strings.TrimSpace(session.UserID)
+		if userID == "" {
+			httpresponse.UnauthorizedGin(c, "Sesión inválida o expirada")
+			c.Abort()
+			return
+		}
+
+		c.Request.Header.Del("X-User-ID")
+		c.Request.Header.Del("X-User-Id")
+		c.Request.Header.Del("X-User-Role")
+		c.Request.Header.Del("X-Role")
+
+		c.Set(authz.ContextUserIDKey, userID)
+		c.Set(authz.ContextUserRoleKey, session.Role)
 		c.Next()
 	}
 }

@@ -2,7 +2,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: minio-data
-  namespace: student-amanda-garcia-4679dc667f08
+  namespace: meloop
 spec:
   accessModes:
     - ReadWriteOnce
@@ -15,7 +15,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: minio
-  namespace: student-amanda-garcia-4679dc667f08
+  namespace: meloop
 spec:
   type: ClusterIP
   selector:
@@ -31,7 +31,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: minio
-  namespace: student-amanda-garcia-4679dc667f08
+  namespace: meloop
 spec:
   replicas: 1
   strategy:
@@ -99,7 +99,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: minio-init-files
-  namespace: student-amanda-garcia-4679dc667f08
+  namespace: meloop
 data:
   init-minio.sh: |
     #!/bin/sh
@@ -170,7 +170,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: minio-init
-  namespace: student-amanda-garcia-4679dc667f08
+  namespace: meloop
 spec:
   backoffLimit: 10
   template:
