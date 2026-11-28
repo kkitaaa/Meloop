@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/meloop/services/common/authz"
 	"github.com/meloop/services/common/httpresponse"
 	"github.com/meloop/user-service/services"
 )
@@ -71,9 +72,11 @@ func AuthRequired(validator SessionValidator) gin.HandlerFunc {
 	}
 }
 
-// AdminRequired obtiene el rol vigente desde PostgreSQL, nunca desde encabezados del cliente.
-func AdminRequired(roleProvider UserRoleProvider) gin.HandlerFunc {
-	return func(c *gin.Context) {
+// requireRoleFromBackend resuelve el rol vigente desde PostgreSQL usando la
+// identidad validada por AuthRequired. Descarta las cabeceras de rol del
+// cliente, normaliza el valor y delega la decisión en common/authz.
+func requireRoleFromBackend(roleProvider UserRoleProvider, allowed ...string) gin.HandlerFunc {
+	resolveRole := func(c *gin.Context) {
 		userIDValue, exists := c.Get(ContextUserIDKey)
 		userID, validUserID := userIDValue.(string)
 		if !exists || !validUserID || strings.TrimSpace(userID) == "" {
@@ -93,23 +96,34 @@ func AdminRequired(roleProvider UserRoleProvider) gin.HandlerFunc {
 			c.Abort()
 			return
 		}
-		roles := strings.FieldsFunc(strings.ToLower(strings.TrimSpace(roleValue)), func(r rune) bool {
-			return r == ',' || r == ';' || r == '|' || r == ' '
-		})
-		isAllowed := false
-		for _, role := range roles {
-			if role == "admin" || role == "administrator" || role == "administrador" || role == "moderator" || role == "moderador" {
-				isAllowed = true
-				break
-			}
+
+		c.Request.Header.Del("X-User-Role")
+		c.Request.Header.Del("X-Role")
+
+		role, valid := authz.NormalizeRole(roleValue)
+		if !valid {
+			role = ""
 		}
-		if !isAllowed {
-			httpresponse.ForbiddenGin(c, "Se requieren permisos de administrador")
-			c.Abort()
+		c.Set(authz.ContextUserRoleKey, role)
+		c.Set(ContextUserRoleKey, role)
+	}
+
+	requireRoles := authz.RequireRoles(allowed...)
+	return func(c *gin.Context) {
+		resolveRole(c)
+		if c.IsAborted() {
 			return
 		}
-
-		c.Set(ContextUserRoleKey, strings.ToLower(strings.TrimSpace(roleValue)))
-		c.Next()
+		requireRoles(c)
 	}
+}
+
+// AdminRequired permite a moderadores y administradores gestionar usuarios.
+func AdminRequired(roleProvider UserRoleProvider) gin.HandlerFunc {
+	return requireRoleFromBackend(roleProvider, authz.RoleModerador, authz.RoleAdmin)
+}
+
+// AdminOnly restringe la operación exclusivamente a administradores.
+func AdminOnly(roleProvider UserRoleProvider) gin.HandlerFunc {
+	return requireRoleFromBackend(roleProvider, authz.RoleAdmin)
 }

@@ -52,6 +52,15 @@ type SessionUser struct {
 	Email    string `json:"email"`
 }
 
+// ValidateResponse es la respuesta de GET /auth/validate. Conserva los campos
+// de SessionUser y añade el rol vigente consultado en PostgreSQL.
+type ValidateResponse struct {
+	ID       string `json:"id"`
+	Username string `json:"username"`
+	Email    string `json:"email"`
+	Role     string `json:"role"`
+}
+
 // ChangePasswordRequest representa los datos para solicitar la actualización de contraseña
 type ChangePasswordRequest struct {
 	CurrentPassword string `json:"current_password"`

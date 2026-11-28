@@ -176,7 +176,7 @@ func (r *postgresUserRepository) ListUsers(ctx context.Context) ([]models.AdminU
 			COALESCE(rol, 'usuario') AS rol,
 			COALESCE(suspendido, FALSE) AS suspendido,
 			COALESCE(es_moderador, FALSE) AS es_moderador,
-			motivo_suspension
+			COALESCE(motivo_suspension, '') AS motivo_suspension
 		FROM USUARIO
 		ORDER BY username ASC
 	`)
@@ -209,13 +209,14 @@ func (r *postgresUserRepository) SuspendUser(ctx context.Context, id string, rea
 		UPDATE USUARIO
 		SET suspendido = TRUE,
 		    motivo_suspension = $1,
-		    rol = CASE WHEN rol = 'admin' THEN 'admin' ELSE 'usuario' END
+		    rol = CASE WHEN rol = 'admin' THEN 'admin' ELSE 'usuario' END,
+		    es_moderador = FALSE
 		WHERE id_usuario = $2
 		RETURNING id_usuario::text, username, correo,
 			COALESCE(rol, 'usuario') AS rol,
 			COALESCE(suspendido, FALSE) AS suspendido,
 			COALESCE(es_moderador, FALSE) AS es_moderador,
-			motivo_suspension
+			COALESCE(motivo_suspension, '') AS motivo_suspension
 	`
 	err := r.pool.QueryRow(ctx, query, reason, id).Scan(&user.IDUsuario, &user.Username, &user.Correo, &user.Rol, &user.Suspendido, &user.EsModerador, &user.Motivo)
 	if err != nil {
@@ -242,7 +243,7 @@ func (r *postgresUserRepository) ReactivateUser(ctx context.Context, id string) 
 			COALESCE(rol, 'usuario') AS rol,
 			COALESCE(suspendido, FALSE) AS suspendido,
 			COALESCE(es_moderador, FALSE) AS es_moderador,
-			motivo_suspension
+			COALESCE(motivo_suspension, '') AS motivo_suspension
 	`
 	err := r.pool.QueryRow(ctx, query, id).Scan(&user.IDUsuario, &user.Username, &user.Correo, &user.Rol, &user.Suspendido, &user.EsModerador, &user.Motivo)
 	if err != nil {
@@ -262,17 +263,21 @@ func (r *postgresUserRepository) SetModeratorRole(ctx context.Context, id string
 	var user models.AdminUserSummary
 	query := `
 		UPDATE USUARIO
-		SET es_moderador = $1,
-		    rol = CASE
+		SET rol = CASE
 				WHEN $1 THEN CASE WHEN rol = 'admin' THEN 'admin' ELSE 'moderador' END
 				ELSE CASE WHEN rol = 'admin' THEN 'admin' ELSE 'usuario' END
+			END,
+		    es_moderador = CASE
+				WHEN rol = 'admin' THEN FALSE
+				WHEN $1 THEN TRUE
+				ELSE FALSE
 			END
 		WHERE id_usuario = $2
 		RETURNING id_usuario::text, username, correo,
 			COALESCE(rol, 'usuario') AS rol,
 			COALESCE(suspendido, FALSE) AS suspendido,
 			COALESCE(es_moderador, FALSE) AS es_moderador,
-			motivo_suspension
+			COALESCE(motivo_suspension, '') AS motivo_suspension
 	`
 	err := r.pool.QueryRow(ctx, query, moderator, id).Scan(&user.IDUsuario, &user.Username, &user.Correo, &user.Rol, &user.Suspendido, &user.EsModerador, &user.Motivo)
 	if err != nil {

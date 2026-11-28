@@ -13,10 +13,14 @@ import (
 	"github.com/meloop/auth-service/models"
 )
 
+// ErrUserNotFound indica que la identidad de la sesión ya no existe en PostgreSQL.
+var ErrUserNotFound = errors.New("user not found")
+
 type UserRepository interface {
 	GetByID(ctx context.Context, id string) (*models.Usuario, error)
 	GetByUsername(ctx context.Context, username string) (*models.Usuario, error)
 	GetByEmail(ctx context.Context, email string) (*models.Usuario, error)
+	GetRoleByID(ctx context.Context, id string) (string, error)
 	Create(ctx context.Context, user *models.Usuario) error
 	UpdatePassword(ctx context.Context, id string, passwordHash string) error
 	UpdateLastLogin(ctx context.Context, id string) error
@@ -109,6 +113,28 @@ func (r *postgresUserRepository) GetByEmail(ctx context.Context, email string) (
 		return nil, err
 	}
 	return &user, nil
+}
+
+// GetRoleByID devuelve el rol vigente desde USUARIO. Un usuario inexistente
+// se reporta como ErrUserNotFound para que la sesión se considere inválida.
+func (r *postgresUserRepository) GetRoleByID(ctx context.Context, id string) (string, error) {
+	if r.pool == nil {
+		return "", errors.New("database connection pool is not initialized")
+	}
+	var role string
+	query := `
+		SELECT COALESCE(rol, 'usuario')
+		FROM USUARIO
+		WHERE id_usuario = $1
+	`
+	err := r.pool.QueryRow(ctx, query, id).Scan(&role)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", ErrUserNotFound
+		}
+		return "", err
+	}
+	return role, nil
 }
 
 func (r *postgresUserRepository) Create(ctx context.Context, user *models.Usuario) error {
