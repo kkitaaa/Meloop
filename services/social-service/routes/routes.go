@@ -5,9 +5,9 @@ import (
 	"github.com/meloop/social-service/controllers"
 )
 
-func SetupRoutes(router *gin.Engine, controller *controllers.FriendshipController) {
+func SetupRoutes(router *gin.Engine, controller *controllers.FriendshipController, validator controllers.SessionValidator) {
 	protected := router.Group("/friends")
-	protected.Use(controllers.AuthRequired())
+	protected.Use(controllers.AuthRequired(validator))
 	{
 		// RF-10 / RF-11: Solicitudes de amistad
 		protected.POST("/requests", controller.Send)
@@ -26,6 +26,7 @@ func SetupRoutes(router *gin.Engine, controller *controllers.FriendshipControlle
 		// RF-13: Bloqueo de usuarios y validación de interacciones
 		protected.POST("/blocks", controller.BlockUser)
 		protected.POST("/block", controller.BlockUser)
+		protected.DELETE("/blocks/:id", controller.UnblockUser)
 		protected.GET("/validate-interaction", controller.ValidateInteraction)
 		protected.POST("/validate-interaction", controller.ValidateInteraction)
 		protected.POST("/blocks/exclude", controller.ExcludeBlocked)
@@ -35,31 +36,41 @@ func SetupRoutes(router *gin.Engine, controller *controllers.FriendshipControlle
 		protected.GET("/recommendations", controller.GetFriendSuggestions)
 	}
 
-	// Endpoint interno para comunicación entre microservicios (no requiere sesión JWT de usuario final)
+	versionedSocial := router.Group("/v1/social/users")
+	versionedSocial.Use(controllers.AuthRequired(validator))
+	versionedSocial.GET("/:id/mutual-friends", controller.GetMutualFriends)
+
+	// Endpoint interno para comunicación entre microservicios (no requiere token de sesión de usuario final)
 	internal := router.Group("/internal")
 	{
-		internal.POST("/blocks/exclude", controller.ExcludeBlocked)
+		internal.POST("/blocks/exclude", controller.ExcludeBlockedInternal)
 	}
 
 	// Acceso directo a sugerencias de amistad
 	suggestions := router.Group("/suggestions")
-	suggestions.Use(controllers.AuthRequired())
+	suggestions.Use(controllers.AuthRequired(validator))
 	{
 		suggestions.GET("", controller.GetFriendSuggestions)
 	}
 }
 
+func SetupInternalCountRoutes(router *gin.Engine, controller *controllers.FriendshipController, token string) {
+	internal := router.Group("/internal")
+	internal.Use(controllers.InternalServiceRequired(token))
+	internal.GET("/users/:id/friends/count", controller.GetFriendsCount)
+}
+
 // SetupSuggestionRoutes configura las rutas REST de sugerencias de amistad (RF-14).
-func SetupSuggestionRoutes(router *gin.Engine, controller *controllers.SuggestionController) {
+func SetupSuggestionRoutes(router *gin.Engine, controller *controllers.SuggestionController, validator controllers.SessionValidator) {
 	friends := router.Group("/friends")
-	friends.Use(controllers.AuthRequired())
+	friends.Use(controllers.AuthRequired(validator))
 	{
 		friends.GET("/suggestions", controller.GetFriendSuggestions)
 		friends.GET("/recommendations", controller.GetFriendSuggestions)
 	}
 
 	suggestions := router.Group("/suggestions")
-	suggestions.Use(controllers.AuthRequired())
+	suggestions.Use(controllers.AuthRequired(validator))
 	{
 		suggestions.GET("", controller.GetFriendSuggestions)
 	}

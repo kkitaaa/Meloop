@@ -108,6 +108,17 @@ type mockMediaVerifier struct {
 	verifiedKeys    []string
 }
 
+type mockSocialFriendCounter struct {
+	count   int
+	err     error
+	userIDs []string
+}
+
+func (m *mockSocialFriendCounter) GetFriendsCount(_ context.Context, userID string) (int, error) {
+	m.userIDs = append(m.userIDs, userID)
+	return m.count, m.err
+}
+
 func (m *mockMediaVerifier) VerifyMedia(ctx context.Context, objectKey string) (bool, error) {
 	m.verifiedKeys = append(m.verifiedKeys, objectKey)
 	if m.verifyMediaFunc != nil {
@@ -388,6 +399,45 @@ func TestProfileService_GetOwnProfile_Success(t *testing.T) {
 	}
 }
 
+func TestProfileService_GetOwnProfile_UsesSocialFriendCounter(t *testing.T) {
+	profileRepo := &mockProfileRepository{}
+	friendCounter := &mockSocialFriendCounter{count: 9}
+	srv := services.NewProfileServiceWithFriendCounter(
+		profileRepo,
+		&mockUserRepository{},
+		&mockMediaVerifier{},
+		&mockPrivacyRepository{},
+		friendCounter,
+	)
+
+	profile, err := srv.GetOwnProfile(context.Background(), "usr-own")
+	if err != nil {
+		t.Fatalf("unexpected profile error: %v", err)
+	}
+	if profile.Estadisticas == nil || profile.Estadisticas.Amigos != 9 {
+		t.Fatalf("friend count = %+v, want 9", profile.Estadisticas)
+	}
+	if len(friendCounter.userIDs) != 1 || friendCounter.userIDs[0] != "usr-own" {
+		t.Fatalf("counter calls = %v, want [usr-own]", friendCounter.userIDs)
+	}
+}
+
+func TestProfileService_GetOwnProfile_ReturnsSocialCounterFailure(t *testing.T) {
+	counterErr := errors.New("connection refused")
+	srv := services.NewProfileServiceWithFriendCounter(
+		&mockProfileRepository{},
+		&mockUserRepository{},
+		&mockMediaVerifier{},
+		&mockPrivacyRepository{},
+		&mockSocialFriendCounter{err: counterErr},
+	)
+
+	_, err := srv.GetOwnProfile(context.Background(), "usr-own")
+	if !errors.Is(err, services.ErrSocialCounterUnavailable) {
+		t.Fatalf("error = %v, want ErrSocialCounterUnavailable", err)
+	}
+}
+
 func TestProfileService_GetOwnProfile_UserNotFound(t *testing.T) {
 	profileRepo := &mockProfileRepository{
 		getFullProfileDataFunc: func(ctx context.Context, userID string) (*models.UserProfileData, error) {
@@ -539,6 +589,7 @@ func TestProfileService_GetThirdPartyProfile_Private_Restricted(t *testing.T) {
 	profileRepo := &mockProfileRepository{}
 	userRepo := &mockUserRepository{}
 	mediaVerifier := &mockMediaVerifier{}
+	friendCounter := &mockSocialFriendCounter{count: 42}
 	privacyRepo := &mockPrivacyRepository{
 		configs: map[string]*models.ConfiguracionPrivacidad{
 			"usr-private": {
@@ -549,7 +600,7 @@ func TestProfileService_GetThirdPartyProfile_Private_Restricted(t *testing.T) {
 		},
 	}
 
-	srv := services.NewProfileService(profileRepo, userRepo, mediaVerifier, privacyRepo)
+	srv := services.NewProfileServiceWithFriendCounter(profileRepo, userRepo, mediaVerifier, privacyRepo, friendCounter)
 
 	profile, err := srv.GetThirdPartyProfile(context.Background(), "usr-requester", "usr-private")
 	if err != nil {
@@ -561,6 +612,9 @@ func TestProfileService_GetThirdPartyProfile_Private_Restricted(t *testing.T) {
 	}
 	if profile.Biografia != "" || profile.InformacionMusical != nil || profile.Estadisticas != nil {
 		t.Error("los campos sensibles de perfil privado deben estar omitidos para terceros")
+	}
+	if len(friendCounter.userIDs) != 0 {
+		t.Errorf("private profile must not query social counts, got requests for %v", friendCounter.userIDs)
 	}
 }
 
@@ -612,12 +666,16 @@ func TestProfileService_GetThirdPartyProfile_Blocked_RequesterBlockedOwner_RN09(
 	}
 	userRepo := &mockUserRepository{}
 	mediaVerifier := &mockMediaVerifier{}
+	friendCounter := &mockSocialFriendCounter{count: 42}
 
-	srv := services.NewProfileService(profileRepo, userRepo, mediaVerifier)
+	srv := services.NewProfileServiceWithFriendCounter(profileRepo, userRepo, mediaVerifier, &mockPrivacyRepository{}, friendCounter)
 
 	_, err := srv.GetThirdPartyProfile(context.Background(), "usr-blocker", "usr-blocked")
 	if !errors.Is(err, services.ErrBlocked) {
 		t.Fatalf("se esperaba ErrBlocked cuando el solicitante bloqueó al titular, se obtuvo: %v", err)
+	}
+	if len(friendCounter.userIDs) != 0 {
+		t.Errorf("blocked profile must not query social counts, got requests for %v", friendCounter.userIDs)
 	}
 }
 

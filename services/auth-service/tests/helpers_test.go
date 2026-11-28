@@ -13,17 +13,20 @@ import (
 	"github.com/meloop/auth-service/config"
 	"github.com/meloop/auth-service/controllers"
 	"github.com/meloop/auth-service/models"
+	"github.com/meloop/auth-service/repositories"
 	"github.com/meloop/auth-service/services"
 )
 
 // MockUserRepository provee un almacenamiento de usuarios en memoria con aislamiento
 type MockUserRepository struct {
-	Users              map[string]*models.Usuario
-	GetByIDFunc        func(ctx context.Context, id string) (*models.Usuario, error)
-	GetByUsernameFunc  func(ctx context.Context, username string) (*models.Usuario, error)
-	GetByEmailFunc     func(ctx context.Context, email string) (*models.Usuario, error)
-	CreateFunc         func(ctx context.Context, user *models.Usuario) error
-	UpdatePasswordFunc func(ctx context.Context, id string, passwordHash string) error
+	Users               map[string]*models.Usuario
+	GetByIDFunc         func(ctx context.Context, id string) (*models.Usuario, error)
+	GetByUsernameFunc   func(ctx context.Context, username string) (*models.Usuario, error)
+	GetByEmailFunc      func(ctx context.Context, email string) (*models.Usuario, error)
+	GetRoleByIDFunc     func(ctx context.Context, id string) (string, error)
+	CreateFunc          func(ctx context.Context, user *models.Usuario) error
+	UpdatePasswordFunc  func(ctx context.Context, id string, passwordHash string) error
+	UpdateLastLoginFunc func(ctx context.Context, id string) error
 }
 
 func NewMockUserRepository() *MockUserRepository {
@@ -68,6 +71,18 @@ func (m *MockUserRepository) GetByEmail(ctx context.Context, email string) (*mod
 	return nil, nil
 }
 
+func (m *MockUserRepository) GetRoleByID(ctx context.Context, id string) (string, error) {
+	if m.GetRoleByIDFunc != nil {
+		return m.GetRoleByIDFunc(ctx, id)
+	}
+	for _, u := range m.Users {
+		if u.IDUsuario == id {
+			return "usuario", nil
+		}
+	}
+	return "", repositories.ErrUserNotFound
+}
+
 func (m *MockUserRepository) Create(ctx context.Context, user *models.Usuario) error {
 	if m.CreateFunc != nil {
 		return m.CreateFunc(ctx, user)
@@ -88,6 +103,13 @@ func (m *MockUserRepository) UpdatePassword(ctx context.Context, id string, pass
 			u.ContrasenaHash = passwordHash
 			return nil
 		}
+	}
+	return nil
+}
+
+func (m *MockUserRepository) UpdateLastLogin(ctx context.Context, id string) error {
+	if m.UpdateLastLoginFunc != nil {
+		return m.UpdateLastLoginFunc(ctx, id)
 	}
 	return nil
 }
@@ -120,6 +142,16 @@ func (m *MockSessionRepository) Get(ctx context.Context, token string) (*models.
 		return m.GetFunc(ctx, token)
 	}
 	return m.Sessions[token], nil
+}
+
+func (m *MockSessionRepository) Renew(
+	ctx context.Context,
+	token string,
+	userID string,
+	ttl time.Duration,
+) (bool, error) {
+	user, exists := m.Sessions[token]
+	return exists && user != nil && user.ID == userID, nil
 }
 
 func (m *MockSessionRepository) Delete(ctx context.Context, token string) error {
@@ -248,6 +280,7 @@ func setupTestApp(t *testing.T) *TestApp {
 	{
 		protected.POST("/auth/logout", authCtrl.Logout)
 		protected.GET("/auth/validate", authCtrl.Validate)
+		protected.POST("/auth/refresh", authCtrl.Refresh)
 		protected.POST("/auth/change-password", authCtrl.ChangePassword)
 	}
 

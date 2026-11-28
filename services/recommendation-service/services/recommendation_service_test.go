@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -518,5 +519,53 @@ func TestMLClientHasExplicitHTTPTimeout(t *testing.T) {
 	client := NewMLClient("http://ml-service")
 	if client.client.Timeout != mlRequestTimeout || client.client.Timeout <= 0 {
 		t.Fatalf("expected explicit positive HTTP timeout, got %s", client.client.Timeout)
+	}
+}
+
+func TestMLClientSendsEmptyCollectionsInsteadOfNull(t *testing.T) {
+	mlServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		var payload models.RecommendationRequest
+		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+			t.Errorf("decode ML request: %v", err)
+		}
+		if payload.Preferences == nil ||
+			payload.Profile.Genres == nil ||
+			payload.Profile.Artists == nil ||
+			payload.Profile.Songs == nil ||
+			payload.Interactions == nil {
+			t.Errorf("empty collections must be JSON arrays, got %+v", payload)
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(writer).Encode(models.RecommendationResponse{
+			UserID: payload.UserID,
+			Model:  "test-model",
+		})
+	}))
+	defer mlServer.Close()
+
+	response, err := NewMLClient(mlServer.URL).Predict(
+		context.Background(),
+		models.RecommendationRequest{UserID: 42, Type: "music"},
+	)
+	if err != nil {
+		t.Fatalf("send ML request: %v", err)
+	}
+	if response.Model != "test-model" {
+		t.Fatalf("unexpected ML response: %+v", response)
+	}
+}
+
+func TestMLStatusErrorReportsValidationFieldsWithoutEchoingInput(t *testing.T) {
+	responseBody := []byte(`{"detail":[{"type":"literal_error","loc":["body","interactions",0,"type"],"msg":"Input should be valid","input":"private-value"}]}`)
+
+	err := mlStatusError(http.StatusUnprocessableEntity, responseBody)
+	if err == nil {
+		t.Fatal("expected ML validation error")
+	}
+	if got := err.Error(); !strings.Contains(got, "body.interactions.0.type (literal_error)") {
+		t.Fatalf("expected validation field in error, got %q", got)
+	}
+	if strings.Contains(err.Error(), "private-value") {
+		t.Fatalf("validation error must not echo submitted values: %q", err)
 	}
 }

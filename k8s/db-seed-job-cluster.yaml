@@ -1,0 +1,53 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: meloop-db-seed
+  namespace: student-amanda-garcia-4679dc667f08
+  labels:
+    app.kubernetes.io/name: meloop-db-seed
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: meloop-db-seed
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: seed
+          image: postgres:16-alpine
+          imagePullPolicy: IfNotPresent
+          command: ["sh", "-ec"]
+          args:
+            - exec psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f /seed/seed.sql
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: gamification-secrets
+                  key: DATABASE_URL
+          volumeMounts:
+            - name: seed-sql
+              mountPath: /seed
+              readOnly: true
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 999
+            runAsGroup: 999
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: seed-sql
+          configMap:
+            name: meloop-db-seed
+            items:
+              - key: seed.sql
+                path: seed.sql

@@ -3,6 +3,7 @@ package routes
 import (
 	"github.com/gin-gonic/gin"
 	"github.com/meloop/gamification-service/controllers"
+	"github.com/meloop/services/common/authz"
 )
 
 func SetupRoutes(
@@ -10,6 +11,7 @@ func SetupRoutes(
 	gamificationController *controllers.GamificationController,
 	adminController *controllers.AdminController,
 	progressController *controllers.ProgressController,
+	sessionValidator controllers.SessionValidator,
 ) {
 	api := router.Group("/api/v1/gamification")
 	{
@@ -19,7 +21,10 @@ func SetupRoutes(
 		api.GET("/me/progress", progressController.GetProgress)
 
 		admin := api.Group("/admin")
-		admin.Use(controllers.AdminRequired())
+		admin.Use(
+			controllers.SessionAuth(sessionValidator),
+			authz.RequireRoles(authz.RoleAdmin),
+		)
 		{
 			admin.GET("/rewards", adminController.ListRewards)
 			admin.POST("/rewards", adminController.CreateReward)

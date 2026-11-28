@@ -10,6 +10,7 @@ import (
 
 var (
 	ErrPostNotFoundOrUnauthorized = errors.New("publicación no encontrada o no tienes permisos de autor")
+	ErrAlreadyLiked               = errors.New("el usuario ya dio me gusta a esta publicación")
 )
 
 // Post representa una publicación basada estrictamente en el MER
@@ -20,14 +21,16 @@ type Post struct {
 	MusicID       *string   `json:"music_id,omitempty"`
 	UrlMultimedia *string   `json:"url_multimedia,omitempty"`
 	CreatedAt     time.Time `json:"created_at"`
+	LikesCount    int       `json:"likes_count"`
+	IsLiked       bool      `json:"is_liked"`
 }
 
-// Cambiamos el nombre de la estructura a SQLPostRepository para evitar el conflicto
+// SQLPostRepository maneja la persistencia de las publicaciones
 type SQLPostRepository struct {
 	db *sql.DB
 }
 
-// Mantenemos NewPostRepository para no romper las inyecciones en main.go
+// NewPostRepository crea una nueva instancia del repositorio
 func NewPostRepository(db *sql.DB) *SQLPostRepository {
 	return &SQLPostRepository{db: db}
 }
@@ -84,14 +87,36 @@ func (r *SQLPostRepository) DeletePost(ctx context.Context, postID string, autho
 // GetPostByID obtiene un post por su ID
 func (r *SQLPostRepository) GetPostByID(ctx context.Context, postID string, requesterID string) (*Post, error) {
 	query := `
-		SELECT id_publicacion, id_usuario, texto, id_cancion, url_multimedia, fecha_creacion
-		FROM publicacion
-		WHERE id_publicacion = $1
+		SELECT p.id_publicacion, p.id_usuario, p.texto, p.id_cancion, p.url_multimedia, p.fecha_creacion,
+			COALESCE(l.likes_count, 0),
+			EXISTS (
+				SELECT 1 FROM interaccion i
+				WHERE i.id_publicacion = p.id_publicacion
+					AND i.id_usuario = $2
+					AND i.tipo = 'like'
+			)
+		FROM publicacion p
+		LEFT JOIN (
+			SELECT id_publicacion, COUNT(id_interaccion) AS likes_count
+			FROM interaccion
+			WHERE tipo = 'like'
+			GROUP BY id_publicacion
+		) l ON p.id_publicacion = l.id_publicacion
+		WHERE p.id_publicacion = $1
 	`
-	row := r.db.QueryRowContext(ctx, query, postID)
+	row := r.db.QueryRowContext(ctx, query, postID, requesterID)
 
 	var post Post
-	err := row.Scan(&post.ID, &post.AuthorID, &post.Content, &post.MusicID, &post.UrlMultimedia, &post.CreatedAt)
+	err := row.Scan(
+		&post.ID,
+		&post.AuthorID,
+		&post.Content,
+		&post.MusicID,
+		&post.UrlMultimedia,
+		&post.CreatedAt,
+		&post.LikesCount,
+		&post.IsLiked,
+	)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, errors.New("publicación no encontrada")
@@ -105,13 +130,26 @@ func (r *SQLPostRepository) GetPostByID(ctx context.Context, postID string, requ
 // GetPostsByAuthor obtiene los posts de un perfil con paginación
 func (r *SQLPostRepository) GetPostsByAuthor(ctx context.Context, authorID string, requesterID string, limit int, offset int) ([]Post, error) {
 	query := `
-		SELECT id_publicacion, id_usuario, texto, id_cancion, url_multimedia, fecha_creacion
-		FROM publicacion
-		WHERE id_usuario = $1 
-		ORDER BY fecha_creacion DESC
-		LIMIT $2 OFFSET $3
+		SELECT p.id_publicacion, p.id_usuario, p.texto, p.id_cancion, p.url_multimedia, p.fecha_creacion,
+			COALESCE(l.likes_count, 0),
+			EXISTS (
+				SELECT 1 FROM interaccion i
+				WHERE i.id_publicacion = p.id_publicacion
+					AND i.id_usuario = $2
+					AND i.tipo = 'like'
+			)
+		FROM publicacion p
+		LEFT JOIN (
+			SELECT id_publicacion, COUNT(id_interaccion) AS likes_count
+			FROM interaccion
+			WHERE tipo = 'like'
+			GROUP BY id_publicacion
+		) l ON p.id_publicacion = l.id_publicacion
+		WHERE p.id_usuario = $1
+		ORDER BY p.fecha_creacion DESC
+		LIMIT $3 OFFSET $4
 	`
-	rows, err := r.db.QueryContext(ctx, query, authorID, limit, offset)
+	rows, err := r.db.QueryContext(ctx, query, authorID, requesterID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("error al consultar posts por autor: %w", err)
 	}
@@ -120,7 +158,16 @@ func (r *SQLPostRepository) GetPostsByAuthor(ctx context.Context, authorID strin
 	var posts []Post
 	for rows.Next() {
 		var p Post
-		if err := rows.Scan(&p.ID, &p.AuthorID, &p.Content, &p.MusicID, &p.UrlMultimedia, &p.CreatedAt); err != nil {
+		if err := rows.Scan(
+			&p.ID,
+			&p.AuthorID,
+			&p.Content,
+			&p.MusicID,
+			&p.UrlMultimedia,
+			&p.CreatedAt,
+			&p.LikesCount,
+			&p.IsLiked,
+		); err != nil {
 			return nil, err
 		}
 		posts = append(posts, p)
@@ -137,13 +184,26 @@ func (r *SQLPostRepository) SearchPosts(ctx context.Context, searchTerm string, 
 	searchPattern := "%" + searchTerm + "%"
 
 	query := `
-		SELECT id_publicacion, id_usuario, texto, id_cancion, url_multimedia, fecha_creacion
-		FROM publicacion
-		WHERE (texto ILIKE $1 OR id_cancion ILIKE $1)
-		ORDER BY fecha_creacion DESC
-		LIMIT $2 OFFSET $3
+		SELECT p.id_publicacion, p.id_usuario, p.texto, p.id_cancion, p.url_multimedia, p.fecha_creacion,
+			COALESCE(l.likes_count, 0),
+			EXISTS (
+				SELECT 1 FROM interaccion i
+				WHERE i.id_publicacion = p.id_publicacion
+					AND i.id_usuario = $2
+					AND i.tipo = 'like'
+			)
+		FROM publicacion p
+		LEFT JOIN (
+			SELECT id_publicacion, COUNT(id_interaccion) AS likes_count
+			FROM interaccion
+			WHERE tipo = 'like'
+			GROUP BY id_publicacion
+		) l ON p.id_publicacion = l.id_publicacion
+		WHERE (p.texto ILIKE $1 OR p.id_cancion ILIKE $1)
+		ORDER BY p.fecha_creacion DESC
+		LIMIT $3 OFFSET $4
 	`
-	rows, err := r.db.QueryContext(ctx, query, searchPattern, limit, offset)
+	rows, err := r.db.QueryContext(ctx, query, searchPattern, requesterID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("error al buscar posts: %w", err)
 	}
@@ -152,7 +212,16 @@ func (r *SQLPostRepository) SearchPosts(ctx context.Context, searchTerm string, 
 	var posts []Post
 	for rows.Next() {
 		var p Post
-		if err := rows.Scan(&p.ID, &p.AuthorID, &p.Content, &p.MusicID, &p.UrlMultimedia, &p.CreatedAt); err != nil {
+		if err := rows.Scan(
+			&p.ID,
+			&p.AuthorID,
+			&p.Content,
+			&p.MusicID,
+			&p.UrlMultimedia,
+			&p.CreatedAt,
+			&p.LikesCount,
+			&p.IsLiked,
+		); err != nil {
 			return nil, err
 		}
 		posts = append(posts, p)
@@ -184,4 +253,48 @@ func (r *SQLPostRepository) CreatePost(ctx context.Context, authorID string, con
 	}
 
 	return &post, nil
+}
+
+// AddLike inserta una interacción de tipo 'like' validando que no exista previamente (RF-20)
+func (r *SQLPostRepository) AddLike(ctx context.Context, postID string, userID string) error {
+	// 1. Verificamos si ya existe para evitar duplicados
+	checkQuery := `SELECT COUNT(1) FROM interaccion WHERE id_usuario = $1 AND id_publicacion = $2 AND tipo = 'like'`
+	var count int
+	if err := r.db.QueryRowContext(ctx, checkQuery, userID, postID).Scan(&count); err != nil {
+		return fmt.Errorf("error al verificar el estado del like: %w", err)
+	}
+
+	if count > 0 {
+		return ErrAlreadyLiked
+	}
+
+	// 2. Generamos un ID simple para la interacción y la insertamos
+	interaccionID := fmt.Sprintf("like-%s-%d", userID, time.Now().UnixMilli())
+
+	query := `
+		INSERT INTO interaccion (id_interaccion, id_usuario, id_publicacion, tipo, fecha_creacion)
+		VALUES ($1, $2, $3, 'like', NOW())
+	`
+
+	_, err := r.db.ExecContext(ctx, query, interaccionID, userID, postID)
+	if err != nil {
+		return fmt.Errorf("error al registrar el like: %w", err)
+	}
+
+	return nil
+}
+
+// RemoveLike elimina una interacción de tipo 'like' de la base de datos (RF-20)
+func (r *SQLPostRepository) RemoveLike(ctx context.Context, postID string, userID string) error {
+	query := `
+		DELETE FROM interaccion 
+		WHERE id_publicacion = $1 AND id_usuario = $2 AND tipo = 'like'
+	`
+
+	_, err := r.db.ExecContext(ctx, query, postID, userID)
+	if err != nil {
+		return fmt.Errorf("error al eliminar el like: %w", err)
+	}
+
+	return nil
 }

@@ -1,12 +1,22 @@
 # Notification Service
 
-Consumes events from the durable `meloop.events` topic exchange and stores notifications in Supabase PostgreSQL.
+Consumes events from the durable `meloop.events` topic exchange and stores notifications in Supabase PostgreSQL. It also exposes an authenticated REST API for each user's notification inbox.
 
 ## Configuration
 
-Set `DATABASE_URL` to the Supabase PostgreSQL connection string and `RABBITMQ_URL` to the AMQP URL. For local development, the defaults target PostgreSQL and RabbitMQ on `localhost`.
+Set `DATABASE_URL` to the Supabase PostgreSQL connection string, `RABBITMQ_URL` to the AMQP URL, and `AUTH_SERVICE_URL` to the Auth service URL. The HTTP server listens on `PORT` (default `8088`). For local development, the defaults target PostgreSQL, RabbitMQ, and Auth on `localhost`.
 
 Apply `supabase/migrations/20261003120000_notification_event_delivery.sql` before starting the service.
+
+## HTTP API
+
+All `/notifications` routes require a Bearer session token validated by Auth:
+
+- `GET /notifications?limit=20&offset=0` lists the authenticated user's notifications, newest first. `limit` is capped at 100.
+- `PATCH /notifications/{id}/read` marks one of that user's notifications as read. IDs belonging to another user are not exposed.
+- `PATCH /notifications/read` marks all unread notifications for the authenticated user as read.
+
+Notification preferences remain managed through `GET` and `PATCH /users/me/notifications/settings` in user-service. Event generation checks those persisted settings before inserting an alert. If a preference row does not yet exist, notifications remain enabled by default, matching user-service defaults.
 
 ## Supported events
 
@@ -22,7 +32,7 @@ Messages are JSON. IDs accept camelCase or snake_case. Use `eventId` (or AMQP `M
 - `user.level_up` / `reward.unlocked`: `user_id`; that user is notified.
 - Other events: provide `recipientId` or the relevant `receiverId` / `affectedUserId`. Actor fields are `userId`, `actorId`, `senderId`, or `moderatorId`.
 
-Processed messages are acknowledged after the database write. Invalid events are dead-lettered to `notification.events.dead`; transient database failures are requeued.
+Processed messages are acknowledged after the database write or when the matching preference is disabled. Invalid events are dead-lettered to `notification.events.dead`; transient database failures are requeued.
 
 ## Run and test
 
@@ -32,6 +42,7 @@ From this directory:
 go test ./...
 $env:DATABASE_URL = "<Supabase PostgreSQL connection string>"
 $env:RABBITMQ_URL = "amqp://guest:guest@localhost:5672/"
+$env:AUTH_SERVICE_URL = "http://localhost:8083"
 go run .
 ```
 
