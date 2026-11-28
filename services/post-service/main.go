@@ -3,8 +3,10 @@ package main
 import (
 	"log"
 	"os"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
@@ -60,11 +62,9 @@ func main() {
 	// 6. Inyectar dependencias de Likes y Comentarios
 	likeRepo := repositories.NewPostgresLikeRepository(db)
 	likeService := services.NewLikeService(likeRepo)
-	likeController := controllers.NewLikeController(likeService)
 
 	commentRepo := repositories.NewPostgresCommentRepository(db)
 	commentService := services.NewCommentService(commentRepo)
-	commentController := controllers.NewCommentController(commentService)
 
 	// 7. Inyectar dependencias de Publicaciones (Post)
 	// Extraemos la conexión base de SQL desde GORM para inyectarla en tu SQLPostRepository
@@ -74,41 +74,80 @@ func main() {
 	}
 
 	postRepo := repositories.NewPostRepository(sqlDB)
-	postService := services.NewPostService(postRepo)
-	postController := controllers.NewPostController(postService)
 
 	// 8. Inyectar dependencias del nuevo FEED PRINCIPAL
-	feedRepo := repositories.NewPostgresFeedRepository(db)
-	feedService := services.NewFeedService(feedRepo)
-	feedController := controllers.NewFeedController(feedService)
+	redisURL := os.Getenv("REDIS_URL")
+	if redisURL == "" {
+		if redisPassword := os.Getenv("REDIS_PASSWORD"); redisPassword != "" {
+			redisURL = "redis://:" + redisPassword + "@localhost:6379"
+		} else {
+			redisURL = "redis://localhost:6379"
+		}
+	}
+	redisOptions, err := redis.ParseURL(redisURL)
+	if err != nil {
+		log.Fatalf("Error al configurar Redis para el feed: %v", err)
+	}
+	redisTimeout := feedTimeout("FEED_REDIS_TIMEOUT", 50*time.Millisecond)
+	redisOptions.DialTimeout = redisTimeout
+	redisOptions.ReadTimeout = redisTimeout
+	redisOptions.WriteTimeout = redisTimeout
+	redisClient := redis.NewClient(redisOptions)
+	defer redisClient.Close()
+
+	socialServiceURL := os.Getenv("SOCIAL_SERVICE_URL")
+	if socialServiceURL == "" {
+		socialServiceURL = "http://localhost:8086"
+	}
+	recommendationServiceURL := os.Getenv("RECOMMENDATION_SERVICE_URL")
+	if recommendationServiceURL == "" {
+		recommendationServiceURL = "http://localhost:8087"
+	}
+	authServiceURL := os.Getenv("AUTH_SERVICE_URL")
+	if authServiceURL == "" {
+		authServiceURL = "http://localhost:8083"
+	}
+	postgresTimeout := feedTimeout("FEED_POSTGRES_TIMEOUT", 220*time.Millisecond)
+	socialTimeout := feedTimeout("SOCIAL_BLOCKS_TIMEOUT", 400*time.Millisecond)
+	recommendationTimeout := feedTimeout("FEED_RECOMMENDATION_TIMEOUT", 50*time.Millisecond)
+	authTimeout := feedTimeout("AUTH_SERVICE_TIMEOUT", 5*time.Second)
+	socialClient := services.NewSocialFeedClient(socialServiceURL, socialTimeout)
+	blockedUsers := services.NewRedisBlockedUsers(redisClient, postRepo, socialClient)
+	postService := services.NewPostService(postRepo, blockedUsers)
+	likeController := controllers.NewLikeController(likeService, postService)
+	commentController := controllers.NewCommentController(commentService, postService, blockedUsers)
+	postController := controllers.NewPostController(postService)
+	feedService := services.NewFeedService(
+		repositories.NewPostgresFeedRepository(db, postgresTimeout),
+		repositories.NewRedisFeedSnapshotStore(redisClient, redisTimeout),
+		blockedUsers,
+		services.NewHTTPFeedRecommendationProvider(recommendationServiceURL, recommendationTimeout),
+	)
+	feedController := controllers.NewFeedController(feedService, feedTimeout("FEED_REQUEST_TIMEOUT", 480*time.Millisecond))
 
 	// 9. Configurar Rutas
 	router := gin.Default()
-
-	// --- MIDDLEWARE DE PRUEBAS ---
-	// Extrae el ID del usuario desde el header para simular que pasó por el API Gateway
-	router.Use(func(c *gin.Context) {
-		userID := c.GetHeader("X-User-ID")
-		if userID != "" {
-			c.Set("userID", userID)
-		}
-		c.Next()
-	})
-	// ------------------------------
+	authMiddleware := controllers.AuthRequired(services.NewHTTPFeedIdentityVerifier(authServiceURL, authTimeout))
 
 	// Rutas de módulos (Mezclado: con middleware de tu rama y likeController de la rama main)
-	routes.SetupRoutes(router, likeController, commentController, postController, minioClient)
-
-	// Nueva ruta del Feed (directo en el main para no modificar el archivo routes por ahora)
-	router.GET("/v1/feed", feedController.GetMainFeed)
-
-	// Nuevas rutas para el sistema de Likes (RF-20)
-	router.POST("/v1/posts/:id/like", postController.LikePost)
-	router.DELETE("/v1/posts/:id/like", postController.UnlikePost)
+	routes.SetupRoutes(router, authMiddleware, feedController, likeController, commentController, postController, minioClient)
+	routes.SetupInteractionRoutes(router, controllers.NewInteractionController(postService), authMiddleware)
 
 	// Nota: Tu puerto actual en este archivo es 8084
 	logger.Info("http_server_started", "port", "8084")
 	if err := router.Run(":8084"); err != nil {
 		log.Fatalf("Error al iniciar el servidor web: %v", err)
 	}
+}
+
+func feedTimeout(key string, fallback time.Duration) time.Duration {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback
+	}
+	timeout, err := time.ParseDuration(value)
+	if err != nil || timeout <= 0 {
+		log.Fatalf("Valor inválido para %s: %q", key, value)
+	}
+	return timeout
 }
