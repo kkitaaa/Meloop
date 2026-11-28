@@ -32,6 +32,11 @@ func AuthRequired(validator SessionValidator) gin.HandlerFunc {
 		}
 
 		userID, err := validator.ValidateToken(c.Request.Context(), authHeader[1])
+		if errors.Is(err, client.ErrAccountSuspended) {
+			httpresponse.ForbiddenGin(c, "Cuenta suspendida")
+			c.Abort()
+			return
+		}
 		if errors.Is(err, client.ErrInvalidSession) {
 			httpresponse.UnauthorizedGin(c, "Sesión inválida o expirada")
 			c.Abort()

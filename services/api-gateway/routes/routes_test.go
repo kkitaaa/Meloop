@@ -34,3 +34,21 @@ func funcRouter() http.Handler {
 	SetupRoutes(router)
 	return router
 }
+
+func TestFriendsRoutePropagatesSuspensionBeforeProxy(t *testing.T) {
+	auth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer auth.Close()
+	social := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("suspended session reached Social")
+	}))
+	defer social.Close()
+	t.Setenv("AUTH_SERVICE_URL", auth.URL)
+	t.Setenv("SOCIAL_SERVICE_URL", social.URL)
+	request := httptest.NewRequest(http.MethodGet, "/friends", nil)
+	request.Header.Set("Authorization", "Bearer active-session")
+	response := httptest.NewRecorder()
+	funcRouter().ServeHTTP(response, request)
+	require.Equal(t, http.StatusForbidden, response.Code)
+}

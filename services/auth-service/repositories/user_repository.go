@@ -16,6 +16,8 @@ import (
 // ErrUserNotFound indica que la identidad de la sesión ya no existe en PostgreSQL.
 var ErrUserNotFound = errors.New("user not found")
 
+var ErrAccountSuspended = errors.New("account suspended")
+
 type UserRepository interface {
 	GetByID(ctx context.Context, id string) (*models.Usuario, error)
 	GetByUsername(ctx context.Context, username string) (*models.Usuario, error)
@@ -122,17 +124,21 @@ func (r *postgresUserRepository) GetRoleByID(ctx context.Context, id string) (st
 		return "", errors.New("database connection pool is not initialized")
 	}
 	var role string
+	var suspended bool
 	query := `
-		SELECT COALESCE(rol, 'usuario')
+		SELECT COALESCE(rol, 'usuario'), COALESCE(suspendido, FALSE)
 		FROM USUARIO
 		WHERE id_usuario = $1
 	`
-	err := r.pool.QueryRow(ctx, query, id).Scan(&role)
+	err := r.pool.QueryRow(ctx, query, id).Scan(&role, &suspended)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return "", ErrUserNotFound
 		}
 		return "", err
+	}
+	if suspended {
+		return "", ErrAccountSuspended
 	}
 	return role, nil
 }

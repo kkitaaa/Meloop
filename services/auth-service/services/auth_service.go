@@ -30,6 +30,7 @@ var (
 	ErrTokenExpired       = errors.New("TOKEN_EXPIRED")
 	ErrTokenAlreadyUsed   = errors.New("TOKEN_ALREADY_USED")
 	ErrUserNotFound       = repositories.ErrUserNotFound
+	ErrAccountSuspended   = repositories.ErrAccountSuspended
 )
 
 type ValidationError struct {
