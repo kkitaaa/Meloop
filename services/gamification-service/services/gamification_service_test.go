@@ -347,3 +347,11 @@ func TestPublisherError_IsPropagated(t *testing.T) {
 		t.Fatalf("expected publisher error %v, got %v", pubErr, err)
 	}
 }
+
+func (f *fakeGamificationRepository) AddExperienceIdempotent(ctx context.Context, eventID, rewardType, userID string, amount int) (*models.ExperienceResult, bool, error) {
+	f.called = true
+	if f.err != nil {
+		return nil, false, f.err
+	}
+	return f.result, false, nil
+}

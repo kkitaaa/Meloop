@@ -5,6 +5,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/meloop/post-service/controllers"
+	"github.com/meloop/post-service/middlewares"
+	"github.com/meloop/post-service/services"
 	"github.com/minio/minio-go/v7"
 )
 
@@ -14,6 +16,7 @@ func SetupRoutes(
 	commentController *controllers.CommentController,
 	postController *controllers.PostController,
 	minioClient *minio.Client,
+	authValidator services.SessionValidator,
 ) {
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"service": "post-service", "status": "ok"})
@@ -25,8 +28,8 @@ func SetupRoutes(
 
 	api := router.Group("/api/v1/posts")
 	{
-		// 1. Creación de publicaciones
-		api.POST("", postController.CreatePost)
+		// 1. Creación de publicaciones (protegida por sesión Bearer)
+		api.POST("", middlewares.AuthRequired(authValidator), postController.CreatePost)
 		api.POST("/media", controllers.UploadFile(minioClient))
 
 		// 2. Búsquedas y filtros (deben ir antes de /:id para no confundirse)
@@ -35,12 +38,16 @@ func SetupRoutes(
 
 		// 3. Operaciones sobre una publicación específica (CRUD)
 		api.GET("/:id", postController.GetPostByID)
-		api.PUT("/:id", postController.UpdatePost)
-		api.DELETE("/:id", postController.DeletePost)
+		api.PUT("/:id", middlewares.AuthRequired(authValidator), postController.UpdatePost)
+		api.DELETE("/:id", middlewares.AuthRequired(authValidator), postController.DeletePost)
 
-		// 4. Comentarios y respuestas (Usamos :id en vez de :postId para evitar colisión)
-		api.POST("/:id/comments", commentController.CreateComment)
+		// 4. Comentarios y respuestas (Lectura pública; escritura protegida por sesión Bearer)
 		api.GET("/:id/comments", commentController.GetComments)
-		api.POST("/:id/comments/:commentId/replies", commentController.CreateReply)
+		authComments := api.Group("", middlewares.AuthRequired(authValidator))
+		{
+			authComments.POST("/:id/comments", commentController.CreateComment)
+			authComments.POST("/:id/comments/:commentId/replies", commentController.CreateReply)
+			authComments.DELETE("/:id/comments/:commentId", commentController.DeleteComment)
+		}
 	}
 }

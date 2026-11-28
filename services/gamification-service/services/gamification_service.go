@@ -23,6 +23,7 @@ type EventPublisher interface {
 // GamificationService define las operaciones del servicio de gamificación
 type GamificationService interface {
 	ProcessExperience(ctx context.Context, userID string, amount int) (*models.ExperienceResult, error)
+	ProcessExperienceIdempotent(ctx context.Context, eventID, rewardType, userID string, amount int) (*models.ExperienceResult, error)
 	GetUserProgress(ctx context.Context, userID string) (*models.UserProgress, error)
 	ListRewards(ctx context.Context) ([]models.Reward, error)
 	CreateReward(ctx context.Context, reward *models.RewardCreateRequest) (*models.Reward, error)
@@ -43,6 +44,10 @@ func NewGamificationService(repo repositories.GamificationRepository, publisher 
 }
 
 func (s *gamificationService) ProcessExperience(ctx context.Context, userID string, amount int) (*models.ExperienceResult, error) {
+	return s.ProcessExperienceIdempotent(ctx, "", "", userID, amount)
+}
+
+func (s *gamificationService) ProcessExperienceIdempotent(ctx context.Context, eventID, rewardType, userID string, amount int) (*models.ExperienceResult, error) {
 	userID = strings.TrimSpace(userID)
 	if userID == "" {
 		return nil, ErrInvalidUserID
@@ -51,14 +56,26 @@ func (s *gamificationService) ProcessExperience(ctx context.Context, userID stri
 		return nil, ErrInvalidExperienceAmount
 	}
 
-	// 1. Ejecutar la operación de experiencia dentro de la transacción de base de datos
-	result, err := s.repo.AddExperience(ctx, userID, amount)
+	var (
+		result           *models.ExperienceResult
+		alreadyProcessed bool
+		err              error
+	)
+
+	if strings.TrimSpace(eventID) != "" {
+		result, alreadyProcessed, err = s.repo.AddExperienceIdempotent(ctx, eventID, rewardType, userID, amount)
+	} else {
+		result, err = s.repo.AddExperience(ctx, userID, amount)
+	}
 	if err != nil {
 		// Ante cualquier error o rollback en la transacción, NO se publica ningún evento
 		return nil, err
 	}
+	if alreadyProcessed {
+		return result, nil
+	}
 
-	// 2. Transacción confirmada exitosamente. Publicar los eventos correspondientes.
+	// Transacción confirmada exitosamente. Publicar los eventos correspondientes.
 	if s.publisher != nil {
 		// Evento level.up: solo si existió una subida de nivel real
 		if result.LeveledUp {
