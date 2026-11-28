@@ -21,6 +21,7 @@ type mockUserRepository struct {
 	getByIDFunc         func(ctx context.Context, id string) (*models.Usuario, error)
 	getByUsernameFunc   func(ctx context.Context, username string) (*models.Usuario, error)
 	getByEmailFunc      func(ctx context.Context, email string) (*models.Usuario, error)
+	getRoleByIDFunc     func(ctx context.Context, id string) (string, error)
 	createFunc          func(ctx context.Context, user *models.Usuario) error
 	updatePasswordFunc  func(ctx context.Context, id string, passwordHash string) error
 	updateLastLoginFunc func(ctx context.Context, id string) error
@@ -60,6 +61,18 @@ func (m *mockUserRepository) GetByEmail(ctx context.Context, email string) (*mod
 		}
 	}
 	return nil, nil
+}
+
+func (m *mockUserRepository) GetRoleByID(ctx context.Context, id string) (string, error) {
+	if m.getRoleByIDFunc != nil {
+		return m.getRoleByIDFunc(ctx, id)
+	}
+	for _, u := range m.users {
+		if u.IDUsuario == id {
+			return "usuario", nil
+		}
+	}
+	return "", repositories.ErrUserNotFound
 }
 
 func (m *mockUserRepository) Create(ctx context.Context, user *models.Usuario) error {

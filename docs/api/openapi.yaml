@@ -1279,7 +1279,7 @@ paths:
       summary: Actualizar permisos de moderación
       security:
         - bearerAuth: []
-      x-required-roles: [admin, moderator]
+      x-required-roles: [admin]
       parameters:
         - $ref: '#/components/parameters/UserId'
       requestBody:

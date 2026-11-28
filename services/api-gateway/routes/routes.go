@@ -65,8 +65,10 @@ func SetupRoutes(router *gin.Engine) {
 		)
 	}
 
-	// Enrutar peticiones de gamificación
+	// Enrutar peticiones de gamificación. Solo el subárbol /admin exige sesión
+	// y rol de administrador; el resto permanece tal como estaba.
 	router.Any("/api/v1/gamification",
+		controllers.RequireGamificationAdmin(),
 		controllers.ProxyToService(
 			"GAMIFICATION_SERVICE_URL",
 			"http://gamification-service:8089",
@@ -75,6 +77,7 @@ func SetupRoutes(router *gin.Engine) {
 	)
 
 	router.Any("/api/v1/gamification/*any",
+		controllers.RequireGamificationAdmin(),
 		controllers.ProxyToService(
 			"GAMIFICATION_SERVICE_URL",
 			"http://gamification-service:8089",

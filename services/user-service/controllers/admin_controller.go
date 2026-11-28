@@ -3,6 +3,7 @@ package controllers
 import (
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/meloop/services/common/httpresponse"
@@ -77,6 +78,16 @@ func (ctrl *AdminController) UpdateModeratorRole(c *gin.Context) {
 	userID := c.Param("id")
 	if userID == "" {
 		httpresponse.BadRequestGin(c, "Debe indicar el identificador del usuario")
+		return
+	}
+
+	authenticatedID := strings.TrimSpace(c.GetString(ContextUserIDKey))
+	if authenticatedID == "" {
+		httpresponse.UnauthorizedGin(c, "No se encontró sesión de usuario autenticada")
+		return
+	}
+	if authenticatedID == strings.TrimSpace(userID) {
+		httpresponse.ForbiddenGin(c, "No se puede modificar el propio rol")
 		return
 	}
 

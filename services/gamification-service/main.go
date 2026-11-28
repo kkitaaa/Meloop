@@ -51,6 +51,7 @@ func run() error {
 	repo := repositories.NewGamificationRepository(pool)
 	publisher := messaging.NewPublisher(cfg.RabbitMQURL)
 	service := services.NewGamificationService(repo, publisher)
+	authClient := services.NewAuthClient(cfg.AuthServiceURL)
 
 	gamificationController := controllers.NewGamificationController(service)
 	adminController := controllers.NewAdminController(service)
@@ -78,7 +79,7 @@ func run() error {
 	router := gin.Default()
 
 	// AQUÍ CONECTAMOS TODOS LOS CONTROLADORES JUNTOS
-	routes.SetupRoutes(router, gamificationController, adminController, progressController)
+	routes.SetupRoutes(router, gamificationController, adminController, progressController, authClient)
 
 	port := cfg.Port
 	if port == "" {

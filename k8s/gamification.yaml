@@ -1,4 +1,4 @@
-apiVersion: apps/v1
+﻿apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: gamification-service
@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: gamification-service
-          image: ghcr.io/kkitaaa/meloop/gamification-service:447a57cb0d9e72e4513f31db7a13a7c76d89a08c
+          image: ghcr.io/kkitaaa/meloop/gamification-service:0ffc4c5-authz
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -26,6 +26,8 @@ spec:
           env:
             - name: GAMIFICATION_SERVICE_PORT
               value: "8089"
+            - name: AUTH_SERVICE_URL
+              value: http://auth-service:8083
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:

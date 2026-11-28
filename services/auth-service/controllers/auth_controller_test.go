@@ -20,6 +20,7 @@ type mockAuthService struct {
 	loginFunc                   func(ctx context.Context, req *models.LoginRequest) (*models.LoginResponse, error)
 	logoutFunc                  func(ctx context.Context, token string) error
 	validateSessionFunc         func(ctx context.Context, token string) (*models.SessionUser, error)
+	getRoleByIDFunc             func(ctx context.Context, userID string) (string, error)
 	refreshSessionFunc          func(ctx context.Context, token string) (*models.LoginResponse, error)
 	changePasswordFunc          func(ctx context.Context, userID string, req *models.ChangePasswordRequest) error
 	requestPasswordRecoveryFunc func(ctx context.Context, req *models.PasswordRecoveryRequest) error
@@ -71,6 +72,13 @@ func (m *mockAuthService) ValidateSession(ctx context.Context, token string) (*m
 		}, nil
 	}
 	return nil, errors.New("invalid token")
+}
+
+func (m *mockAuthService) GetRoleByID(ctx context.Context, userID string) (string, error) {
+	if m.getRoleByIDFunc != nil {
+		return m.getRoleByIDFunc(ctx, userID)
+	}
+	return "usuario", nil
 }
 
 func (m *mockAuthService) RefreshSession(ctx context.Context, token string) (*models.LoginResponse, error) {
