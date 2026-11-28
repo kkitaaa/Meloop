@@ -18,4 +18,14 @@ func SetupInteractionRoutes(router *gin.Engine, ctrl *controllers.InteractionCon
 	{
 		usersGroup.GET("/me/saved", ctrl.GetSavedPosts) // Consultar lista de guardados (RF-23)[cite: 8]
 	}
+
+	savedGroup := router.Group("/v1/me", authMiddleware)
+	{
+		savedGroup.GET("/saved", ctrl.GetSavedPosts)
+		savedGroup.POST("/saved", ctrl.SavePost)
+		savedGroup.DELETE("/saved/:id", ctrl.UnsavePost)
+	}
+
+	versionedPosts := router.Group("/v1/posts", authMiddleware)
+	versionedPosts.POST("/:id/share", ctrl.SharePost)
 }

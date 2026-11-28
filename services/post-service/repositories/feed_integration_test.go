@@ -34,14 +34,11 @@ func TestPostgresFeedQueriesMatchSupabaseMigrations(t *testing.T) {
 	defer cancel()
 	userID := uuid.NewString()
 
-	if _, err := repository.ListCandidates(ctx, userID, []string{uuid.NewString()}, maxFeedCandidates); err != nil {
+	if _, err := repository.ListCandidates(ctx, userID, []string{uuid.NewString()}, []string{uuid.NewString()}, maxFeedCandidates); err != nil {
 		t.Fatalf("run feed candidate query against migrated schema: %v", err)
 	}
-	if _, err := repository.GetPostsByIDs(ctx, userID, []string{uuid.NewString()}); err != nil {
+	if _, err := repository.GetPostsByIDs(ctx, userID, []string{uuid.NewString()}, []string{uuid.NewString()}); err != nil {
 		t.Fatalf("run feed detail query against migrated schema: %v", err)
-	}
-	if _, err := repository.ExcludeBlockedAuthors(ctx, userID, []string{uuid.NewString()}); err != nil {
-		t.Fatalf("run PostgreSQL block fallback query against migrated schema: %v", err)
 	}
 }
 

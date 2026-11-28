@@ -38,6 +38,13 @@ func TestSocialFeedClientUsesCentralBlockExclusionEndpoint(t *testing.T) {
 	if !reflect.DeepEqual(allowed, []string{"author-a"}) {
 		t.Fatalf("allowed authors = %v, want [author-a]", allowed)
 	}
+	blocked, err := client.GetBlockedCandidateIDs(context.Background(), "viewer", []string{"author-a", "author-b"})
+	if err != nil {
+		t.Fatalf("get blocked authors: %v", err)
+	}
+	if !reflect.DeepEqual(blocked, []string{"author-b"}) {
+		t.Fatalf("blocked authors = %v, want [author-b]", blocked)
+	}
 }
 
 func TestRecommendationProviderUsesRecommendationIDsAsPostIDs(t *testing.T) {

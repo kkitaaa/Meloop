@@ -20,31 +20,28 @@ type feedRepositoryFake struct {
 	blockErr   error
 }
 
-func (repo *feedRepositoryFake) ListCandidates(context.Context, string, []string, int) ([]repositories.FeedCandidate, error) {
-	return repo.candidates, nil
+func (repo *feedRepositoryFake) ListCandidates(_ context.Context, _ string, _ []string, blockedAuthorIDs []string, _ int) ([]repositories.FeedCandidate, error) {
+	blocked := stringSet(blockedAuthorIDs)
+	candidates := make([]repositories.FeedCandidate, 0, len(repo.candidates))
+	for _, candidate := range repo.candidates {
+		if _, excluded := blocked[candidate.AuthorID]; !excluded {
+			candidates = append(candidates, candidate)
+		}
+	}
+	return candidates, nil
 }
 
-func (repo *feedRepositoryFake) GetPostsByIDs(_ context.Context, _ string, postIDs []string) ([]repositories.Post, error) {
+func (repo *feedRepositoryFake) GetPostsByIDs(_ context.Context, _ string, postIDs, blockedAuthorIDs []string) ([]repositories.Post, error) {
 	posts := make([]repositories.Post, 0, len(postIDs))
+	blocked := stringSet(blockedAuthorIDs)
 	for _, postID := range postIDs {
 		if post, ok := repo.posts[postID]; ok {
-			posts = append(posts, post)
+			if _, excluded := blocked[post.AuthorID]; !excluded {
+				posts = append(posts, post)
+			}
 		}
 	}
 	return posts, nil
-}
-
-func (repo *feedRepositoryFake) ExcludeBlockedAuthors(_ context.Context, _ string, authorIDs []string) ([]string, error) {
-	if repo.blockErr != nil {
-		return nil, repo.blockErr
-	}
-	allowed := make([]string, 0, len(authorIDs))
-	for _, authorID := range authorIDs {
-		if !repo.blocked[authorID] {
-			allowed = append(allowed, authorID)
-		}
-	}
-	return allowed, nil
 }
 
 type feedSnapshotStoreFake struct {
@@ -79,17 +76,25 @@ type feedBlockFilterFake struct {
 	err     error
 }
 
-func (filter feedBlockFilterFake) ExcludeBlocked(_ context.Context, _ string, authorIDs []string) ([]string, error) {
+func (filter feedBlockFilterFake) BlockedWith(_ context.Context, _ string) ([]string, error) {
 	if filter.err != nil {
 		return nil, filter.err
 	}
-	allowed := make([]string, 0, len(authorIDs))
-	for _, authorID := range authorIDs {
-		if !filter.blocked[authorID] {
-			allowed = append(allowed, authorID)
+	blocked := make([]string, 0, len(filter.blocked))
+	for authorID, isBlocked := range filter.blocked {
+		if isBlocked {
+			blocked = append(blocked, authorID)
 		}
 	}
-	return allowed, nil
+	return blocked, nil
+}
+
+func stringSet(values []string) map[string]struct{} {
+	set := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		set[value] = struct{}{}
+	}
+	return set
 }
 
 type feedRecommendationFake []FeedRecommendation
@@ -170,52 +175,15 @@ func TestGetFeedRejectsExpiredAndMalformedCursors(t *testing.T) {
 	}
 }
 
-func TestGetFeedFallsBackToPostgresWhenSocialServiceFails(t *testing.T) {
-	socialServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
-		http.Error(writer, "unavailable", http.StatusServiceUnavailable)
-	}))
-	defer socialServer.Close()
-
-	repo := &feedRepositoryFake{
-		candidates: []repositories.FeedCandidate{
-			{Post: repositories.Post{ID: "allowed", AuthorID: "author-allowed"}},
-			{Post: repositories.Post{ID: "blocked", AuthorID: "author-blocked"}},
-		},
-		posts: map[string]repositories.Post{
-			"allowed": {ID: "allowed", AuthorID: "author-allowed"},
-			"blocked": {ID: "blocked", AuthorID: "author-blocked"},
-		},
-		blocked: map[string]bool{"author-blocked": true},
-	}
+func TestGetFeedFailsClosedWhenBlockedUsersUnavailable(t *testing.T) {
 	service := NewFeedService(
-		repo,
-		&feedSnapshotStoreFake{},
-		NewSocialFeedClient(socialServer.URL, time.Second),
-		nil,
-	)
-
-	page, err := service.GetFeed(context.Background(), "viewer", 20, "")
-	if err != nil {
-		t.Fatalf("get feed with PostgreSQL block fallback: %v", err)
-	}
-	if len(page.Posts) != 1 || page.Posts[0].ID != "allowed" {
-		t.Fatalf("feed posts = %#v, want only allowed post", page.Posts)
-	}
-}
-
-func TestGetFeedFailsClosedWhenBothBlockFiltersFail(t *testing.T) {
-	repo := &feedRepositoryFake{
-		candidates: []repositories.FeedCandidate{{Post: repositories.Post{ID: "candidate", AuthorID: "author"}}},
-		blockErr:   errors.New("database unavailable"),
-	}
-	service := NewFeedService(
-		repo,
+		&feedRepositoryFake{},
 		&feedSnapshotStoreFake{},
 		feedBlockFilterFake{err: errors.New("social-service unavailable")},
 		nil,
 	)
 	if _, err := service.GetFeed(context.Background(), "viewer", 20, ""); err == nil {
-		t.Fatal("expected an error when both block filters fail")
+		t.Fatal("expected an error when blocked users cannot be loaded")
 	}
 }
 

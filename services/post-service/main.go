@@ -62,11 +62,9 @@ func main() {
 	// 6. Inyectar dependencias de Likes y Comentarios
 	likeRepo := repositories.NewPostgresLikeRepository(db)
 	likeService := services.NewLikeService(likeRepo)
-	likeController := controllers.NewLikeController(likeService)
 
 	commentRepo := repositories.NewPostgresCommentRepository(db)
 	commentService := services.NewCommentService(commentRepo)
-	commentController := controllers.NewCommentController(commentService)
 
 	// 7. Inyectar dependencias de Publicaciones (Post)
 	// Extraemos la conexión base de SQL desde GORM para inyectarla en tu SQLPostRepository
@@ -76,8 +74,6 @@ func main() {
 	}
 
 	postRepo := repositories.NewPostRepository(sqlDB)
-	postService := services.NewPostService(postRepo)
-	postController := controllers.NewPostController(postService)
 
 	// 8. Inyectar dependencias del nuevo FEED PRINCIPAL
 	redisURL := os.Getenv("REDIS_URL")
@@ -112,13 +108,19 @@ func main() {
 		authServiceURL = "http://localhost:8083"
 	}
 	postgresTimeout := feedTimeout("FEED_POSTGRES_TIMEOUT", 220*time.Millisecond)
-	socialTimeout := feedTimeout("FEED_SOCIAL_TIMEOUT", 100*time.Millisecond)
+	socialTimeout := feedTimeout("SOCIAL_BLOCKS_TIMEOUT", 400*time.Millisecond)
 	recommendationTimeout := feedTimeout("FEED_RECOMMENDATION_TIMEOUT", 50*time.Millisecond)
 	authTimeout := feedTimeout("AUTH_SERVICE_TIMEOUT", 5*time.Second)
+	socialClient := services.NewSocialFeedClient(socialServiceURL, socialTimeout)
+	blockedUsers := services.NewRedisBlockedUsers(redisClient, postRepo, socialClient)
+	postService := services.NewPostService(postRepo, blockedUsers)
+	likeController := controllers.NewLikeController(likeService, postService)
+	commentController := controllers.NewCommentController(commentService, postService, blockedUsers)
+	postController := controllers.NewPostController(postService)
 	feedService := services.NewFeedService(
 		repositories.NewPostgresFeedRepository(db, postgresTimeout),
 		repositories.NewRedisFeedSnapshotStore(redisClient, redisTimeout),
-		services.NewSocialFeedClient(socialServiceURL, socialTimeout),
+		blockedUsers,
 		services.NewHTTPFeedRecommendationProvider(recommendationServiceURL, recommendationTimeout),
 	)
 	feedController := controllers.NewFeedController(feedService, feedTimeout("FEED_REQUEST_TIMEOUT", 480*time.Millisecond))
@@ -129,6 +131,7 @@ func main() {
 
 	// Rutas de módulos (Mezclado: con middleware de tu rama y likeController de la rama main)
 	routes.SetupRoutes(router, authMiddleware, feedController, likeController, commentController, postController, minioClient)
+	routes.SetupInteractionRoutes(router, controllers.NewInteractionController(postService), authMiddleware)
 
 	// Nota: Tu puerto actual en este archivo es 8084
 	logger.Info("http_server_started", "port", "8084")

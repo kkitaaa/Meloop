@@ -2,7 +2,6 @@ package repositories
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -14,9 +13,8 @@ const maxFeedCandidates = 200
 const postgresMaxParameters = 65535
 
 type FeedRepository interface {
-	ListCandidates(ctx context.Context, userID string, recommendedIDs []string, limit int) ([]FeedCandidate, error)
-	GetPostsByIDs(ctx context.Context, userID string, postIDs []string) ([]Post, error)
-	ExcludeBlockedAuthors(ctx context.Context, userID string, authorIDs []string) ([]string, error)
+	ListCandidates(ctx context.Context, userID string, recommendedIDs, blockedAuthorIDs []string, limit int) ([]FeedCandidate, error)
+	GetPostsByIDs(ctx context.Context, userID string, postIDs, blockedAuthorIDs []string) ([]Post, error)
 }
 
 type FeedCandidate struct {
@@ -37,7 +35,7 @@ func NewPostgresFeedRepository(db *gorm.DB, timeouts ...time.Duration) *Postgres
 	return &PostgresFeedRepository{db: db, timeout: timeout}
 }
 
-func (r *PostgresFeedRepository) ListCandidates(ctx context.Context, userID string, recommendedIDs []string, limit int) ([]FeedCandidate, error) {
+func (r *PostgresFeedRepository) ListCandidates(ctx context.Context, userID string, recommendedIDs, blockedAuthorIDs []string, limit int) ([]FeedCandidate, error) {
 	if len(recommendedIDs) > maxFeedCandidates {
 		recommendedIDs = recommendedIDs[:maxFeedCandidates]
 	}
@@ -85,6 +83,7 @@ func (r *PostgresFeedRepository) ListCandidates(ctx context.Context, userID stri
 				OR (%s)
 			)
 			AND COALESCE(u.suspendido, FALSE) = FALSE
+			AND p.id_usuario::text <> ALL(?::text[])
 			AND NOT EXISTS (
 				SELECT 1 FROM accion_moderacion am
 				WHERE am.id_usuario_afectado = p.id_usuario
@@ -116,7 +115,7 @@ func (r *PostgresFeedRepository) ListCandidates(ctx context.Context, userID stri
 
 	recommendedClause := "FALSE"
 	recommendedOrder := "FALSE"
-	args := []any{userID, userID, userID, userID}
+	args := []any{userID, userID, userID, userID, postgresTextArray(blockedAuthorIDs)}
 	if len(recommendedIDs) > 0 {
 		idPlaceholders := strings.TrimSuffix(strings.Repeat("?,", len(recommendedIDs)), ",")
 		recommendedClause = fmt.Sprintf(`
@@ -160,7 +159,7 @@ func (r *PostgresFeedRepository) ListCandidates(ctx context.Context, userID stri
 	return candidates, nil
 }
 
-func (r *PostgresFeedRepository) GetPostsByIDs(ctx context.Context, userID string, postIDs []string) ([]Post, error) {
+func (r *PostgresFeedRepository) GetPostsByIDs(ctx context.Context, userID string, postIDs, blockedAuthorIDs []string) ([]Post, error) {
 	if len(postIDs) == 0 {
 		return []Post{}, nil
 	}
@@ -203,6 +202,7 @@ func (r *PostgresFeedRepository) GetPostsByIDs(ctx context.Context, userID strin
 				)
 			)
 			AND COALESCE(u.suspendido, FALSE) = FALSE
+			AND p.id_usuario::text <> ALL(?::text[])
 			AND NOT EXISTS (
 				SELECT 1 FROM accion_moderacion am
 				WHERE am.id_usuario_afectado = p.id_usuario
@@ -235,7 +235,7 @@ func (r *PostgresFeedRepository) GetPostsByIDs(ctx context.Context, userID strin
 	for _, postID := range postIDs {
 		args = append(args, postID)
 	}
-	args = append(args, userID, userID, userID)
+	args = append(args, userID, userID, userID, postgresTextArray(blockedAuthorIDs))
 	if len(args) > postgresMaxParameters {
 		return nil, fmt.Errorf("feed detail query has %d parameters, maximum is %d", len(args), postgresMaxParameters)
 	}
@@ -250,50 +250,6 @@ func (r *PostgresFeedRepository) GetPostsByIDs(ctx context.Context, userID strin
 		posts = []Post{}
 	}
 	return posts, nil
-}
-
-func (r *PostgresFeedRepository) ExcludeBlockedAuthors(ctx context.Context, userID string, authorIDs []string) ([]string, error) {
-	uniqueIDs := uniqueStrings(authorIDs)
-	if len(uniqueIDs) == 0 {
-		return []string{}, nil
-	}
-	if len(uniqueIDs)*2+2 > postgresMaxParameters {
-		return nil, errors.New("block fallback query exceeds PostgreSQL parameter limit")
-	}
-
-	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(uniqueIDs)), ",")
-	query := fmt.Sprintf(`
-		SELECT id_usuario_bloqueado AS author_id
-		FROM bloqueo
-		WHERE id_usuario_bloqueador = ? AND id_usuario_bloqueado IN (%s)
-		UNION
-		SELECT id_usuario_bloqueador AS author_id
-		FROM bloqueo
-		WHERE id_usuario_bloqueado = ? AND id_usuario_bloqueador IN (%s)
-	`, placeholders, placeholders)
-	args := make([]any, 0, len(uniqueIDs)*2+2)
-	args = append(args, userID)
-	args = append(args, stringArgsToAny(uniqueIDs)...)
-	args = append(args, userID)
-	args = append(args, stringArgsToAny(uniqueIDs)...)
-
-	queryCtx, cancel := context.WithTimeout(ctx, r.timeout)
-	defer cancel()
-	var blockedIDs []string
-	if err := r.db.WithContext(queryCtx).Raw(query, args...).Scan(&blockedIDs).Error; err != nil {
-		return nil, fmt.Errorf("query blocked feed authors: %w", err)
-	}
-	blockedSet := make(map[string]struct{}, len(blockedIDs))
-	for _, id := range blockedIDs {
-		blockedSet[id] = struct{}{}
-	}
-	allowed := make([]string, 0, len(uniqueIDs))
-	for _, id := range uniqueIDs {
-		if _, blocked := blockedSet[id]; !blocked {
-			allowed = append(allowed, id)
-		}
-	}
-	return allowed, nil
 }
 
 func stringArgsToAny(values []string) []any {

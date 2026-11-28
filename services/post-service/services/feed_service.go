@@ -33,10 +33,6 @@ var (
 	ErrInvalidFeedIdentity = errors.New("la identidad del feed no es válida o no coincide con la sesión")
 )
 
-type FeedBlockFilter interface {
-	ExcludeBlocked(ctx context.Context, userID string, authorIDs []string) ([]string, error)
-}
-
 type FeedIdentityVerifier interface {
 	AuthenticatedUserID(ctx context.Context, authorization string) (string, error)
 }
@@ -68,7 +64,7 @@ type localFeedSnapshot struct {
 type FeedService struct {
 	repo            repositories.FeedRepository
 	snapshots       repositories.FeedSnapshotStore
-	blockFilter     FeedBlockFilter
+	blockedUsers    BlockedUsersProvider
 	recommendations FeedRecommendationProvider
 	localMu         sync.Mutex
 	localSnapshots  map[string]localFeedSnapshot
@@ -77,13 +73,13 @@ type FeedService struct {
 func NewFeedService(
 	repo repositories.FeedRepository,
 	snapshots repositories.FeedSnapshotStore,
-	blockFilter FeedBlockFilter,
+	blockedUsers BlockedUsersProvider,
 	recommendations FeedRecommendationProvider,
 ) *FeedService {
 	return &FeedService{
 		repo:            repo,
 		snapshots:       snapshots,
-		blockFilter:     blockFilter,
+		blockedUsers:    blockedUsers,
 		recommendations: recommendations,
 		localSnapshots:  make(map[string]localFeedSnapshot),
 	}
@@ -96,12 +92,18 @@ func (s *FeedService) GetFeed(ctx context.Context, userID string, limit int, cur
 	if userID == "" {
 		return FeedPage{}, errors.New("el usuario es obligatorio")
 	}
+	if s.blockedUsers == nil {
+		return FeedPage{}, errors.New("blocked users provider is not configured")
+	}
+	blockedAuthorIDs, err := s.blockedUsers.BlockedWith(ctx, userID)
+	if err != nil {
+		return FeedPage{}, fmt.Errorf("get blocked users: %w", err)
+	}
 
 	var snapshot models.FeedSnapshot
 	offset := 0
 	if cursor == "" {
-		var err error
-		snapshot, err = s.createSnapshot(ctx, userID)
+		snapshot, err = s.createSnapshot(ctx, userID, blockedAuthorIDs)
 		if err != nil {
 			return FeedPage{}, err
 		}
@@ -132,16 +134,12 @@ func (s *FeedService) GetFeed(ctx context.Context, userID string, limit int, cur
 		return FeedPage{}, ErrInvalidFeedCursor
 	}
 	pageIDs := remainingIDs
-	posts, err := s.repo.GetPostsByIDs(ctx, userID, pageIDs)
+	posts, err := s.repo.GetPostsByIDs(ctx, userID, pageIDs, blockedAuthorIDs)
 	if err != nil {
 		return FeedPage{}, err
 	}
 
-	allowedAuthors, err := s.allowedAuthors(ctx, userID, posts)
-	if err != nil {
-		return FeedPage{}, err
-	}
-	posts, nextOffset := selectFeedPage(snapshot.PostIDs, offset, limit, posts, allowedAuthors)
+	posts, nextOffset := selectFeedPage(snapshot.PostIDs, offset, limit, posts)
 
 	page := FeedPage{Posts: posts}
 	if nextOffset < len(snapshot.PostIDs) {
@@ -153,7 +151,7 @@ func (s *FeedService) GetFeed(ctx context.Context, userID string, limit int, cur
 	return page, nil
 }
 
-func (s *FeedService) createSnapshot(ctx context.Context, userID string) (models.FeedSnapshot, error) {
+func (s *FeedService) createSnapshot(ctx context.Context, userID string, blockedAuthorIDs []string) (models.FeedSnapshot, error) {
 	var recommendations []FeedRecommendation
 	recommendationScores := make(map[string]float64)
 	recommendedIDs := []string{}
@@ -182,16 +180,10 @@ func (s *FeedService) createSnapshot(ctx context.Context, userID string) (models
 		}
 	}
 
-	candidates, err := s.repo.ListCandidates(ctx, userID, recommendedIDs, maxFeedCandidates)
+	candidates, err := s.repo.ListCandidates(ctx, userID, recommendedIDs, blockedAuthorIDs, maxFeedCandidates)
 	if err != nil {
 		return models.FeedSnapshot{}, err
 	}
-	allowedAuthors, err := s.allowedAuthors(ctx, userID, candidatePosts(candidates))
-	if err != nil {
-		return models.FeedSnapshot{}, err
-	}
-
-	candidates = filterCandidates(candidates, allowedAuthors)
 	sort.SliceStable(candidates, func(i, j int) bool {
 		left := feedScore(candidates[i], recommendationScores[candidates[i].ID])
 		right := feedScore(candidates[j], recommendationScores[candidates[j].ID])
@@ -229,44 +221,6 @@ func (s *FeedService) createSnapshot(ctx context.Context, userID string) (models
 		}
 	}
 	return snapshot, nil
-}
-
-func (s *FeedService) allowedAuthors(ctx context.Context, userID string, posts []repositories.Post) (map[string]struct{}, error) {
-	authorIDs := make([]string, 0, len(posts))
-	seen := make(map[string]struct{}, len(posts))
-	for _, post := range posts {
-		if post.AuthorID == "" {
-			continue
-		}
-		if _, exists := seen[post.AuthorID]; exists {
-			continue
-		}
-		seen[post.AuthorID] = struct{}{}
-		authorIDs = append(authorIDs, post.AuthorID)
-	}
-	if len(authorIDs) == 0 {
-		return map[string]struct{}{}, nil
-	}
-	var allowed []string
-	var err error
-	if s.blockFilter == nil {
-		err = errors.New("social-service block filter is not configured")
-	} else {
-		allowed, err = s.blockFilter.ExcludeBlocked(ctx, userID, authorIDs)
-	}
-	if err != nil {
-		slog.Error("feed_social_block_filter_failed", "user_id", userID, "error", err)
-		allowed, err = s.repo.ExcludeBlockedAuthors(ctx, userID, authorIDs)
-		if err != nil {
-			return nil, fmt.Errorf("social-service and PostgreSQL block filtering failed: %w", err)
-		}
-		slog.Warn("feed_postgres_block_filter_fallback", "user_id", userID, "author_count", len(authorIDs))
-	}
-	allowedSet := make(map[string]struct{}, len(allowed))
-	for _, authorID := range allowed {
-		allowedSet[authorID] = struct{}{}
-	}
-	return allowedSet, nil
 }
 
 func (s *FeedService) getSnapshot(ctx context.Context, userID string) (models.FeedSnapshot, error) {
@@ -343,35 +297,14 @@ func feedScore(candidate repositories.FeedCandidate, recommendationScore float64
 	return recency + engagement + recommendationScore
 }
 
-func candidatePosts(candidates []repositories.FeedCandidate) []repositories.Post {
-	posts := make([]repositories.Post, len(candidates))
-	for index := range candidates {
-		posts[index] = candidates[index].Post
-	}
-	return posts
-}
-
-func filterCandidates(candidates []repositories.FeedCandidate, allowedAuthors map[string]struct{}) []repositories.FeedCandidate {
-	filtered := make([]repositories.FeedCandidate, 0, len(candidates))
-	for _, candidate := range candidates {
-		if _, ok := allowedAuthors[candidate.AuthorID]; ok {
-			filtered = append(filtered, candidate)
-		}
-	}
-	return filtered
-}
-
 func selectFeedPage(
 	snapshotIDs []string,
 	offset, limit int,
 	posts []repositories.Post,
-	allowedAuthors map[string]struct{},
 ) ([]repositories.Post, int) {
 	byID := make(map[string]repositories.Post, len(posts))
 	for _, post := range posts {
-		if _, ok := allowedAuthors[post.AuthorID]; ok {
-			byID[post.ID] = post
-		}
+		byID[post.ID] = post
 	}
 	ordered := make([]repositories.Post, 0, limit)
 	nextOffset := offset

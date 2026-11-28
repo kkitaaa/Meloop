@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"context"
 	"errors"
 	"net/http"
 
@@ -11,13 +12,20 @@ import (
 )
 
 type LikeController struct {
-	service *services.LikeService
+	service    *services.LikeService
+	postAccess interface {
+		EnsureCanInteract(context.Context, string, string) error
+	}
 }
 
-func NewLikeController(service *services.LikeService) *LikeController {
-	return &LikeController{
-		service: service,
+func NewLikeController(service *services.LikeService, postAccess ...interface {
+	EnsureCanInteract(context.Context, string, string) error
+}) *LikeController {
+	controller := &LikeController{service: service}
+	if len(postAccess) > 0 {
+		controller.postAccess = postAccess[0]
 	}
+	return controller
 }
 
 func (c *LikeController) AddLike(ctx *gin.Context) {
@@ -25,6 +33,18 @@ func (c *LikeController) AddLike(ctx *gin.Context) {
 	userID := ctx.GetString("userID")
 	if userID == "" {
 		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "usuario no autenticado"})
+		return
+	}
+	if c.postAccess == nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "no se pudo validar la interacción"})
+		return
+	}
+	if err := c.postAccess.EnsureCanInteract(ctx.Request.Context(), userID, postID); err != nil {
+		if errors.Is(err, services.ErrBlocked) {
+			writeBlockedError(ctx)
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "no se pudo validar la interacción"})
 		return
 	}
 

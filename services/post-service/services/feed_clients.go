@@ -29,8 +29,18 @@ func NewSocialFeedClient(baseURL string, timeouts ...time.Duration) *SocialFeedC
 }
 
 func (client *SocialFeedClient) ExcludeBlocked(ctx context.Context, userID string, authorIDs []string) ([]string, error) {
+	allowed, _, err := client.getExcludedAndAllowed(ctx, userID, authorIDs)
+	return allowed, err
+}
+
+func (client *SocialFeedClient) GetBlockedCandidateIDs(ctx context.Context, userID string, candidateIDs []string) ([]string, error) {
+	_, excluded, err := client.getExcludedAndAllowed(ctx, userID, candidateIDs)
+	return excluded, err
+}
+
+func (client *SocialFeedClient) getExcludedAndAllowed(ctx context.Context, userID string, authorIDs []string) ([]string, []string, error) {
 	if len(authorIDs) == 0 {
-		return []string{}, nil
+		return []string{}, []string{}, nil
 	}
 
 	payload, err := json.Marshal(struct {
@@ -38,35 +48,48 @@ func (client *SocialFeedClient) ExcludeBlocked(ctx context.Context, userID strin
 		CandidateIDs []string `json:"candidate_ids"`
 	}{UserID: userID, CandidateIDs: authorIDs})
 	if err != nil {
-		return nil, fmt.Errorf("encode block-exclusion request: %w", err)
+		return nil, nil, fmt.Errorf("encode block-exclusion request: %w", err)
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, client.baseURL+"/internal/blocks/exclude", bytes.NewReader(payload))
 	if err != nil {
-		return nil, fmt.Errorf("create block-exclusion request: %w", err)
+		return nil, nil, fmt.Errorf("create block-exclusion request: %w", err)
 	}
 	request.Header.Set("Content-Type", "application/json")
 	response, err := client.client.Do(request)
 	if err != nil {
-		return nil, fmt.Errorf("call social-service block exclusion: %w", err)
+		return nil, nil, fmt.Errorf("call social-service block exclusion: %w", err)
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("social-service block exclusion returned status %d", response.StatusCode)
+		return nil, nil, fmt.Errorf("social-service block exclusion returned status %d", response.StatusCode)
 	}
 
 	var result struct {
 		Success bool `json:"success"`
 		Data    struct {
 			CandidateIDs []string `json:"candidate_ids"`
+			ExcludedIDs  []string `json:"excluded_ids"`
 		} `json:"data"`
 	}
 	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("decode social-service block-exclusion response: %w", err)
+		return nil, nil, fmt.Errorf("decode social-service block-exclusion response: %w", err)
 	}
 	if !result.Success || result.Data.CandidateIDs == nil {
-		return nil, errors.New("social-service returned an invalid block-exclusion response")
+		return nil, nil, errors.New("social-service returned an invalid block-exclusion response")
 	}
-	return result.Data.CandidateIDs, nil
+	if result.Data.ExcludedIDs == nil {
+		allowed := make(map[string]struct{}, len(result.Data.CandidateIDs))
+		for _, userID := range result.Data.CandidateIDs {
+			allowed[userID] = struct{}{}
+		}
+		result.Data.ExcludedIDs = make([]string, 0)
+		for _, userID := range authorIDs {
+			if _, isAllowed := allowed[userID]; !isAllowed {
+				result.Data.ExcludedIDs = append(result.Data.ExcludedIDs, userID)
+			}
+		}
+	}
+	return result.Data.CandidateIDs, result.Data.ExcludedIDs, nil
 }
 
 type HTTPFeedRecommendationProvider struct {
