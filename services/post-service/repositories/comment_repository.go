@@ -1,6 +1,7 @@
 package repositories
 
 import (
+	"errors"
 	"time"
 
 	"github.com/meloop/post-service/models"
@@ -12,6 +13,8 @@ type CommentRepository interface {
 	GetThreadedComments(postID string, cursor time.Time, limit int, excludedUserIDs []string) ([]models.Comment, error)
 	GetCommentAuthorID(commentID string) (string, error)
 }
+
+var ErrCommentNotFound = errors.New("comment not found")
 
 type PostgresCommentRepository struct {
 	db *gorm.DB
@@ -61,5 +64,11 @@ func (r *PostgresCommentRepository) GetThreadedComments(postID string, cursor ti
 func (r *PostgresCommentRepository) GetCommentAuthorID(commentID string) (string, error) {
 	var comment models.Comment
 	err := r.db.Select("id_usuario").Where("id_comentario = ?", commentID).First(&comment).Error
-	return comment.AuthorID, err
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return "", ErrCommentNotFound
+	}
+	if err != nil {
+		return "", err
+	}
+	return comment.AuthorID, nil
 }

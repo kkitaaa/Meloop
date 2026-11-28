@@ -2,11 +2,13 @@ package controllers
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"github.com/meloop/post-service/repositories"
 	"github.com/meloop/post-service/services"
 	"github.com/meloop/services/common/httpresponse"
 )
@@ -124,6 +126,10 @@ func (ctrl *InteractionController) ready(c *gin.Context, userID string) bool {
 func writeInteractionError(c *gin.Context, err error) {
 	if errors.Is(err, services.ErrBlocked) {
 		writeBlockedError(c)
+		return
+	}
+	if errors.Is(err, repositories.ErrPostNotFound) || errors.Is(err, sql.ErrNoRows) {
+		httpresponse.NotFoundGin(c, "Publicación no encontrada")
 		return
 	}
 	if errors.Is(err, context.Canceled) {

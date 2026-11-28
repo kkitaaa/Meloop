@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -54,15 +55,15 @@ func (s *RedisBlockedUsers) BlockedWith(ctx context.Context, userID string) ([]s
 	if err == nil {
 		var blocked []string
 		if err := json.Unmarshal([]byte(cached), &blocked); err != nil {
-			return nil, fmt.Errorf("decode cached blocked users: %w", err)
+			slog.Warn("blocked_users_cache_decode_failed", "user_id", userID, "error", err)
+		} else {
+			if blocked == nil {
+				blocked = []string{}
+			}
+			return blocked, nil
 		}
-		if blocked == nil {
-			blocked = []string{}
-		}
-		return blocked, nil
-	}
-	if !errors.Is(err, redis.Nil) {
-		return nil, fmt.Errorf("read blocked users cache: %w", err)
+	} else if !errors.Is(err, redis.Nil) {
+		slog.Warn("blocked_users_cache_read_failed", "user_id", userID, "error", err)
 	}
 
 	candidates, err := s.users.ListUserIDs(ctx)
@@ -81,7 +82,7 @@ func (s *RedisBlockedUsers) BlockedWith(ctx context.Context, userID string) ([]s
 		return nil, fmt.Errorf("encode blocked users: %w", err)
 	}
 	if err := s.cache.Set(ctx, key, string(value), blockedUsersCacheTTL); err != nil {
-		return nil, fmt.Errorf("cache blocked users: %w", err)
+		slog.Warn("blocked_users_cache_write_failed", "user_id", userID, "error", err)
 	}
 	return blocked, nil
 }

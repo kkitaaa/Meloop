@@ -110,7 +110,11 @@ func (controller *CommentController) CreateReply(c *gin.Context) {
 	}
 	commentAuthorID, err := controller.service.GetCommentAuthorID(commentID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "comentario no encontrado"})
+		if errors.Is(err, repositories.ErrCommentNotFound) {
+			httpresponse.NotFoundGin(c, "Comentario no encontrado")
+		} else {
+			httpresponse.InternalErrorGin(c)
+		}
 		return
 	}
 	if err := controller.postAccess.EnsureCanInteractWithUser(c.Request.Context(), authorID, commentAuthorID); err != nil {
@@ -240,7 +244,7 @@ func writeCommentAccessError(c *gin.Context, err error) {
 		writeBlockedError(c)
 		return
 	}
-	if errors.Is(err, sql.ErrNoRows) || errors.Is(err, repositories.ErrPostNotFound) {
+	if errors.Is(err, sql.ErrNoRows) || errors.Is(err, repositories.ErrPostNotFound) || errors.Is(err, repositories.ErrCommentNotFound) {
 		httpresponse.NotFoundGin(c, "publicación o comentario no encontrado")
 		return
 	}

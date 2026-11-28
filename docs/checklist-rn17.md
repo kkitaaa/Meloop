@@ -15,4 +15,4 @@
 | `GET /v1/me/saved` (`GET /api/v1/users/me/saved`) | Sí, en SQL antes de paginar | No | Implementado; prueba de integración pendiente |
 | `DELETE /v1/me/saved/:id` | N/A (quitar un guardado) | No | Implementado |
 
-La lista de bloqueados se obtiene mediante `GetBlockedCandidateIDs` de `social-service` (contrato equivalente a `BlockedWith`) y se cachea en Redis durante 60 segundos. La prueba cruzada con dos usuarios requiere PostgreSQL, Redis y `social-service` disponibles.
+La lista de bloqueados se obtiene mediante `GetBlockedCandidateIDs` de `social-service` (contrato equivalente a `BlockedWith`) y se cachea en Redis durante 60 segundos. Si Redis falla, el servicio consulta igualmente a `social-service` y continúa sin caché; el endpoint social sigue siendo la fuente de verdad. Como no hay evento de invalidación entre servicios, un bloqueo o desbloqueo puede tardar hasta 60 segundos en reflejarse en instancias con caché vigente. La prueba cruzada con dos usuarios requiere PostgreSQL, Redis y `social-service` disponibles.

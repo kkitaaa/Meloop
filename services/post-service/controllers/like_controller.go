@@ -2,12 +2,14 @@ package controllers
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/meloop/post-service/repositories"
 	"github.com/meloop/post-service/services"
+	"github.com/meloop/services/common/httpresponse"
 	"github.com/meloop/services/common/logging"
 )
 
@@ -42,6 +44,10 @@ func (c *LikeController) AddLike(ctx *gin.Context) {
 	if err := c.postAccess.EnsureCanInteract(ctx.Request.Context(), userID, postID); err != nil {
 		if errors.Is(err, services.ErrBlocked) {
 			writeBlockedError(ctx)
+			return
+		}
+		if errors.Is(err, repositories.ErrPostNotFound) || errors.Is(err, sql.ErrNoRows) {
+			httpresponse.NotFoundGin(ctx, "Publicación no encontrada")
 			return
 		}
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "no se pudo validar la interacción"})

@@ -13,9 +13,14 @@ import (
 type blockedUsersCacheFake struct {
 	values map[string]string
 	ttl    time.Duration
+	getErr error
+	setErr error
 }
 
 func (c *blockedUsersCacheFake) Get(_ context.Context, key string) (string, error) {
+	if c.getErr != nil {
+		return "", c.getErr
+	}
 	value, ok := c.values[key]
 	if !ok {
 		return "", redis.Nil
@@ -24,6 +29,9 @@ func (c *blockedUsersCacheFake) Get(_ context.Context, key string) (string, erro
 }
 
 func (c *blockedUsersCacheFake) Set(_ context.Context, key, value string, ttl time.Duration) error {
+	if c.setErr != nil {
+		return c.setErr
+	}
 	if c.values == nil {
 		c.values = make(map[string]string)
 	}
@@ -92,5 +100,42 @@ func TestBlockedWithPropagatesSocialErrors(t *testing.T) {
 	)
 	if _, err := provider.BlockedWith(context.Background(), "viewer"); err == nil {
 		t.Fatal("expected blocked-user lookup error")
+	}
+}
+
+func TestBlockedWithFallsBackToSocialWhenRedisIsUnavailable(t *testing.T) {
+	social := &blockedCandidatesFake{blocked: []string{"author"}}
+	provider := newRedisBlockedUsers(
+		&blockedUsersCacheFake{getErr: errors.New("redis unavailable"), setErr: errors.New("redis unavailable")},
+		&blockedUsersSourceFake{ids: []string{"author", "viewer"}},
+		social,
+	)
+
+	blocked, err := provider.BlockedWith(context.Background(), "viewer")
+	if err != nil {
+		t.Fatalf("BlockedWith should work without Redis: %v", err)
+	}
+	if !reflect.DeepEqual(blocked, []string{"author"}) {
+		t.Fatalf("blocked users = %v, want [author]", blocked)
+	}
+	if social.calls != 1 {
+		t.Fatalf("social calls = %d, want 1", social.calls)
+	}
+}
+
+func TestBlockedWithReplacesMalformedCacheEntry(t *testing.T) {
+	key := blockedUsersCacheKey("viewer")
+	cache := &blockedUsersCacheFake{values: map[string]string{key: "invalid json"}}
+	provider := newRedisBlockedUsers(cache, &blockedUsersSourceFake{ids: []string{"author"}}, &blockedCandidatesFake{blocked: []string{"author"}})
+
+	blocked, err := provider.BlockedWith(context.Background(), "viewer")
+	if err != nil {
+		t.Fatalf("BlockedWith with malformed cache: %v", err)
+	}
+	if !reflect.DeepEqual(blocked, []string{"author"}) {
+		t.Fatalf("blocked users = %v, want [author]", blocked)
+	}
+	if cache.values[key] == "invalid json" {
+		t.Fatal("expected malformed cache entry to be replaced")
 	}
 }
