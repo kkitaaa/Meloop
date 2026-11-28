@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bufio"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/driver/postgres"
@@ -11,6 +13,7 @@ import (
 	infraMinio "github.com/meloop/infrastructure/minio"
 	"github.com/meloop/post-service/controllers"
 	"github.com/meloop/post-service/messaging"
+	"github.com/meloop/post-service/middlewares"
 	"github.com/meloop/post-service/models"
 	"github.com/meloop/post-service/repositories"
 	"github.com/meloop/post-service/routes"
@@ -18,7 +21,35 @@ import (
 	"github.com/meloop/services/common/logging"
 )
 
+func loadDotEnvIfPresent(paths ...string) {
+	for _, path := range paths {
+		f, err := os.Open(path)
+		if err != nil {
+			continue
+		}
+		scanner := bufio.NewScanner(f)
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) != 2 {
+				continue
+			}
+			key := strings.TrimSpace(parts[0])
+			val := strings.Trim(strings.TrimSpace(parts[1]), `"'`)
+			if key == "AUTH_SERVICE_URL" && os.Getenv(key) == "" {
+				_ = os.Setenv(key, val)
+			}
+		}
+		_ = f.Close()
+	}
+}
+
 func main() {
+	loadDotEnvIfPresent(".env", "../.env", "../../.env")
+
 	// 1. Inicializar el logger
 	logger := logging.New("post-service")
 	logger.Info("service_started")
@@ -67,14 +98,13 @@ func main() {
 	commentController := controllers.NewCommentController(commentService)
 
 	// 7. Inyectar dependencias de Publicaciones (Post)
-	// Extraemos la conexión base de SQL desde GORM para inyectarla en tu SQLPostRepository
 	sqlDB, err := db.DB()
 	if err != nil {
 		log.Fatalf("Error crítico al obtener la conexión SQL: %v", err)
 	}
 
 	postRepo := repositories.NewPostRepository(sqlDB)
-	postService := services.NewPostService(postRepo)
+	postService := services.NewPostService(postRepo, minioClient)
 	postController := controllers.NewPostController(postService)
 
 	// 8. Inyectar dependencias del nuevo FEED PRINCIPAL
@@ -82,31 +112,24 @@ func main() {
 	feedService := services.NewFeedService(feedRepo)
 	feedController := controllers.NewFeedController(feedService)
 
-	// 9. Configurar Rutas
+	// 9. Inicializar validador de sesiones contra auth-service (sin confiar en X-User-ID)
+	authValidator := middlewares.NewAuthServiceTokenValidator(os.Getenv("AUTH_SERVICE_URL"))
+
+	// 10. Configurar Rutas
 	router := gin.Default()
+	router.Use(middlewares.OptionalAuthMiddleware(authValidator))
 
-	// --- MIDDLEWARE DE PRUEBAS ---
-	// Extrae el ID del usuario desde el header para simular que pasó por el API Gateway
-	router.Use(func(c *gin.Context) {
-		userID := c.GetHeader("X-User-ID")
-		if userID != "" {
-			c.Set("userID", userID)
-		}
-		c.Next()
-	})
-	// ------------------------------
+	// Rutas de módulos protegidas con validación de sesión Bearer
+	routes.SetupRoutes(router, likeController, commentController, postController, minioClient, authValidator)
 
-	// Rutas de módulos (Mezclado: con middleware de tu rama y likeController de la rama main)
-	routes.SetupRoutes(router, likeController, commentController, postController, minioClient)
-
-	// Nueva ruta del Feed (directo en el main para no modificar el archivo routes por ahora)
+	// Ruta del Feed Principal (identidad opcional ya resuelta por OptionalAuthMiddleware)
 	router.GET("/v1/feed", feedController.GetMainFeed)
 
-	// Nuevas rutas para el sistema de Likes (RF-20)
-	router.POST("/v1/posts/:id/like", postController.LikePost)
-	router.DELETE("/v1/posts/:id/like", postController.UnlikePost)
+	// Rutas para el sistema de Likes (RF-20)
+	requireAuth := middlewares.RequireAuthMiddleware(authValidator)
+	router.POST("/v1/posts/:id/like", requireAuth, postController.LikePost)
+	router.DELETE("/v1/posts/:id/like", requireAuth, postController.UnlikePost)
 
-	// Nota: Tu puerto actual en este archivo es 8084
 	logger.Info("http_server_started", "port", "8084")
 	if err := router.Run(":8084"); err != nil {
 		log.Fatalf("Error al iniciar el servidor web: %v", err)
