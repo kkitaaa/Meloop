@@ -1,8 +1,8 @@
 import http from 'k6/http';
 import { check, sleep } from 'k6';
 
-// 200 y 400 son respuestas esperadas según el caso de prueba
-http.setResponseCallback(http.expectedStatuses(200, 400));
+// 200, 400 y 401 son respuestas esperadas según el caso de prueba
+http.setResponseCallback(http.expectedStatuses(200, 400, 401));
 
 export const options = {
     vus: 20,
@@ -23,13 +23,60 @@ function parseJSON(res) {
     }
 }
 
-export default function () {
-    const userId = __ENV.TEST_USER_ID || '1';
+export function setup() {
+    if (__ENV.AUTH_TOKEN) {
+        return { token: __ENV.AUTH_TOKEN };
+    }
+
+    const authUrl = __ENV.AUTH_URL || 'http://localhost:8083';
+    const email = __ENV.TEST_EMAIL || 'usuariotest@gmail.com';
+    const password = __ENV.TEST_PASSWORD || 'Password123!';
+
+    const loginRes = http.post(
+        `${authUrl}/auth/login`,
+        JSON.stringify({ email: email, password: password }),
+        { headers: { 'Content-Type': 'application/json' } }
+    );
+
+    const body = parseJSON(loginRes);
+    const token =
+        body?.data?.session_token ||
+        body?.data?.token ||
+        body?.data?.access_token ||
+        body?.session_token ||
+        body?.token ||
+        body?.access_token ||
+        '';
+
+    if (!token) {
+        throw new Error(
+            `No se pudo obtener token para ${email} desde ${authUrl}/auth/login (status ${loginRes.status}): ${loginRes.body}`
+        );
+    }
+
+    return { token };
+}
+
+export default function (data) {
     const baseUrl = __ENV.BASE_URL || 'http://localhost:8084';
+    const token = data.token;
+
+    // 0. Seguridad: intentar usar X-User-ID = 1 sin token Bearer debe fallar con 401
+    const resSpoofed = http.get(`${baseUrl}/v1/feed?algorithm=relevant&page=1&limit=20`, {
+        headers: {
+            'X-User-ID': '1',
+            'Content-Type': 'application/json',
+        },
+    });
+    check(resSpoofed, {
+        'Seguridad: rechaza X-User-ID sin token Bearer con 401': (r) => r.status === 401,
+    });
 
     const params = {
         headers: {
-            'X-User-ID': userId,
+            'Authorization': `Bearer ${token}`,
+            // Se envía un X-User-ID falso para verificar que el servidor lo ignore y use la sesión de id=1
+            'X-User-ID': 'usuario-suplantado-999',
             'Content-Type': 'application/json',
         },
     };
@@ -56,7 +103,7 @@ export default function () {
 
     sleep(0.3);
 
-    // 2. Prueba de carga y ordenamiento: Algoritmo Relevante (Popularidad + Preferencias)
+    // 2. Prueba de carga y ordenamiento: Algoritmo Relevante (Popularidad + Preferencias + desempate por ID)
     const resRelevant = http.get(`${baseUrl}/v1/feed?algorithm=relevant&page=1&limit=20`, params);
     const bodyRelevant = parseJSON(resRelevant);
 
@@ -69,17 +116,17 @@ export default function () {
             if (!bodyRelevant || !Array.isArray(bodyRelevant.data) || bodyRelevant.data.length === 0) return false;
             return bodyRelevant.data.every((item) => typeof item.relevance_score === 'number');
         },
-        'Feed relevant ordenado por relevance_score DESC y created_at DESC': () => {
+        'Feed relevant ordenado por relevance_score DESC, created_at DESC e id DESC': () => {
             if (!bodyRelevant || !Array.isArray(bodyRelevant.data) || bodyRelevant.data.length < 2) return false;
             for (let i = 0; i < bodyRelevant.data.length - 1; i++) {
                 const curr = bodyRelevant.data[i];
                 const next = bodyRelevant.data[i + 1];
                 if (curr.relevance_score < next.relevance_score) return false;
-                if (
-                    curr.relevance_score === next.relevance_score &&
-                    new Date(curr.created_at).getTime() < new Date(next.created_at).getTime()
-                ) {
-                    return false;
+                if (curr.relevance_score === next.relevance_score) {
+                    const currTime = new Date(curr.created_at).getTime();
+                    const nextTime = new Date(next.created_at).getTime();
+                    if (currTime < nextTime) return false;
+                    if (currTime === nextTime && String(curr.id) < String(next.id)) return false;
                 }
             }
             return true;

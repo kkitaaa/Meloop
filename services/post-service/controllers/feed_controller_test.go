@@ -1,20 +1,23 @@
 package controllers
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/meloop/post-service/client"
 	"github.com/meloop/post-service/models"
 	"github.com/meloop/post-service/repositories"
 	"github.com/meloop/post-service/services"
 )
 
-// mockFeedRepository simula el acceso a datos para pruebas unitarias aisladas
 type mockFeedRepository struct {
 	lastUserID    string
 	lastLimit     int
@@ -32,31 +35,124 @@ func (m *mockFeedRepository) GetMainFeed(userID string, limit, offset int, algor
 	return m.mockData, m.mockErr
 }
 
-func setupFeedRouter(repo repositories.FeedRepository) *gin.Engine {
+type stubSessionValidator struct {
+	userID string
+	err    error
+}
+
+func (s stubSessionValidator) ValidateToken(_ context.Context, _ string) (string, error) {
+	return s.userID, s.err
+}
+
+func setupFeedRouter(repo repositories.FeedRepository, validator SessionValidator) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	svc := services.NewFeedService(repo)
 	ctrl := NewFeedController(svc)
-	r.GET("/v1/feed", ctrl.GetMainFeed)
+
+	v1 := r.Group("/v1")
+	v1.Use(AuthRequired(validator))
+	v1.GET("/feed", ctrl.GetMainFeed)
 	return r
 }
 
-func TestGetMainFeed_UnauthorizedWithoutHeader(t *testing.T) {
+func TestGetMainFeed_UnauthorizedWithoutBearerTokenEvenWithSpoofedHeader(t *testing.T) {
 	repo := &mockFeedRepository{}
-	r := setupFeedRouter(repo)
+	r := setupFeedRouter(repo, stubSessionValidator{userID: "user-real"})
 
 	req, _ := http.NewRequest(http.MethodGet, "/v1/feed", nil)
+	req.Header.Set("X-User-ID", "attacker-spoofed-id")
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
 	if w.Code != http.StatusUnauthorized {
-		t.Fatalf("esperado status 401, obtenido %d", w.Code)
+		t.Fatalf("esperado status 401 sin token Bearer, obtenido %d", w.Code)
+	}
+	if repo.lastUserID != "" {
+		t.Fatalf("no se debía consultar el repositorio sin autenticación, userID=%s", repo.lastUserID)
+	}
+}
+
+func TestGetMainFeed_RejectsInvalidSessionAndHandlesAuthOutage(t *testing.T) {
+	repo := &mockFeedRepository{}
+
+	t.Run("sesion invalida o expirada retorna 401", func(t *testing.T) {
+		r := setupFeedRouter(repo, stubSessionValidator{err: client.ErrInvalidSession})
+		req, _ := http.NewRequest(http.MethodGet, "/v1/feed", nil)
+		req.Header.Set("Authorization", "Bearer expired-token")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("esperado status 401, obtenido %d", w.Code)
+		}
+	})
+
+	t.Run("auth-service caido falla cerrado con 503", func(t *testing.T) {
+		r := setupFeedRouter(repo, stubSessionValidator{err: client.ErrAuthServiceUnavailable})
+		req, _ := http.NewRequest(http.MethodGet, "/v1/feed", nil)
+		req.Header.Set("Authorization", "Bearer valid-token")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusServiceUnavailable {
+			t.Fatalf("esperado status 503, obtenido %d", w.Code)
+		}
+	})
+}
+
+func TestGetMainFeed_UsesAuthenticatedIdentityAndIgnoresSpoofedHeader(t *testing.T) {
+	repo := &mockFeedRepository{
+		mockData: []models.FeedPost{},
+	}
+	r := setupFeedRouter(repo, stubSessionValidator{userID: "authenticated-user-99"})
+
+	req, _ := http.NewRequest(http.MethodGet, "/v1/feed", nil)
+	req.Header.Set("Authorization", "Bearer valid-session-token")
+	req.Header.Set("X-User-ID", "spoofed-user-1")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("esperado status 200, obtenido %d: %s", w.Code, w.Body.String())
+	}
+	if repo.lastUserID != "authenticated-user-99" {
+		t.Fatalf("esperado userID autenticado 'authenticated-user-99', obtenido '%s'", repo.lastUserID)
+	}
+}
+
+func TestGetMainFeed_InternalErrorDoesNotLeakDetails(t *testing.T) {
+	repo := &mockFeedRepository{
+		mockErr: errors.New("pq: syntax error at or near SELECT * FROM pg_shadow"),
+	}
+	r := setupFeedRouter(repo, stubSessionValidator{userID: "user-1"})
+
+	req, _ := http.NewRequest(http.MethodGet, "/v1/feed", nil)
+	req.Header.Set("Authorization", "Bearer valid-token")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("esperado status 500, obtenido %d", w.Code)
+	}
+
+	body := w.Body.String()
+	if strings.Contains(body, "detalle") || strings.Contains(body, "pg_shadow") || strings.Contains(body, "pq:") {
+		t.Fatalf("la respuesta 500 filtró detalles internos al cliente: %s", body)
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("error parseando JSON: %v", err)
+	}
+	if resp["error"] != "no se pudo cargar el feed" {
+		t.Fatalf("mensaje de error inesperado: %v", resp["error"])
 	}
 }
 
 func TestGetMainFeed_InvalidParameters(t *testing.T) {
 	repo := &mockFeedRepository{}
-	r := setupFeedRouter(repo)
+	r := setupFeedRouter(repo, stubSessionValidator{userID: "1"})
 
 	cases := []struct {
 		name string
@@ -72,7 +168,7 @@ func TestGetMainFeed_InvalidParameters(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			req, _ := http.NewRequest(http.MethodGet, tc.url, nil)
-			req.Header.Set("X-User-ID", "1")
+			req.Header.Set("Authorization", "Bearer valid-token")
 			w := httptest.NewRecorder()
 			r.ServeHTTP(w, req)
 
@@ -87,10 +183,10 @@ func TestGetMainFeed_ValidRequestAndPagination(t *testing.T) {
 	repo := &mockFeedRepository{
 		mockData: []models.FeedPost{},
 	}
-	r := setupFeedRouter(repo)
+	r := setupFeedRouter(repo, stubSessionValidator{userID: "42"})
 
 	req, _ := http.NewRequest(http.MethodGet, "/v1/feed?algorithm=recent&page=3&limit=15", nil)
-	req.Header.Set("X-User-ID", "42")
+	req.Header.Set("Authorization", "Bearer valid-token")
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
@@ -161,11 +257,11 @@ func TestGetMainFeed_RecentVsRelevantAndSerialization(t *testing.T) {
 	}
 
 	repo := &stubSortedFeedRepository{posts: []models.FeedPost{olderHighScore, newerLowScore}}
-	r := setupFeedRouter(repo)
+	r := setupFeedRouter(repo, stubSessionValidator{userID: "user-1"})
 
 	// 1. Verificar algoritmo 'relevant' (por defecto) y entrega de relevance_score en JSON
 	reqRel, _ := http.NewRequest(http.MethodGet, "/v1/feed?page=1&limit=10", nil)
-	reqRel.Header.Set("X-User-ID", "user-1")
+	reqRel.Header.Set("Authorization", "Bearer valid-token")
 	wRel := httptest.NewRecorder()
 	r.ServeHTTP(wRel, reqRel)
 
@@ -189,7 +285,7 @@ func TestGetMainFeed_RecentVsRelevantAndSerialization(t *testing.T) {
 
 	// 2. Verificar algoritmo 'recent'
 	reqRec, _ := http.NewRequest(http.MethodGet, "/v1/feed?algorithm=recent&page=1&limit=10", nil)
-	reqRec.Header.Set("X-User-ID", "user-1")
+	reqRec.Header.Set("Authorization", "Bearer valid-token")
 	wRec := httptest.NewRecorder()
 	r.ServeHTTP(wRec, reqRec)
 

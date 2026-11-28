@@ -2,8 +2,10 @@ package controllers
 
 import (
 	"errors"
+	"log"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/meloop/post-service/models"
@@ -19,9 +21,11 @@ func NewFeedController(service *services.FeedService) *FeedController {
 }
 
 func (c *FeedController) GetMainFeed(ctx *gin.Context) {
-	userID := ctx.GetHeader("X-User-ID")
-	if userID == "" {
-		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "X-User-ID header es requerido para identificar al usuario"})
+	rawUserID, exists := ctx.Get(ContextUserIDKey)
+	userID, ok := rawUserID.(string)
+	userID = strings.TrimSpace(userID)
+	if !exists || !ok || userID == "" {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "sesión no autenticada"})
 		return
 	}
 
@@ -52,9 +56,9 @@ func (c *FeedController) GetMainFeed(ctx *gin.Context) {
 			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
+		log.Printf("error al cargar el feed para usuario %s: %v", userID, err)
 		ctx.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "no se pudo cargar el feed",
-			"detalle": err.Error(),
+			"error": "no se pudo cargar el feed",
 		})
 		return
 	}

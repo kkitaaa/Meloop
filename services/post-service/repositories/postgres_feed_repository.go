@@ -111,10 +111,13 @@ func (r *PostgresFeedRepository) GetMainFeed(userID string, limit, offset int, a
 										 AND LOWER(TRIM(pref.spotify_id)) = LOWER(TRIM(can.artista_nombre))
 									THEN 30
 									WHEN UPPER(TRIM(pref.tipo)) = 'GENERO'
-										 AND gen.nombre IS NOT NULL
-										 AND (
-											LOWER(TRIM(pref.spotify_id)) = LOWER(TRIM(gen.nombre))
-											OR LOWER(TRIM(pref.spotify_id)) = LOWER(TRIM(CAST(gen.id_genero AS TEXT)))
+										 AND can.id_cancion IS NOT NULL
+										 AND EXISTS (
+											SELECT 1
+											FROM PREFERENCIA_MUSICAL author_pref
+											WHERE author_pref.id_usuario = cp.id_usuario
+											  AND UPPER(TRIM(author_pref.tipo)) = 'GENERO'
+											  AND LOWER(TRIM(author_pref.spotify_id)) = LOWER(TRIM(pref.spotify_id))
 										 )
 									THEN 15
 									ELSE 0
@@ -127,7 +130,6 @@ func (r *PostgresFeedRepository) GetMainFeed(userID string, limit, offset int, a
 			FROM candidate_posts cp
 			JOIN USUARIO u ON cp.id_usuario = u.id_usuario
 			LEFT JOIN CANCION can ON cp.id_cancion = can.id_cancion
-			LEFT JOIN GENERO gen ON can.id_genero = gen.id_genero
 			LEFT JOIN likes_agg l ON cp.id_publicacion = l.id_publicacion
 			LEFT JOIN comments_agg c ON cp.id_publicacion = c.id_publicacion
 		)

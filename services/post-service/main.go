@@ -3,12 +3,14 @@ package main
 import (
 	"log"
 	"os"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
 	infraMinio "github.com/meloop/infrastructure/minio"
+	"github.com/meloop/post-service/client"
 	"github.com/meloop/post-service/controllers"
 	"github.com/meloop/post-service/messaging"
 	"github.com/meloop/post-service/models"
@@ -67,7 +69,6 @@ func main() {
 	commentController := controllers.NewCommentController(commentService)
 
 	// 7. Inyectar dependencias de Publicaciones (Post)
-	// Extraemos la conexión base de SQL desde GORM para inyectarla en tu SQLPostRepository
 	sqlDB, err := db.DB()
 	if err != nil {
 		log.Fatalf("Error crítico al obtener la conexión SQL: %v", err)
@@ -75,9 +76,15 @@ func main() {
 
 	postRepo := repositories.NewPostRepository(sqlDB)
 	postService := services.NewPostService(postRepo)
-	postController := controllers.NewPostController(postService)
+	postController := controllers.NewPostController(postRepoService(postService))
 
-	// 8. Inyectar dependencias del nuevo FEED PRINCIPAL
+	// 8. Inyectar dependencias del FEED PRINCIPAL y validación de sesión
+	authServiceURL := strings.TrimSpace(os.Getenv("AUTH_SERVICE_URL"))
+	if authServiceURL == "" {
+		authServiceURL = "http://auth-service:8081"
+	}
+	authClient := client.NewAuthClient(authServiceURL)
+
 	feedRepo := repositories.NewPostgresFeedRepository(db)
 	feedService := services.NewFeedService(feedRepo)
 	feedController := controllers.NewFeedController(feedService)
@@ -85,30 +92,19 @@ func main() {
 	// 9. Configurar Rutas
 	router := gin.Default()
 
-	// --- MIDDLEWARE DE PRUEBAS ---
-	// Extrae el ID del usuario desde el header para simular que pasó por el API Gateway
-	router.Use(func(c *gin.Context) {
-		userID := c.GetHeader("X-User-ID")
-		if userID != "" {
-			c.Set("userID", userID)
-		}
-		c.Next()
-	})
-	// ------------------------------
-
-	// Rutas de módulos (Mezclado: con middleware de tu rama y likeController de la rama main)
 	routes.SetupRoutes(router, likeController, commentController, postController, minioClient)
-
-	// Nueva ruta del Feed (directo en el main para no modificar el archivo routes por ahora)
-	router.GET("/v1/feed", feedController.GetMainFeed)
+	routes.SetupFeedRoutes(router, feedController, authClient)
 
 	// Nuevas rutas para el sistema de Likes (RF-20)
 	router.POST("/v1/posts/:id/like", postController.LikePost)
 	router.DELETE("/v1/posts/:id/like", postController.UnlikePost)
 
-	// Nota: Tu puerto actual en este archivo es 8084
 	logger.Info("http_server_started", "port", "8084")
 	if err := router.Run(":8084"); err != nil {
 		log.Fatalf("Error al iniciar el servidor web: %v", err)
 	}
+}
+
+func postRepoService(s *services.PostService) *services.PostService {
+	return s
 }
