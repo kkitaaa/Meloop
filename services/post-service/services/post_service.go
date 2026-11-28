@@ -40,12 +40,27 @@ func ValidateMusicReferences(refs []models.MusicReference) error {
 	return nil
 }
 
+type PostRepository interface {
+	CreatePost(context.Context, string, string, *string) (*repositories.Post, error)
+	UpdatePost(context.Context, string, string, string) error
+	DeletePost(context.Context, string, string) error
+	GetPostByIDExcluding(context.Context, string, string, []string) (*repositories.Post, error)
+	GetPostsByAuthorExcluding(context.Context, string, string, int, int, []string) ([]repositories.Post, error)
+	SearchPostsExcluding(context.Context, string, string, int, int, []string) ([]repositories.Post, error)
+	AddLike(context.Context, string, string) error
+	GetPostAuthorID(context.Context, string) (string, error)
+	SavePost(context.Context, string, string) error
+	UnsavePost(context.Context, string, string) error
+	GetSavedPosts(context.Context, string, []string, int, int) ([]repositories.Post, error)
+	RemoveLike(context.Context, string, string) error
+}
+
 type PostService struct {
-	repo         *repositories.SQLPostRepository
+	repo         PostRepository
 	blockedUsers BlockedUsersProvider
 }
 
-func NewPostService(repo *repositories.SQLPostRepository, blockedUsers ...BlockedUsersProvider) *PostService {
+func NewPostService(repo PostRepository, blockedUsers ...BlockedUsersProvider) *PostService {
 	service := &PostService{repo: repo}
 	if len(blockedUsers) > 0 {
 		service.blockedUsers = blockedUsers[0]

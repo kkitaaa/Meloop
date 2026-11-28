@@ -6,7 +6,7 @@ La estrategia comienza con pruebas rápidas y aisladas, y deja preparada la ampl
 
 - **Unitarias:** validan lógica y controladores sin depender de infraestructura externa.
 - **API básicas:** usan `httptest` en Go y `TestClient` en FastAPI para comprobar estados HTTP y respuestas.
-- **Integración futura:** conectarán servicios reales con Redis, RabbitMQ, Docker Compose y bases de datos.
+- **Integración:** conectan servicios reales con Redis, RabbitMQ, Docker Compose y bases de datos cuando corresponda.
 - **End-to-end futura:** validará flujos completos desde el gateway o Flutter.
 
 ## Ejecutar localmente
@@ -18,6 +18,8 @@ Desde cada módulo:
 ```powershell
 go test ./...
 ```
+
+Las pruebas del post-service se ejecutan desde la raíz con `make test-post` (o `mingw32-make test-post` en Windows). Para correr también su prueba de persistencia contra PostgreSQL, configura `TEST_DATABASE_URL` con una base de pruebas que ya tenga aplicadas las migraciones de Supabase; sin esa variable, Go ejecuta el resto de la suite y omite únicamente la integración PostgreSQL.
 
 Para revisar todos los módulos desde la raíz:
 

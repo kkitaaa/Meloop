@@ -10,6 +10,7 @@ require (
 	github.com/minio/minio-go/v7 v7.3.0
 	github.com/rabbitmq/amqp091-go v1.13.0
 	github.com/redis/go-redis/v9 v9.7.0
+	github.com/stretchr/testify v1.11.1
 	gorm.io/driver/postgres v1.6.3
 	gorm.io/gorm v1.31.2
 )

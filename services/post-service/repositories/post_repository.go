@@ -353,8 +353,7 @@ func (r *SQLPostRepository) GetSavedPosts(ctx context.Context, userID string, ex
 
 // CreatePost inserta una nueva publicación en la base de datos
 func (r *SQLPostRepository) CreatePost(ctx context.Context, authorID string, content string, urlMultimedia *string) (*Post, error) {
-	// Generamos un ID simple basado en el timestamp actual (puedes cambiarlo a UUID si tu BD lo usa)
-	newID := fmt.Sprintf("post-%d", time.Now().UnixMilli())
+	newID := uuid.NewString()
 
 	query := `
 		INSERT INTO publicacion (id_publicacion, id_usuario, texto, url_multimedia, fecha_creacion)
