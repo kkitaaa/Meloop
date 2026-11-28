@@ -40,6 +40,11 @@ func (e *Event) UnmarshalJSON(data []byte) error {
 	e.PostID = get("postId")
 	e.CommentID = get("commentId", "interactionId", "replyToId", "parentCommentId", "targetCommentId")
 	e.MessageID = get("messageId")
+	e.EventID = get("eventId")
+	e.CommentAuthorID = get("commentAuthorId")
+	e.TargetAuthorID = get("targetAuthorId")
+	e.TargetType = strings.ToLower(get("targetType"))
+	e.TargetID = get("targetId")
 	return nil
 }
 

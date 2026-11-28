@@ -29,7 +29,7 @@ func (r *NotificationRepository) ResolvePostOwner(ctx context.Context, postID st
 
 func (r *NotificationRepository) ResolveInteractionOwner(ctx context.Context, interactionID string) (string, error) {
 	var userID string
-	err := r.pool.QueryRow(ctx, `SELECT id_usuario FROM interaccion WHERE id_interaccion = $1`, interactionID).Scan(&userID)
+	err := r.pool.QueryRow(ctx, `SELECT id_usuario FROM comentario WHERE id_comentario = $1`, interactionID).Scan(&userID)
 	return userID, err
 }
 

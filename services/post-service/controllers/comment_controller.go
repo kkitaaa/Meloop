@@ -45,13 +45,10 @@ func (controller *CommentController) CreateComment(c *gin.Context) {
 
 	// PUBLICAR EVENTO ASÍNCRONAMENTE (RNF-05, RF-21)
 	go func() {
-		targetAuthorID := "placeholder_post_author_id"
-
 		event := messaging.CommentCreatedEvent{
 			EventID:         uuid.New().String(),
 			CommentID:       created.ID,
 			CommentAuthorID: request.AuthorID,
-			TargetAuthorID:  targetAuthorID,
 			TargetType:      "post",
 			TargetID:        postID,
 			CreatedAt:       time.Now().Format(time.RFC3339),
@@ -89,13 +86,10 @@ func (controller *CommentController) CreateReply(c *gin.Context) {
 
 	// PUBLICAR EVENTO ASÍNCRONAMENTE (RNF-05, RF-22)
 	go func() {
-		targetAuthorID := "placeholder_comment_author_id"
-
 		event := messaging.CommentCreatedEvent{
 			EventID:         uuid.New().String(),
 			CommentID:       created.ID,
 			CommentAuthorID: request.AuthorID,
-			TargetAuthorID:  targetAuthorID,
 			TargetType:      "comment",
 			TargetID:        commentID,
 			CreatedAt:       time.Now().Format(time.RFC3339),

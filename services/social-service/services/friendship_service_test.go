@@ -208,6 +208,11 @@ func (f *eventPublisherFake) PublishFriendAccepted(context.Context, *models.Frie
 	return f.err
 }
 
+func (f *eventPublisherFake) PublishFriendRequested(context.Context, *models.FriendRequest) error {
+	f.called = true
+	return f.err
+}
+
 func (f *eventPublisherFake) PublishFriendRequestCancelled(_ context.Context, request *models.FriendRequest) error {
 	f.cancelledRequests = append(f.cancelledRequests, *request)
 	return f.err
