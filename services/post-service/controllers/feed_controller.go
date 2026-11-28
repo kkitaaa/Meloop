@@ -1,11 +1,12 @@
 package controllers
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
-	"github.com/meloop/post-service/models"
+	"github.com/meloop/post-service/repositories"
 	"github.com/meloop/post-service/services"
 )
 
@@ -18,35 +19,52 @@ func NewFeedController(service *services.FeedService) *FeedController {
 }
 
 func (c *FeedController) GetMainFeed(ctx *gin.Context) {
-	// Para pruebas locales, simulamos que el usuario logueado viene en un header.
-	// Más adelante, esto vendrá del middleware de autenticación (JWT).
-	userID := ctx.GetHeader("X-User-ID")
+	userID := ctx.GetString("userID")
+	if userID == "" {
+		userID = ctx.GetHeader("X-User-ID")
+	}
 	if userID == "" {
 		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "X-User-ID header es requerido para identificar al usuario"})
 		return
 	}
 
-	// Extraemos query params para la paginación (?page=1&limit=10)
-	page, _ := strconv.Atoi(ctx.DefaultQuery("page", "1"))
-	limit, _ := strconv.Atoi(ctx.DefaultQuery("limit", "10"))
-
-	feed, err := c.service.GetFeed(userID, page, limit)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "no se pudo cargar el feed",
-			"detalle": err.Error(),
-		})
+	limit := 20
+	if rawLimit, exists := ctx.GetQuery("limit"); exists {
+		parsed, err := strconv.Atoi(rawLimit)
+		if err != nil || parsed < 1 || parsed > 50 {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": services.ErrInvalidFeedLimit.Error()})
+			return
+		}
+		limit = parsed
+	}
+	cursor := ctx.Query("cursor")
+	if len(cursor) > 1024 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": services.ErrInvalidFeedCursor.Error()})
 		return
 	}
 
-	// Si no hay resultados, devolvemos un arreglo vacío en lugar de null
-	if feed == nil {
-		feed = []models.FeedPost{}
+	page, err := c.service.GetFeed(ctx.Request.Context(), userID, limit, cursor)
+	if err != nil {
+		switch {
+		case errors.Is(err, services.ErrInvalidFeedLimit), errors.Is(err, services.ErrInvalidFeedCursor):
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		case errors.Is(err, services.ErrFeedSnapshotExpired):
+			ctx.JSON(http.StatusGone, gin.H{"error": err.Error()})
+		default:
+			ctx.JSON(http.StatusInternalServerError, gin.H{
+				"error":   "no se pudo cargar el feed",
+				"detalle": err.Error(),
+			})
+		}
+		return
 	}
 
+	if page.Posts == nil {
+		page.Posts = []repositories.Post{}
+	}
 	ctx.JSON(http.StatusOK, gin.H{
-		"page":  page,
-		"limit": limit,
-		"data":  feed,
+		"limit":       limit,
+		"data":        page.Posts,
+		"next_cursor": page.NextCursor,
 	})
 }

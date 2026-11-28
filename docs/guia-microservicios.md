@@ -395,15 +395,37 @@ conexión y credenciales válidas.
 ### Post — `services/post-service`
 
 - **Puerto:** `8084`.
-- **Dependencias:** PostgreSQL, MinIO y RabbitMQ. Configura `DATABASE_URL`
-  (acepta `DB_URL` como alternativa), `MINIO_*` y `RABBITMQ_URL`. El servicio
-  puede continuar aunque falle la publicación de un evento a RabbitMQ; registra
-  una advertencia.
+- **Dependencias:** PostgreSQL, Redis, MinIO y RabbitMQ; `social-service` para
+  exclusión bidireccional de bloqueos. `recommendation-service` es opcional para
+  el feed. Configura `DATABASE_URL` (acepta `DB_URL` como alternativa),
+  `REDIS_URL` (o `REDIS_PASSWORD`), `SOCIAL_SERVICE_URL`,
+  `RECOMMENDATION_SERVICE_URL`, `MINIO_*` y `RABBITMQ_URL`. El servicio puede
+  continuar aunque falle la publicación de un evento a RabbitMQ; registra una
+  advertencia.
 - **Rutas:** `GET /health`, operaciones de publicaciones, likes y comentarios
-  bajo `/api/v1/posts`.
+  bajo `/api/v1/posts`, y `GET /v1/feed?limit=20&cursor=`. El feed mezcla
+  publicaciones propias, públicas y de amigos aceptados de los últimos siete
+  días; elimina bloqueos mediante `/internal/blocks/exclude`, aplica privacidad
+  y moderación, deduplica y conserva hasta 200 IDs ordenados en Redis como
+  `feed:{userID}` durante dos minutos. `next_cursor` pagina sobre esa instantánea;
+  si expiró, responde `410 Gone` y el cliente debe iniciar una nueva consulta.
+  Cada elemento usa el mismo formato JSON que el detalle de publicación.
+
+  La llamada a recomendaciones tiene un timeout breve y es best-effort: si el
+  servicio falla, se omite esa fuente. El servicio de recomendaciones actual
+  devuelve `item_key`/`item_id`; solo los IDs que coincidan con publicaciones
+  elegibles pueden influir en el ranking y nunca eluden privacidad o bloqueos.
+  Ese endpoint solo acepta IDs de usuario numéricos; con IDs no numéricos se
+  omiten las recomendaciones.
+  Como P-08 no está definido en el repositorio, el ranking implementado es una
+  aproximación: recencia + `log(1 + likes + 2 * comentarios)` +
+  `recommendation_score`; desempata por fecha descendente y luego ID ascendente.
 
 ```powershell
 $env:DATABASE_URL = "postgresql://postgres:<contraseña-local>@127.0.0.1:15422/postgres?sslmode=disable"
+$env:REDIS_URL = "redis://:<contraseña-local-de-redis>@127.0.0.1:6379"
+$env:SOCIAL_SERVICE_URL = "http://localhost:8086"
+$env:RECOMMENDATION_SERVICE_URL = "http://localhost:8087"
 $env:RABBITMQ_URL = "amqp://<usuario>:<contraseña>@localhost:5672/"
 $env:MINIO_ENDPOINT = "localhost:9000"
 Set-Location services\post-service
@@ -412,7 +434,9 @@ go test ./...
 go run .
 ```
 
-En otra terminal, verifica `http://localhost:8084/health`.
+En otra terminal, verifica `http://localhost:8084/health`. Para probar el feed,
+envía `X-User-ID` y solicita por ejemplo
+`http://localhost:8084/v1/feed?limit=20&cursor=`.
 
 ### Social — `services/social-service`
 

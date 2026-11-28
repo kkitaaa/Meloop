@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
@@ -79,7 +80,35 @@ func main() {
 
 	// 8. Inyectar dependencias del nuevo FEED PRINCIPAL
 	feedRepo := repositories.NewPostgresFeedRepository(db)
-	feedService := services.NewFeedService(feedRepo)
+	redisURL := os.Getenv("REDIS_URL")
+	if redisURL == "" {
+		if redisPassword := os.Getenv("REDIS_PASSWORD"); redisPassword != "" {
+			redisURL = "redis://:" + redisPassword + "@localhost:6379"
+		} else {
+			redisURL = "redis://localhost:6379"
+		}
+	}
+	redisOptions, err := redis.ParseURL(redisURL)
+	if err != nil {
+		log.Fatalf("Error al configurar Redis para el feed: %v", err)
+	}
+	redisClient := redis.NewClient(redisOptions)
+	defer redisClient.Close()
+
+	socialServiceURL := os.Getenv("SOCIAL_SERVICE_URL")
+	if socialServiceURL == "" {
+		socialServiceURL = "http://localhost:8086"
+	}
+	recommendationServiceURL := os.Getenv("RECOMMENDATION_SERVICE_URL")
+	if recommendationServiceURL == "" {
+		recommendationServiceURL = "http://localhost:8087"
+	}
+	feedService := services.NewFeedService(
+		feedRepo,
+		repositories.NewRedisFeedSnapshotStore(redisClient),
+		services.NewSocialFeedClient(socialServiceURL),
+		services.NewHTTPFeedRecommendationProvider(recommendationServiceURL),
+	)
 	feedController := controllers.NewFeedController(feedService)
 
 	// 9. Configurar Rutas
