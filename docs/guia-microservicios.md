@@ -395,15 +395,51 @@ conexión y credenciales válidas.
 ### Post — `services/post-service`
 
 - **Puerto:** `8084`.
-- **Dependencias:** PostgreSQL, MinIO y RabbitMQ. Configura `DATABASE_URL`
-  (acepta `DB_URL` como alternativa), `MINIO_*` y `RABBITMQ_URL`. El servicio
-  puede continuar aunque falle la publicación de un evento a RabbitMQ; registra
-  una advertencia.
+- **Dependencias:** PostgreSQL, Redis, MinIO y RabbitMQ; `social-service` para
+  exclusión bidireccional de bloqueos y `auth-service` para verificar la sesión
+  del feed. `recommendation-service` es opcional. Configura `DATABASE_URL`
+  (acepta `DB_URL` como alternativa), `REDIS_URL` (o `REDIS_PASSWORD`),
+  `AUTH_SERVICE_URL`, `SOCIAL_SERVICE_URL`, `RECOMMENDATION_SERVICE_URL`,
+  `FEED_REQUEST_TIMEOUT`, `FEED_AUTH_TIMEOUT`, `FEED_RECOMMENDATION_TIMEOUT`,
+  `FEED_POSTGRES_TIMEOUT`, `FEED_SOCIAL_TIMEOUT`, `FEED_REDIS_TIMEOUT`,
+  `MINIO_*` y `RABBITMQ_URL`. Los timeout del feed aceptan duraciones Go como
+  `80ms`; sus valores predeterminados son 480, 60, 50, 220, 100 y 50 ms,
+  respectivamente. El servicio puede continuar aunque falle la publicación de
+  un evento a RabbitMQ; registra una advertencia.
 - **Rutas:** `GET /health`, operaciones de publicaciones, likes y comentarios
-  bajo `/api/v1/posts`.
+  bajo `/api/v1/posts`, y `GET /v1/feed?limit=20&cursor=`. El feed mezcla
+  publicaciones propias, públicas y de amigos aceptados de los últimos siete
+  días; aplica privacidad y moderación, deduplica y conserva hasta 200 IDs
+  ordenados en Redis como `feed:{userID}` durante dos minutos. Cada solicitud
+  del feed verifica el token con `auth-service` y exige que el `X-User-ID`
+  reenviado por el Gateway coincida con la identidad verificada.
+
+  Los bloqueos se consultan primero en `social-service` por
+  `/internal/blocks/exclude`; si falla, el servicio consulta PostgreSQL con la
+  misma semántica bidireccional. Si fallan ambas fuentes, el feed falla cerrado
+  y no devuelve publicaciones. Redis es best-effort: si no está disponible, se
+  conserva la instantánea en memoria local durante dos minutos; esa paginación
+  de respaldo solo es compartida por solicitudes que lleguen a la misma
+  instancia. Los posts eliminados o cuya visibilidad cambió después de la
+  instantánea se omiten al leer cada página. Si el cursor expiró o su instantánea
+  no está disponible en esta instancia, responde `410 Gone`.
+
+  La llamada a recomendaciones tiene un timeout breve y es best-effort: si el
+  servicio falla, se omite esa fuente. El servicio de recomendaciones actual
+  devuelve `item_key`/`item_id`; solo los IDs que coincidan con publicaciones
+  elegibles pueden influir en el ranking y nunca eluden privacidad o bloqueos.
+  Ese endpoint solo acepta IDs de usuario numéricos; con IDs no numéricos se
+  omiten las recomendaciones.
+  Como P-08 no está definido en el repositorio, el ranking implementado es una
+  aproximación: recencia + `log(1 + likes + 2 * comentarios)` +
+  `recommendation_score`; desempata por fecha descendente y luego ID ascendente.
 
 ```powershell
 $env:DATABASE_URL = "postgresql://postgres:<contraseña-local>@127.0.0.1:15422/postgres?sslmode=disable"
+$env:REDIS_URL = "redis://:<contraseña-local-de-redis>@127.0.0.1:6379"
+$env:AUTH_SERVICE_URL = "http://localhost:8083"
+$env:SOCIAL_SERVICE_URL = "http://localhost:8086"
+$env:RECOMMENDATION_SERVICE_URL = "http://localhost:8087"
 $env:RABBITMQ_URL = "amqp://<usuario>:<contraseña>@localhost:5672/"
 $env:MINIO_ENDPOINT = "localhost:9000"
 Set-Location services\post-service
@@ -412,7 +448,13 @@ go test ./...
 go run .
 ```
 
-En otra terminal, verifica `http://localhost:8084/health`.
+Para comprobar la forma de las consultas contra una base Supabase migrada,
+define opcionalmente `TEST_DATABASE_URL` al ejecutar `go test ./...`. Las pruebas
+de integración ejercitan las consultas del feed sin modificar registros.
+
+En otra terminal, verifica `http://localhost:8084/health`. Para probar el feed,
+envía `X-User-ID` y solicita por ejemplo
+`http://localhost:8084/v1/feed?limit=20&cursor=`.
 
 ### Social — `services/social-service`
 

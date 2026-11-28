@@ -16,8 +16,7 @@ func NewInteractionController() *InteractionController {
 // SavePost permite al usuario guardar una publicación (RF-23)[cite: 8]
 func (ctrl *InteractionController) SavePost(c *gin.Context) {
 	postID := c.Param("id")
-	// Simulamos obtener el ID del usuario desde el token JWT
-	userID := c.DefaultQuery("user_id", "current_user_123")
+	userID := c.GetString("userID")
 
 	// TODO: Llamar a service.SavePost(userID, postID)
 	c.JSON(http.StatusOK, gin.H{
@@ -30,7 +29,7 @@ func (ctrl *InteractionController) SavePost(c *gin.Context) {
 // UnsavePost quitan una publicación de la lista de guardados (RF-23)[cite: 8]
 func (ctrl *InteractionController) UnsavePost(c *gin.Context) {
 	postID := c.Param("id")
-	userID := c.DefaultQuery("user_id", "current_user_123")
+	userID := c.GetString("userID")
 
 	// TODO: Llamar a service.UnsavePost(userID, postID)
 	c.JSON(http.StatusOK, gin.H{
@@ -42,7 +41,7 @@ func (ctrl *InteractionController) UnsavePost(c *gin.Context) {
 
 // GetSavedPosts devuelve la lista de publicaciones guardadas del usuario (RF-23)[cite: 8]
 func (ctrl *InteractionController) GetSavedPosts(c *gin.Context) {
-	userID := c.DefaultQuery("user_id", "current_user_123")
+	userID := c.GetString("userID")
 
 	// TODO: Llamar a service.GetSavedPosts(userID)
 	// Retornamos una lista vacía simulando la consulta a Supabase
