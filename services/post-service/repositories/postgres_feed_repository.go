@@ -119,7 +119,7 @@ func (r *PostgresFeedRepository) ListCandidates(ctx context.Context, userID stri
 
 	recommendedClause := "FALSE"
 	recommendedOrder := "FALSE"
-	args := []any{userID, userID, userID, userID, blockedArray}
+	args := []any{userID, userID, userID, userID}
 	if len(recommendedIDs) > 0 {
 		idPlaceholders := strings.TrimSuffix(strings.Repeat("?,", len(recommendedIDs)), ",")
 		recommendedClause = fmt.Sprintf(`
@@ -142,6 +142,9 @@ func (r *PostgresFeedRepository) ListCandidates(ctx context.Context, userID stri
 		args = append(args, stringArgsToAny(recommendedIDs)...)
 		args = append(args, userID, userID)
 		recommendedOrder = "p.id_publicacion IN (" + idPlaceholders + ")"
+	}
+	args = append(args, blockedArray)
+	if len(recommendedIDs) > 0 {
 		args = append(args, stringArgsToAny(recommendedIDs)...)
 	}
 	query = fmt.Sprintf(query, recommendedClause, recommendedOrder)
