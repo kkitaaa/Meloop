@@ -5,9 +5,8 @@ import (
 	"github.com/meloop/post-service/controllers"
 )
 
-func SetupInteractionRoutes(router *gin.Engine, ctrl *controllers.InteractionController) {
-	// Grupo de rutas para publicaciones, que requerirían autenticación en el futuro
-	postsGroup := router.Group("/api/v1/posts")
+func SetupInteractionRoutes(router *gin.Engine, ctrl *controllers.InteractionController, authMiddleware gin.HandlerFunc) {
+	postsGroup := router.Group("/api/v1/posts", authMiddleware)
 	{
 		postsGroup.POST("/:id/save", ctrl.SavePost)     // Guardar (RF-23)[cite: 8]
 		postsGroup.DELETE("/:id/save", ctrl.UnsavePost) // Quitar de guardados (RF-23)[cite: 8]
@@ -15,7 +14,7 @@ func SetupInteractionRoutes(router *gin.Engine, ctrl *controllers.InteractionCon
 	}
 
 	// Grupo de rutas para el perfil del usuario
-	usersGroup := router.Group("/api/v1/users")
+	usersGroup := router.Group("/api/v1/users", authMiddleware)
 	{
 		usersGroup.GET("/me/saved", ctrl.GetSavedPosts) // Consultar lista de guardados (RF-23)[cite: 8]
 	}

@@ -20,22 +20,15 @@ func NewLikeController(service *services.LikeService) *LikeController {
 	}
 }
 
-type likeRequest struct {
-	UserID string `json:"user_id" binding:"required"`
-}
-
 func (c *LikeController) AddLike(ctx *gin.Context) {
 	postID := ctx.Param("postId")
-
-	var request likeRequest
-	if err := ctx.ShouldBindJSON(&request); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{
-			"error": "user_id es obligatorio",
-		})
+	userID := ctx.GetString("userID")
+	if userID == "" {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "usuario no autenticado"})
 		return
 	}
 
-	like, count, err := c.service.AddLike(postID, request.UserID)
+	like, count, err := c.service.AddLike(postID, userID)
 	if err != nil {
 		if errors.Is(err, repositories.ErrLikeAlreadyExists) {
 			ctx.JSON(http.StatusConflict, gin.H{
@@ -48,7 +41,7 @@ func (c *LikeController) AddLike(ctx *gin.Context) {
 		logger.Error(
 			"like_creation_failed",
 			"post_id", postID,
-			"user_id", request.UserID,
+			"user_id", userID,
 			"error", err,
 		)
 
@@ -66,7 +59,11 @@ func (c *LikeController) AddLike(ctx *gin.Context) {
 
 func (c *LikeController) RemoveLike(ctx *gin.Context) {
 	postID := ctx.Param("postId")
-	userID := ctx.Param("userId")
+	userID := ctx.GetString("userID")
+	if userID == "" {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "usuario no autenticado"})
+		return
+	}
 
 	count, err := c.service.RemoveLike(postID, userID)
 	if err != nil {

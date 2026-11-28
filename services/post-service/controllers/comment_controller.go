@@ -25,17 +25,18 @@ func NewCommentController(service *services.CommentService) *CommentController {
 // CreateComment crea un comentario principal en una publicación.
 func (controller *CommentController) CreateComment(c *gin.Context) {
 	postID := c.Param("id")
+	authorID := c.GetString("userID")
+	if authorID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "usuario no autenticado"})
+		return
+	}
 
 	var request models.CreateCommentRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 		return
 	}
-
-	if request.AuthorID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "author id is required"})
-		return
-	}
+	request.AuthorID = authorID
 
 	created, err := controller.service.CreateComment(postID, request)
 	if err != nil {
@@ -69,6 +70,11 @@ func (controller *CommentController) CreateComment(c *gin.Context) {
 func (controller *CommentController) CreateReply(c *gin.Context) {
 	postID := c.Param("id")           // ID del post en la URL (ej: /posts/:id/comments/:commentId/replies)
 	commentID := c.Param("commentId") // Asumimos que agregas commentId a la ruta
+	authorID := c.GetString("userID")
+	if authorID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "usuario no autenticado"})
+		return
+	}
 
 	var request models.CreateCommentRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
@@ -76,10 +82,7 @@ func (controller *CommentController) CreateReply(c *gin.Context) {
 		return
 	}
 
-	if request.AuthorID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "author id is required"})
-		return
-	}
+	request.AuthorID = authorID
 
 	created, err := controller.service.CreateReply(commentID, postID, request)
 	if err != nil {

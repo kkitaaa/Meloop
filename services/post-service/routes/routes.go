@@ -10,20 +10,26 @@ import (
 
 func SetupRoutes(
 	router *gin.Engine,
+	authMiddleware gin.HandlerFunc,
+	feedController *controllers.FeedController,
 	likeController *controllers.LikeController,
 	commentController *controllers.CommentController,
 	postController *controllers.PostController,
 	minioClient *minio.Client,
 ) {
+	// /health es la única ruta pública; todas las rutas de producto requieren JWT.
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"service": "post-service", "status": "ok"})
 	})
 
-	// Estas se quedan igual porque están en la ruta base /posts, no en /api/v1/posts
-	router.POST("/posts/:postId/likes", likeController.AddLike)
-	router.DELETE("/posts/:postId/likes/:userId", likeController.RemoveLike)
+	protected := router.Group("")
+	protected.Use(authMiddleware)
 
-	api := router.Group("/api/v1/posts")
+	// Estas se quedan igual porque están en la ruta base /posts, no en /api/v1/posts
+	protected.POST("/posts/:postId/likes", likeController.AddLike)
+	protected.DELETE("/posts/:postId/likes/:userId", likeController.RemoveLike)
+
+	api := protected.Group("/api/v1/posts")
 	{
 		// 1. Creación de publicaciones
 		api.POST("", postController.CreatePost)
@@ -43,4 +49,8 @@ func SetupRoutes(
 		api.GET("/:id/comments", commentController.GetComments)
 		api.POST("/:id/comments/:commentId/replies", commentController.CreateReply)
 	}
+
+	protected.GET("/v1/feed", feedController.GetMainFeed)
+	protected.POST("/v1/posts/:id/like", postController.LikePost)
+	protected.DELETE("/v1/posts/:id/like", postController.UnlikePost)
 }

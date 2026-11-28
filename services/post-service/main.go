@@ -114,42 +114,21 @@ func main() {
 	postgresTimeout := feedTimeout("FEED_POSTGRES_TIMEOUT", 220*time.Millisecond)
 	socialTimeout := feedTimeout("FEED_SOCIAL_TIMEOUT", 100*time.Millisecond)
 	recommendationTimeout := feedTimeout("FEED_RECOMMENDATION_TIMEOUT", 50*time.Millisecond)
-	authTimeout := feedTimeout("FEED_AUTH_TIMEOUT", 60*time.Millisecond)
+	authTimeout := feedTimeout("AUTH_SERVICE_TIMEOUT", 5*time.Second)
 	feedService := services.NewFeedService(
 		repositories.NewPostgresFeedRepository(db, postgresTimeout),
 		repositories.NewRedisFeedSnapshotStore(redisClient, redisTimeout),
 		services.NewSocialFeedClient(socialServiceURL, socialTimeout),
 		services.NewHTTPFeedRecommendationProvider(recommendationServiceURL, recommendationTimeout),
 	)
-	feedController := controllers.NewFeedController(
-		feedService,
-		services.NewHTTPFeedIdentityVerifier(authServiceURL, authTimeout),
-		feedTimeout("FEED_REQUEST_TIMEOUT", 480*time.Millisecond),
-	)
+	feedController := controllers.NewFeedController(feedService, feedTimeout("FEED_REQUEST_TIMEOUT", 480*time.Millisecond))
 
 	// 9. Configurar Rutas
 	router := gin.Default()
-
-	// --- MIDDLEWARE DE PRUEBAS ---
-	// Extrae el ID del usuario desde el header para simular que pasó por el API Gateway
-	router.Use(func(c *gin.Context) {
-		userID := c.GetHeader("X-User-ID")
-		if userID != "" {
-			c.Set("userID", userID)
-		}
-		c.Next()
-	})
-	// ------------------------------
+	authMiddleware := controllers.AuthRequired(services.NewHTTPFeedIdentityVerifier(authServiceURL, authTimeout))
 
 	// Rutas de módulos (Mezclado: con middleware de tu rama y likeController de la rama main)
-	routes.SetupRoutes(router, likeController, commentController, postController, minioClient)
-
-	// Nueva ruta del Feed (directo en el main para no modificar el archivo routes por ahora)
-	router.GET("/v1/feed", feedController.GetMainFeed)
-
-	// Nuevas rutas para el sistema de Likes (RF-20)
-	router.POST("/v1/posts/:id/like", postController.LikePost)
-	router.DELETE("/v1/posts/:id/like", postController.UnlikePost)
+	routes.SetupRoutes(router, authMiddleware, feedController, likeController, commentController, postController, minioClient)
 
 	// Nota: Tu puerto actual en este archivo es 8084
 	logger.Info("http_server_started", "port", "8084")

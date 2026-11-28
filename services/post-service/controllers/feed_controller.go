@@ -15,38 +15,23 @@ import (
 
 type FeedController struct {
 	service        *services.FeedService
-	identity       services.FeedIdentityVerifier
 	requestTimeout time.Duration
 }
 
-func NewFeedController(service *services.FeedService, identity services.FeedIdentityVerifier, requestTimeout time.Duration) *FeedController {
+func NewFeedController(service *services.FeedService, requestTimeout time.Duration) *FeedController {
 	if requestTimeout <= 0 {
 		requestTimeout = 480 * time.Millisecond
 	}
-	return &FeedController{service: service, identity: identity, requestTimeout: requestTimeout}
+	return &FeedController{service: service, requestTimeout: requestTimeout}
 }
 
 func (c *FeedController) GetMainFeed(ctx *gin.Context) {
 	requestCtx, cancel := context.WithTimeout(ctx.Request.Context(), c.requestTimeout)
 	defer cancel()
 
-	userID := strings.TrimSpace(ctx.GetHeader("X-User-ID"))
-	authorization := strings.TrimSpace(ctx.GetHeader("Authorization"))
-	if !services.ValidateFeedUserID(userID) || authorization == "" || c.identity == nil {
+	userID := strings.TrimSpace(ctx.GetString("userID"))
+	if !services.ValidateFeedUserID(userID) {
 		ctx.JSON(http.StatusUnauthorized, gin.H{"error": services.ErrInvalidFeedIdentity.Error()})
-		return
-	}
-	authenticatedUserID, err := c.identity.AuthenticatedUserID(requestCtx, authorization)
-	if errors.Is(err, services.ErrInvalidFeedIdentity) {
-		ctx.JSON(http.StatusUnauthorized, gin.H{"error": services.ErrInvalidFeedIdentity.Error()})
-		return
-	}
-	if err != nil {
-		ctx.JSON(http.StatusServiceUnavailable, gin.H{"error": "no se pudo validar la sesión"})
-		return
-	}
-	if authenticatedUserID != userID {
-		ctx.JSON(http.StatusForbidden, gin.H{"error": services.ErrInvalidFeedIdentity.Error()})
 		return
 	}
 
