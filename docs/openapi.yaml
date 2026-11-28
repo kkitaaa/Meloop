@@ -21,6 +21,247 @@ paths:
                 data:
                   status: ok
                 error: null
+  /v1/music/search:
+    get:
+      summary: Buscar canciones, artistas, álbumes o géneros
+      description: |
+        El catálogo usa Spotify Client Credentials en el music-service. El tipo
+        genre consulta el catálogo curado de Meloop y no se envía a Spotify.
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 100
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [track, artist, album, genre]
+            default: track
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 1000
+            default: 0
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 10
+            default: 10
+      responses:
+        '200':
+          description: Resultados de búsqueda con paginación Spotify/Meloop
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          description: Parámetros inválidos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Spotify limitó temporalmente las consultas
+          headers:
+            Retry-After:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: Spotify no está disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/music/{type}/{id}:
+    get:
+      summary: Consultar detalle de una canción, artista o álbum
+      parameters:
+        - name: type
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [tracks, artists, albums]
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^[A-Za-z0-9]{22}$'
+      responses:
+        '200':
+          description: Objeto de catálogo musical
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          description: ID de Spotify inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: El elemento no existe en el catálogo
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: Spotify no está disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/music/preferences:
+    get:
+      summary: Obtener preferencias musicales del usuario autenticado
+      parameters:
+        - name: Authorization
+          in: header
+          required: true
+          schema:
+            type: string
+          description: Token de sesión en formato Bearer
+      responses:
+        '200':
+          description: Preferencias musicales y límites por categoría
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '401':
+          description: Token de sesión inválido o ausente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: auth-service no está disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      summary: Guardar una preferencia musical del usuario autenticado
+      parameters:
+        - name: Authorization
+          in: header
+          required: true
+          schema:
+            type: string
+          description: Token de sesión en formato Bearer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type, item_id, name]
+              properties:
+                type:
+                  type: string
+                  enum: [track, artist, genre]
+                item_id:
+                  type: string
+                  maxLength: 50
+                name:
+                  type: string
+                  maxLength: 200
+                artwork_url:
+                  type: string
+                  format: uri
+                  nullable: true
+      responses:
+        '200':
+          description: Preferencia guardada y lista actualizada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          description: Preferencia inválida
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token de sesión inválido o ausente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Preferencia duplicada o límite de categoría alcanzado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: auth-service no está disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/music/preferences/{type}/{item_id}:
+    delete:
+      summary: Eliminar una preferencia musical del usuario autenticado
+      parameters:
+        - name: Authorization
+          in: header
+          required: true
+          schema:
+            type: string
+          description: Token de sesión en formato Bearer
+        - name: type
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [track, artist, genre]
+        - name: item_id
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 50
+      responses:
+        '200':
+          description: Preferencia eliminada y lista actualizada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          description: Tipo o ID de preferencia inválidos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token de sesión inválido o ausente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: auth-service no está disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /test/health:
     get:
       summary: Health check de Test Service (Enrutado a través del Gateway con prefijo recortado)

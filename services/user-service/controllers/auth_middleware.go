@@ -1,10 +1,13 @@
 package controllers
 
 import (
+	"errors"
+	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/meloop/services/common/httpresponse"
+	"github.com/meloop/user-service/services"
 )
 
 const (
@@ -43,6 +46,34 @@ func AuthRequired() gin.HandlerFunc {
 		if role := strings.TrimSpace(c.GetHeader("X-User-Role")); role != "" {
 			c.Set(ContextUserRoleKey, strings.ToLower(role))
 		}
+		c.Next()
+	}
+}
+
+func AuthRequiredWithSessionValidation(validator services.SessionValidator) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID, err := validator.ValidateSession(c.Request.Context(), c.GetHeader("Authorization"))
+		if err != nil {
+			if errors.Is(err, services.ErrInvalidSession) {
+				httpresponse.UnauthorizedGin(c, "Sesión inválida o expirada")
+				c.Abort()
+				return
+			}
+			httpresponse.ErrorGin(
+				c,
+				http.StatusServiceUnavailable,
+				"AUTH_SERVICE_UNAVAILABLE",
+				"No se pudo validar la sesión de usuario",
+			)
+			c.Abort()
+			return
+		}
+		if strings.TrimSpace(userID) == "" {
+			httpresponse.UnauthorizedGin(c, "Sesión inválida o expirada")
+			c.Abort()
+			return
+		}
+		c.Set(ContextUserIDKey, strings.TrimSpace(userID))
 		c.Next()
 	}
 }

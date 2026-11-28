@@ -14,5 +14,7 @@ data:
   RECOMMENDATION_SERVICE_URL: http://recommendation-service:8087
   GAMIFICATION_SERVICE_URL: http://gamification-service:8089
   MEDIA_SERVICE_URL: http://media-service:8085
+  MUSIC_SERVICE_URL: http://music-service:8091
+  SPOTIFY_MARKET: ""
   ML_SERVICE_URL: http://ml-service:8001
   REDIS_URL: redis://redis:6379

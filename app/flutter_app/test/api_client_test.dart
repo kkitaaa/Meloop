@@ -179,6 +179,102 @@ void main() {
       },
     );
 
+    test(
+      'parses Spotify catalog search and detail responses without a user login',
+      () async {
+        final dio = Dio();
+        dio.httpClientAdapter = _DioMockAdapter((options) {
+          expect(options.headers['Authorization'], isNull);
+          if (options.uri.path == '/v1/music/search') {
+            expect(options.method, 'GET');
+            expect(options.uri.queryParameters, {
+              'q': 'Daft Punk',
+              'type': 'track',
+              'offset': '0',
+              'limit': '10',
+            });
+            return ResponseBody.fromString(
+              jsonEncode({
+                'tracks': {
+                  'offset': 0,
+                  'limit': 10,
+                  'total': 1,
+                  'next': null,
+                  'items': [
+                    {
+                      'id': 'track-1',
+                      'name': 'One More Time',
+                      'artists': [
+                        {'id': 'artist-1', 'name': 'Daft Punk'},
+                      ],
+                      'album': {
+                        'images': [
+                          {'url': 'https://images.example.test/cover.jpg'},
+                        ],
+                      },
+                      'external_urls': {
+                        'spotify': 'https://open.spotify.com/track/track-1',
+                      },
+                    },
+                  ],
+                },
+              }),
+              200,
+              headers: {
+                Headers.contentTypeHeader: ['application/json'],
+              },
+            );
+          }
+
+          expect(options.uri.path, '/v1/music/tracks/track-1');
+          return ResponseBody.fromString(
+            jsonEncode({
+              'id': 'track-1',
+              'name': 'One More Time',
+              'artists': [
+                {'id': 'artist-1', 'name': 'Daft Punk'},
+              ],
+              'album': {
+                'name': 'Discovery',
+                'images': [
+                  {'url': 'https://images.example.test/cover.jpg'},
+                ],
+              },
+              'external_urls': {
+                'spotify': 'https://open.spotify.com/track/track-1',
+              },
+            }),
+            200,
+            headers: {
+              Headers.contentTypeHeader: ['application/json'],
+            },
+          );
+        });
+        final client = ApiClient(dio: dio);
+
+        final search = await client.searchMusicTracks('Daft Punk');
+        final result = search.data!.items.single;
+        expect(result.id, 'track-1');
+        expect(result.title, 'One More Time');
+        expect(result.artist, 'Daft Punk');
+        expect(result.artworkUrl, 'https://images.example.test/cover.jpg');
+        expect(search.data!.hasMore, isFalse);
+
+        final detail = await client.getMusicDetail(
+          type: 'track',
+          spotifyId: 'track-1',
+        );
+        expect(detail.data!.name, 'One More Time');
+        expect(detail.data!.album, 'Discovery');
+        expect(
+          detail.data!.externalUrl,
+          'https://open.spotify.com/track/track-1',
+        );
+        client.close();
+        dio.close(force: true);
+      },
+    );
+
     test('accepts a login response without an optional role', () async {
       final client = ApiClient(
         session: AuthSession(persistent: false),

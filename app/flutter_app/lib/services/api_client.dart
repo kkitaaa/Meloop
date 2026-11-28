@@ -572,11 +572,19 @@ class ApiClient implements PostPublisher {
     String query, {
     String type = 'track',
     int offset = 0,
+    int limit = 10,
     CancelToken? cancelToken,
   }) {
-    return _searchGet(
+    if (offset < 0 || offset > 1000) {
+      throw RangeError.range(offset, 0, 1000, 'offset');
+    }
+    if (limit < 1 || limit > 10) {
+      throw RangeError.range(limit, 1, 10, 'limit');
+    }
+
+    return _musicCatalogGet(
       '/v1/music/search',
-      {'q': query, 'type': type, 'offset': '$offset'},
+      {'q': query.trim(), 'type': type, 'offset': '$offset', 'limit': '$limit'},
       (json) => MusicSearchPage.fromJson(json, type: type),
       cancelToken: cancelToken,
     );
@@ -609,11 +617,72 @@ class ApiClient implements PostPublisher {
       'artists' => 'artist',
       _ => 'album',
     };
-    return _musicPreferenceRequest(
-      'GET',
+    return _musicCatalogGet(
       '/v1/music/$resource/${Uri.encodeComponent(spotifyId)}',
+      const {},
       (json) => MusicDetail.fromJson(json, type: normalizedType),
     );
+  }
+
+  Future<ApiResponse<T>> _musicCatalogGet<T>(
+    String path,
+    Map<String, String> queryParameters,
+    T Function(Object? json) parseData, {
+    CancelToken? cancelToken,
+  }) async {
+    try {
+      final response = await _dio.get<Object?>(
+        path,
+        queryParameters: queryParameters.isEmpty ? null : queryParameters,
+        cancelToken: cancelToken,
+      );
+      final body = response.data;
+      if (body is! Map<String, dynamic>) {
+        throw const FormatException('Respuesta inválida del servicio musical.');
+      }
+
+      if (response.statusCode == null ||
+          response.statusCode! < 200 ||
+          response.statusCode! >= 300) {
+        throw ApiException(
+          statusCode: response.statusCode,
+          errorCode: _readErrorCode(body),
+          message:
+              _readErrorMessage(body) ??
+              'El servicio musical respondió con un error.',
+        );
+      }
+
+      if (body.containsKey('success')) {
+        final result = ApiResponse<T>.fromJson(body, parseData);
+        if (!result.success) {
+          throw ApiException(
+            statusCode: response.statusCode,
+            errorCode: result.error?.code,
+            message:
+                result.error?.message ??
+                'El servicio musical no pudo completar la solicitud.',
+          );
+        }
+        return result;
+      }
+
+      return ApiResponse<T>(success: true, data: parseData(body));
+    } on ApiException {
+      rethrow;
+    } on DioException catch (error) {
+      if (CancelToken.isCancel(error)) rethrow;
+      final responseData = error.response?.data;
+      throw ApiException(
+        statusCode: error.response?.statusCode,
+        errorCode: _readErrorCode(responseData),
+        message:
+            _readErrorMessage(responseData) ??
+            'No se pudo conectar con el servicio musical. Inténtalo de nuevo.',
+      );
+    } on FormatException catch (error) {
+      throw ApiException(message: error.message);
+    }
   }
 
   Future<ApiResponse<MusicPreferencesData>> addMusicPreference({

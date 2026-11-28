@@ -48,10 +48,23 @@ func main() {
 	notifCtrl := controllers.NewNotificationController(notifSrv)
 	inventoryCtrl := controllers.NewInventoryController(inventorySrv)
 	profileCtrl := controllers.NewProfileController(profileSrv)
+	musicPreferencesSrv := services.NewMusicPreferencesService(
+		repositories.NewMusicPreferencesRepository(dbPool),
+	)
+	musicPreferencesCtrl := controllers.NewMusicPreferencesController(musicPreferencesSrv)
+	sessionValidator := services.NewHTTPSessionValidator(cfg.AuthServiceURL)
 
 	router := gin.New()
 	router.Use(logging.GinMiddleware(logger))
 	router.Use(httpresponse.GinRecoveryWithLogger(logger))
+
+	musicPreferences := router.Group("/v1/music/preferences")
+	musicPreferences.Use(controllers.AuthRequiredWithSessionValidation(sessionValidator))
+	{
+		musicPreferences.GET("", musicPreferencesCtrl.Get)
+		musicPreferences.POST("", musicPreferencesCtrl.Add)
+		musicPreferences.DELETE("/:type/:item_id", musicPreferencesCtrl.Remove)
+	}
 
 	// Rutas existentes de dominio de usuarios
 	router.GET("/users", controllers.GetUsers)

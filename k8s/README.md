@@ -1,6 +1,6 @@
 # Meloop en Kubernetes local
 
-Este entorno de desarrollo ejecuta el API Gateway Go, el servicio de autenticación, el servicio de recomendaciones, ML y Redis. El Gateway es el punto de entrada HTTP de Flutter y enruta `/auth/*` a `auth-service`; las rutas de otros microservicios solo estarán disponibles cuando esos servicios también estén desplegados.
+Este entorno de desarrollo ejecuta el API Gateway Go, el servicio de autenticación y usuarios, el servicio de recomendaciones, el music-service, ML y Redis. El Gateway es el punto de entrada HTTP de Flutter y enruta las peticiones a los microservicios desplegados.
 
 La aplicación actual usa Supabase/Postgres como base de datos. No se crea un PostgreSQL paralelo: el servicio de recomendaciones acepta `DATABASE_URL` opcional para conectarse a una base compatible externa. Sin esa variable, la API funciona sin persistir perfiles ni consumir eventos.
 
@@ -32,10 +32,12 @@ Los contextos Go deben ser la raíz del repositorio porque sus módulos importan
 ```powershell
 docker build -t meloop-api-gateway:dev -f services\api-gateway\Dockerfile .
 docker build -t meloop-auth-service:dev -f services\auth-service\Dockerfile .
+docker build -t meloop-user-service:dev -f services\user-service\Dockerfile .
 docker build -t meloop-recommendation-service:dev -f services\recommendation-service\Dockerfile .
+docker build -t meloop-music-service:dev -f services\music-service\Dockerfile .
 docker build -t meloop-ml-service:dev .\ml-service
 
-kind load docker-image meloop-api-gateway:dev meloop-auth-service:dev meloop-recommendation-service:dev meloop-ml-service:dev --name meloop
+kind load docker-image meloop-api-gateway:dev meloop-auth-service:dev meloop-user-service:dev meloop-recommendation-service:dev meloop-music-service:dev meloop-ml-service:dev --name meloop
 ```
 
 ## Desplegar y comprobar
@@ -43,12 +45,22 @@ kind load docker-image meloop-api-gateway:dev meloop-auth-service:dev meloop-rec
 El Namespace debe estar activo antes de crear los recursos que viven en él.
 Créalo primero y espera a que Kubernetes lo registre. Auth requiere una base PostgreSQL/Supabase existente con el esquema del servicio; no se versionan credenciales. Carga la URL de conexión desde tu gestor de secretos antes de desplegar:
 
+Antes de desplegar `music-service`, el Secret `meloop-secrets` debe contener
+`SPOTIFY_CLIENT_ID` y `SPOTIFY_CLIENT_SECRET`, añadidos desde el gestor de
+secretos aprobado por el equipo. No guardes los valores en este repositorio ni
+en `k8s/secret.yaml`. Configura `SPOTIFY_MARKET` en `k8s/configmap.yaml` con el
+código ISO 3166-1 alpha-2 que el equipo elija (por ejemplo, `CL`).
+
 ```powershell
 kubectl apply -f .\k8s\namespace.yaml
 kubectl wait --for=jsonpath='{.status.phase}'=Active namespace/meloop --timeout=60s
-$env:DATABASE_URL = "<URL_DE_CONEXION>"
-kubectl create secret generic meloop-secrets -n meloop --from-literal=DATABASE_URL="$env:DATABASE_URL" --dry-run=client -o yaml | kubectl apply -f -
-Remove-Item Env:DATABASE_URL
+# Carga estas variables desde el gestor de secretos aprobado por el equipo.
+kubectl create secret generic meloop-secrets -n meloop `
+  --from-literal=DATABASE_URL="$env:DATABASE_URL" `
+  --from-literal=SPOTIFY_CLIENT_ID="$env:SPOTIFY_CLIENT_ID" `
+  --from-literal=SPOTIFY_CLIENT_SECRET="$env:SPOTIFY_CLIENT_SECRET" `
+  --dry-run=client -o yaml | kubectl apply -f -
+Remove-Item Env:DATABASE_URL, Env:SPOTIFY_CLIENT_ID, Env:SPOTIFY_CLIENT_SECRET
 $manifests = @(
   '.\k8s\configmap.yaml',
   '.\k8s\redis-service.yaml',
@@ -57,7 +69,9 @@ $manifests = @(
   '.\k8s\ml-deployment.yaml',
   '.\k8s\recommendation-service.yaml',
   '.\k8s\recommendation-deployment.yaml',
+  '.\k8s\music-service.yaml',
   '.\k8s\auth-service.yaml',
+  '.\k8s\user-service.yaml',
   '.\k8s\backend-service.yaml',
   '.\k8s\backend-deployment.yaml',
   '.\k8s\ingress.yaml'
@@ -72,12 +86,17 @@ kubectl get services,ingress,pvc -n meloop
 
 El Secret también se usa para la conexión de recomendaciones si ese servicio la requiere. No apliques `secret.yaml`: es una plantilla vacía y no debe reemplazar el Secret creado con credenciales.
 No apliques todos los YAML indiscriminadamente: `gamification.yaml`, `media.yaml` y `minio.yaml` son opcionales y requieren que configures primero sus Secrets y dependencias.
+Antes de publicar una versión de `user-service` que incluya preferencias musicales,
+aplica la migración `supabase/migrations/20261128140100_music_preference_metadata.sql`
+con el flujo de migraciones aprobado para la base compartida. El servicio valida
+el Bearer token consultando `auth-service`; no confía en `X-User-ID` para estas rutas.
 
 Prueba el Ingress agregando `127.0.0.1 meloop.local` al archivo `hosts` de Windows (`C:\Windows\System32\drivers\etc\hosts`) y ejecuta:
 
 ```powershell
 curl.exe http://meloop.local/health
 curl.exe http://meloop.local/api/demo
+curl.exe "http://meloop.local/v1/music/search?q=radiohead&type=track&limit=10"
 curl.exe http://meloop.local/recommendations/1/music
 ```
 
@@ -123,4 +142,8 @@ Los Deployments recrean los Pods eliminados. Redis usa un PVC de 1 GiB; comprueb
 
 ## Imágenes de CI
 
-El workflow `.github/workflows/k8s-images.yml` construye las tres imágenes en cada push a `main` y las publica en GHCR con etiquetas `latest` y el SHA del commit. El flujo local anterior usa imágenes `:dev` para evitar requerir un registry.
+El workflow `.github/workflows/k8s-images.yml` construye y publica en GHCR las
+imágenes del API Gateway, recommendation-service, notification-service,
+music-service, user-service y ml-service en cada push a `main`, con etiquetas
+`latest` y el SHA del commit. El flujo local anterior usa imágenes `:dev` para
+evitar requerir un registry.

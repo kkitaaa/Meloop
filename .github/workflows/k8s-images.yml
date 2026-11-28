@@ -7,6 +7,8 @@ on:
       - 'services/api-gateway/**'
       - 'services/recommendation-service/**'
       - 'services/notification-service/**'
+      - 'services/music-service/**'
+      - 'services/user-service/**'
       - 'services/common/**'
       - 'ml-service/**'
       - '.dockerignore'
@@ -17,6 +19,8 @@ on:
       - 'services/api-gateway/**'
       - 'services/recommendation-service/**'
       - 'services/notification-service/**'
+      - 'services/music-service/**'
+      - 'services/user-service/**'
       - 'services/common/**'
       - 'ml-service/**'
       - '.dockerignore'
@@ -43,6 +47,12 @@ jobs:
           - name: notification-service
             context: .
             file: services/notification-service/Dockerfile
+          - name: music-service
+            context: .
+            file: services/music-service/Dockerfile
+          - name: user-service
+            context: .
+            file: services/user-service/Dockerfile
           - name: ml-service
             context: ml-service
             file: ml-service/Dockerfile

@@ -44,6 +44,7 @@ void main() {
       'q': 'Rosalía',
       'type': 'track',
       'offset': '0',
+      'limit': '10',
     });
     expect(find.text('Canción de prueba'), findsOneWidget);
 
@@ -55,6 +56,7 @@ void main() {
       'q': 'Rosalía',
       'type': 'album',
       'offset': '0',
+      'limit': '10',
     });
     expect(find.text('Álbum de prueba'), findsOneWidget);
 

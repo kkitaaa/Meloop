@@ -205,43 +205,17 @@ func (r *postgresProfileRepository) UpdateProfile(ctx context.Context, userID st
 
 	// 3. Si se proporcionó información musical, actualizar en PREFERENCIA_MUSICAL dentro de la misma transacción
 	if profile.InformacionMusical != nil {
-		_, err = tx.Exec(ctx, "DELETE FROM PREFERENCIA_MUSICAL WHERE id_usuario = $1", userID)
-		if err != nil {
-			return nil, fmt.Errorf("error al limpiar preferencias musicales anteriores: %w", err)
+		preferences := []struct {
+			dbType string
+			values []string
+		}{
+			{dbType: "GENERO", values: profile.InformacionMusical.Generos},
+			{dbType: "ARTISTA", values: profile.InformacionMusical.Artistas},
+			{dbType: "CANCION", values: profile.InformacionMusical.Canciones},
 		}
-
-		insertPrefQuery := `
-			INSERT INTO PREFERENCIA_MUSICAL (id_preferencia, id_usuario, tipo, spotify_id)
-			VALUES ($1, $2, $3, $4)
-		`
-
-		for _, genre := range profile.InformacionMusical.Generos {
-			genre = strings.TrimSpace(genre)
-			if genre != "" {
-				prefID := generateRandomID()
-				if _, err := tx.Exec(ctx, insertPrefQuery, prefID, userID, "GENERO", genre); err != nil {
-					return nil, fmt.Errorf("error al insertar género musical: %w", err)
-				}
-			}
-		}
-
-		for _, artist := range profile.InformacionMusical.Artistas {
-			artist = strings.TrimSpace(artist)
-			if artist != "" {
-				prefID := generateRandomID()
-				if _, err := tx.Exec(ctx, insertPrefQuery, prefID, userID, "ARTISTA", artist); err != nil {
-					return nil, fmt.Errorf("error al insertar artista musical: %w", err)
-				}
-			}
-		}
-
-		for _, song := range profile.InformacionMusical.Canciones {
-			song = strings.TrimSpace(song)
-			if song != "" {
-				prefID := generateRandomID()
-				if _, err := tx.Exec(ctx, insertPrefQuery, prefID, userID, "CANCION", song); err != nil {
-					return nil, fmt.Errorf("error al insertar canción musical: %w", err)
-				}
+		for _, preference := range preferences {
+			if err := syncProfileMusicPreferences(ctx, tx, userID, preference.dbType, preference.values); err != nil {
+				return nil, err
 			}
 		}
 	}
@@ -258,6 +232,73 @@ func (r *postgresProfileRepository) UpdateProfile(ctx context.Context, userID st
 	updatedUser.InformacionMusical = updatedPrefs
 
 	return &updatedUser, nil
+}
+
+func syncProfileMusicPreferences(
+	ctx context.Context,
+	tx pgx.Tx,
+	userID string,
+	dbType string,
+	values []string,
+) error {
+	normalized := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		normalized = append(normalized, value)
+	}
+
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))`, userID, dbType); err != nil {
+		return fmt.Errorf("bloquear preferencias musicales de perfil: %w", err)
+	}
+	if len(normalized) == 0 {
+		if _, err := tx.Exec(ctx, `
+			DELETE FROM PREFERENCIA_MUSICAL
+			WHERE id_usuario = $1 AND UPPER(TRIM(tipo)) = $2
+		`, userID, dbType); err != nil {
+			return fmt.Errorf("eliminar preferencias musicales de perfil: %w", err)
+		}
+		return nil
+	}
+
+	if _, err := tx.Exec(ctx, `
+		DELETE FROM PREFERENCIA_MUSICAL
+		WHERE id_usuario = $1
+		  AND UPPER(TRIM(tipo)) = $2
+		  AND (spotify_id IS NULL OR TRIM(spotify_id) <> ALL($3::text[]))
+	`, userID, dbType, normalized); err != nil {
+		return fmt.Errorf("sincronizar preferencias musicales de perfil: %w", err)
+	}
+
+	for _, value := range normalized {
+		var exists bool
+		if err := tx.QueryRow(ctx, `
+			SELECT EXISTS (
+				SELECT 1
+				FROM PREFERENCIA_MUSICAL
+				WHERE id_usuario = $1 AND UPPER(TRIM(tipo)) = $2 AND TRIM(spotify_id) = $3
+			)
+		`, userID, dbType, value).Scan(&exists); err != nil {
+			return fmt.Errorf("consultar preferencia musical de perfil: %w", err)
+		}
+		if exists {
+			continue
+		}
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO PREFERENCIA_MUSICAL (id_preferencia, id_usuario, tipo, spotify_id)
+			VALUES ($1, $2, $3, $4)
+		`, generateRandomID(), userID, dbType, value); err != nil {
+			return fmt.Errorf("insertar preferencia musical de perfil: %w", err)
+		}
+	}
+	return nil
 }
 
 func (r *postgresProfileRepository) getMusicalPreferences(ctx context.Context, userID string, tx pgx.Tx) (*models.MusicalPreferences, error) {

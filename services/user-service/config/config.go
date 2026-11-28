@@ -7,6 +7,7 @@ type Config struct {
 	DatabaseURL     string
 	Port            string
 	MediaServiceURL string
+	AuthServiceURL  string
 }
 
 // Load carga las variables de entorno o utiliza valores por defecto locales
@@ -25,10 +26,15 @@ func Load() *Config {
 	if mediaServiceURL == "" {
 		mediaServiceURL = "http://localhost:8085"
 	}
+	authServiceURL := os.Getenv("AUTH_SERVICE_URL")
+	if authServiceURL == "" {
+		authServiceURL = "http://localhost:8083"
+	}
 
 	return &Config{
 		DatabaseURL:     dbURL,
 		Port:            port,
 		MediaServiceURL: mediaServiceURL,
+		AuthServiceURL:  authServiceURL,
 	}
 }

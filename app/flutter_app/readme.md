@@ -54,18 +54,50 @@ en `media_urls`.
 `pickForPreference` y `browse`. Busca después de 400 ms y desde dos caracteres;
 las pestañas Canciones, Artistas, Álbumes y Géneros consultan
 `GET /v1/music/search?q=<texto>&type=<track|artist|album|genre>&offset=<n>`.
-La respuesta estándar usa `data.items` (o una colección específica por tipo),
-con elementos identificados por `id` y `name`/`title`; artista e imagen son
-opcionales. Los modos de selección devuelven el resultado a la pantalla previa,
-mientras `browse` abre la ficha musical. El cliente acepta la respuesta de
-creación directa del `post-service` (HTTP 201) y el envelope existente del
-Gateway.
+Para canciones, artistas y álbumes, el cliente envía `limit=10` (el máximo de
+la búsqueda de Spotify), `offset` y `type`; acepta el JSON nativo de Spotify o
+el envelope Meloop `{success, data, error}`. Cada resultado usa el ID de
+Spotify, `name`, `artists` y `album.images[].url`; artista e imagen pueden
+estar ausentes. Los modos de selección devuelven el resultado a la pantalla
+previa, mientras `browse` abre la ficha musical.
+
+La app no necesita iniciar sesión en Spotify ni contiene credenciales. El
+`music-service` obtiene el token con Client Credentials y requiere que
+`SPOTIFY_MARKET` se configure con un código ISO 3166-1 alpha-2, porque Spotify
+indica que sin país ni token de usuario los resultados pueden considerarse no
+disponibles. El modo `genre` de Meloop usa un catálogo curado por el backend;
+no se reenvía como `type=genre` a Spotify.
 
 **Dependencia del backend:** `post-service` expone `POST /api/v1/posts`; el
 Gateway debe reenviar esa ruta al servicio conservando el prefijo. La
-configuración versionada del Gateway aún no incluye ese proxy. La búsqueda
-`/v1/music` tampoco está disponible en este repositorio, por lo que requiere que
-MU-07 y VS-03 expongan ese endpoint.
+configuración versionada del Gateway aún no incluye ese proxy. El catálogo
+musical está implementado en `services/music-service` y sus rutas están
+registradas en el Gateway; el servicio debe construirse y desplegarse, y el
+clúster debe recibir las credenciales y el market requeridos.
+
+#### Contrato requerido del catálogo musical
+
+- `GET /v1/music/search?q=<texto>&type=<track|artist|album|genre>&offset=<n>&limit=10`
+  devuelve la estructura de búsqueda Spotify (`tracks.items`,
+  `artists.items` o `albums.items`, junto con `offset`, `limit`, `total` y
+  `next`) o los mismos datos dentro de `data` en el envelope Meloop.
+- `GET /v1/music/tracks/{spotifyId}`,
+  `GET /v1/music/artists/{spotifyId}` y
+  `GET /v1/music/albums/{spotifyId}` devuelven el objeto de catálogo Spotify,
+  directamente o dentro de `data`. Se usan `external_urls.spotify`, `images`,
+  `artists`, `album` y, para álbumes, `tracks.items`.
+- La ruta `type=genre` es una extensión Meloop atendida por el catálogo curado
+  en backend; Spotify Search no admite `genre` como tipo de resultado.
+- Client ID/Secret y token Spotify permanecen en el servidor/Kubernetes. No
+  se deben incluir en Flutter, assets, `--dart-define` ni el repositorio.
+- Para esta búsqueda pública de catálogo no se necesita OAuth de Spotify por
+  usuario. Preferencias personales Meloop siguen usando autenticación Meloop.
+
+Referencias: [Spotify Search](https://developer.spotify.com/documentation/web-api/reference/search),
+[Get Track](https://developer.spotify.com/documentation/web-api/reference/get-track),
+[Get Artist](https://developer.spotify.com/documentation/web-api/reference/get-an-artist),
+[Get Album](https://developer.spotify.com/documentation/web-api/reference/get-an-album)
+y [Client Credentials](https://developer.spotify.com/documentation/web-api/tutorials/client-credentials-flow).
 
 ### Búsqueda global
 
@@ -86,10 +118,10 @@ fallida no bloquea las otras. Cambiar el texto cancela las solicitudes previas.
 Al vaciar el campo se muestran hasta cinco búsquedas recientes de la sesión.
 La acción Agregar usa `POST /v1/social/friends/requests` con `id_usuario`.
 
-**Dependencia del backend:** este Gateway aún no registra `/v1/search/users`,
-`/v1/search/posts` ni `/v1/music/search`; por ello las pestañas muestran su
-estado de error/reintento hasta que BU-01, BU-02 y MU-02 estén disponibles.
-Las solicitudes de amistad sí usan la ruta existente del social-service.
+**Dependencia del backend:** este Gateway aún no registra `/v1/search/users`
+ni `/v1/search/posts`; esas pestañas muestran su estado de error/reintento
+hasta que BU-01 y BU-02 estén disponibles. La búsqueda musical está registrada,
+pero requiere que `music-service` esté desplegado y configurado.
 
 ### Preferencias musicales
 
@@ -104,10 +136,11 @@ y `genre`. Las canciones y artistas se eligen con `MusicSearchScreen`; los
 géneros usan autocompletado desde `/v1/music/search?type=genre`.
 `ALREADY_EXISTS` y `PREFERENCE_LIMIT` muestran mensajes específicos.
 
-**Dependencia del backend:** el Gateway todavía no registra rutas `/v1/music`.
-El cliente y la pantalla están conectados al contrato MU-05 esperado, pero las
-preferencias solo se podrán cargar y modificar cuando el music-service y el
-Gateway implementen esos endpoints.
+**Dependencia del backend:** el catálogo de búsqueda y detalle ya está
+implementado y enrutado. Los endpoints `/v1/music/preferences` todavía no
+están implementados: aunque `user-service` ya persiste preferencias musicales
+en el perfil, falta acordar e implementar el contrato autenticado que usa esta
+pantalla.
 
 ### Ficha musical
 
@@ -118,8 +151,8 @@ canción o artista se puede consultar/agregar la preferencia del usuario;
 `external_url` abre Spotify fuera de la aplicación con `url_launcher`.
 La Post Card abre la ficha cuando el post incluye `song_id` (o
 `spotify_track_id`); los resultados musicales y preferencias también navegan a
-ella. El Gateway aún no registra `/v1/music`, por lo que estos detalles requieren
-la implementación MU-03 y las rutas de preferencias del backend.
+ella. Las fichas se sirven por `music-service`; las preferencias requieren el
+endpoint autenticado descrito arriba.
 
 ### Guardados y compartir publicaciones
 

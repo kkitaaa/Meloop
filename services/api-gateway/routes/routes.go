@@ -42,6 +42,8 @@ func SetupRoutes(router *gin.Engine) {
 	router.Any("/v1/social/*any", controllers.ProxyToService("SOCIAL_SERVICE_URL", "http://localhost:8086", "/v1/social"))
 	router.Any("/v1/media", controllers.ProxyToService("MEDIA_SERVICE_URL", "http://localhost:8085", ""))
 	router.Any("/v1/media/*any", controllers.ProxyToService("MEDIA_SERVICE_URL", "http://localhost:8085", ""))
+	router.Any("/v1/music", controllers.ProxyMusicToServices())
+	router.Any("/v1/music/*any", controllers.ProxyMusicToServices())
 
 	// Enrutar peticiones de gamificación
 	router.Any("/api/v1/gamification",

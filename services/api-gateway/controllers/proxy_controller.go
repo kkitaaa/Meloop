@@ -61,3 +61,25 @@ func ProxyToService(targetEnvVar string, defaultTarget string, stripPrefix strin
 		proxy.ServeHTTP(c.Writer, c.Request)
 	}
 }
+
+func ProxyMusicToServices() gin.HandlerFunc {
+	musicProxy := ProxyToService(
+		"MUSIC_SERVICE_URL",
+		"http://localhost:8091",
+		"",
+	)
+	userProxy := ProxyToService(
+		"USER_SERVICE_URL",
+		"http://localhost:8082",
+		"",
+	)
+
+	return func(c *gin.Context) {
+		path := strings.TrimSuffix(c.Request.URL.Path, "/")
+		if path == "/v1/music/preferences" || strings.HasPrefix(path, "/v1/music/preferences/") {
+			userProxy(c)
+			return
+		}
+		musicProxy(c)
+	}
+}

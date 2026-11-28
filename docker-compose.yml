@@ -32,6 +32,7 @@ services:
       USER_SERVICE_URL: http://user-service:8082
       AUTH_SERVICE_URL: http://auth-service:8083
       SOCIAL_SERVICE_URL: http://social-service:8086
+      MUSIC_SERVICE_URL: http://music-service:8091
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/
       MINIO_ENDPOINT: http://minio:9000
@@ -43,6 +44,7 @@ services:
       - auth-service
       - social-service
       - media-service
+      - music-service
       - redis
       - rabbitmq
       - minio
@@ -68,6 +70,7 @@ services:
       - "8082:8082"
     environment:
       MEDIA_SERVICE_URL: http://media-service:8085
+      AUTH_SERVICE_URL: http://auth-service:8083
       DATABASE_URL: ${DATABASE_URL:-postgres://postgres:postgres@host.docker.internal:5432/postgres?sslmode=disable}
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -118,6 +121,21 @@ services:
       MINIO_MEDIA_BUCKET: ${MINIO_MEDIA_BUCKET:-meloop-media}
     depends_on:
       - minio
+    networks:
+      - meloop-network
+
+  music-service:
+    build:
+      context: .
+      dockerfile: services/music-service/Dockerfile
+    container_name: meloop-music-service
+    expose:
+      - "8091"
+    environment:
+      PORT: 8091
+      SPOTIFY_CLIENT_ID: ${SPOTIFY_CLIENT_ID:-}
+      SPOTIFY_CLIENT_SECRET: ${SPOTIFY_CLIENT_SECRET:-}
+      SPOTIFY_MARKET: ${SPOTIFY_MARKET:-}
     networks:
       - meloop-network
 
