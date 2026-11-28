@@ -27,7 +27,7 @@ func SetupRoutes(
 
 	// Estas se quedan igual porque están en la ruta base /posts, no en /api/v1/posts
 	protected.POST("/posts/:postId/likes", likeController.AddLike)
-	protected.DELETE("/posts/:postId/likes/:userId", likeController.RemoveLike)
+	protected.DELETE("/posts/:postId/likes", likeController.RemoveLike)
 
 	api := protected.Group("/api/v1/posts")
 	{

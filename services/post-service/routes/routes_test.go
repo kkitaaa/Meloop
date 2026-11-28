@@ -23,9 +23,11 @@ func TestRegisteredRoutesRequireAuthenticationExceptHealth(t *testing.T) {
 
 	for _, route := range routes {
 		t.Run(route.Method+" "+route.Path, func(t *testing.T) {
+			if strings.Contains(route.Path, ":userId") {
+				t.Fatalf("route must not accept a user ID supplied by the caller: %s", route.Path)
+			}
 			requestPath := strings.NewReplacer(
 				":postId", "post-1",
-				":userId", "user-1",
 				":authorId", "author-1",
 				":commentId", "comment-1",
 				":id", "item-1",
