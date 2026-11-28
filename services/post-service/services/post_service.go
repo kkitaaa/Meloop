@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/meloop/post-service/models"
 	"github.com/meloop/post-service/repositories"
@@ -18,6 +19,12 @@ import (
 var (
 	ErrInvalidPostInput     = errors.New("datos de publicación inválidos")
 	ErrInternalPostCreation = errors.New("no se pudo guardar la publicación")
+)
+
+const (
+	compensationMaxAttempts = 3
+	compensationAttemptTTL  = 5 * time.Second
+	compensationRetryDelay  = 150 * time.Millisecond
 )
 
 // spotifyIDRegex valida que el ID sea alfanumérico y de exactamente 22 caracteres
@@ -104,6 +111,30 @@ func NewPostServiceWithStorage(repo repositories.PostRepository, storage MediaSt
 	}
 }
 
+// compensateUploadedMedia elimina de MinIO el objeto recién subido usando un contexto independiente y acotado
+// con reintentos, para que una cancelación del cliente HTTP no deje archivos huérfanos.
+func (s *PostService) compensateUploadedMedia(ownerID, mediaURL string) {
+	if mediaURL == "" || s.storage == nil {
+		return
+	}
+
+	var lastErr error
+	for attempt := 1; attempt <= compensationMaxAttempts; attempt++ {
+		compCtx, cancel := context.WithTimeout(context.Background(), compensationAttemptTTL)
+		err := s.storage.Delete(compCtx, ownerID, mediaURL)
+		cancel()
+		if err == nil {
+			return
+		}
+		lastErr = err
+		if attempt < compensationMaxAttempts {
+			time.Sleep(time.Duration(attempt) * compensationRetryDelay)
+		}
+	}
+
+	log.Printf("[CreatePost] Error en compensación MinIO tras %d intentos (%s): %v", compensationMaxAttempts, mediaURL, lastErr)
+}
+
 // CreatePost ejecuta: validar -> validar música -> subir a MinIO -> insertar en transacción -> compensar si falla (RF-16)
 func (s *PostService) CreatePost(ctx context.Context, input CreatePostInput) (*repositories.Post, error) {
 	// 1. Validar contenido / adjuntos
@@ -165,11 +196,9 @@ func (s *PostService) CreatePost(ctx context.Context, input CreatePostInput) (*r
 	if err != nil {
 		log.Printf("[CreatePost] Falló inserción transaccional en PostgreSQL: %v", err)
 
-		// 5. Compensación: eliminar de MinIO el objeto recién subido por este usuario para no dejar huérfanos
-		if uploadedInThisRequest != "" && s.storage != nil {
-			if compErr := s.storage.Delete(ctx, input.AuthorID, uploadedInThisRequest); compErr != nil {
-				log.Printf("[CreatePost] Error en compensación MinIO (%s): %v", uploadedInThisRequest, compErr)
-			}
+		// 5. Compensación con contexto independiente y reintentos para no dejar huérfanos en MinIO
+		if uploadedInThisRequest != "" {
+			s.compensateUploadedMedia(input.AuthorID, uploadedInThisRequest)
 		}
 
 		return nil, ErrInternalPostCreation

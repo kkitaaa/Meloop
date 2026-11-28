@@ -11,7 +11,8 @@ import (
 )
 
 type stubPostRepo struct {
-	posts map[string]repositories.Post
+	posts      map[string]repositories.Post
+	failCreate bool
 }
 
 func newStubPostRepo() *stubPostRepo {
@@ -19,6 +20,9 @@ func newStubPostRepo() *stubPostRepo {
 }
 
 func (r *stubPostRepo) CreatePost(_ context.Context, params repositories.CreatePostParams) (*repositories.Post, error) {
+	if r.failCreate {
+		return nil, errors.New("db insert failure after client disconnect")
+	}
 	post := repositories.Post{
 		ID:            "post-1",
 		AuthorID:      params.AuthorID,
@@ -60,15 +64,28 @@ func (r *stubPostRepo) AddLike(_ context.Context, _, _ string) error    { return
 func (r *stubPostRepo) RemoveLike(_ context.Context, _, _ string) error { return nil }
 
 type spyMediaStorage struct {
-	host        string
-	deletedKeys []string
+	host                string
+	deletedKeys         []string
+	deleteAttempts      int
+	failDeletesBeforeOK int
+	onUpload            func()
 }
 
 func (s *spyMediaStorage) Upload(_ context.Context, ownerID string, _ *multipart.FileHeader) (string, error) {
+	if s.onUpload != nil {
+		s.onUpload()
+	}
 	return "http://" + s.host + "/meloop-media/users/" + ownerID + "/550e8400-e29b-41d4-a716-446655440000.jpg", nil
 }
 
-func (s *spyMediaStorage) Delete(_ context.Context, ownerID string, mediaURL string) error {
+func (s *spyMediaStorage) Delete(ctx context.Context, ownerID string, mediaURL string) error {
+	s.deleteAttempts++
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	if s.deleteAttempts <= s.failDeletesBeforeOK {
+		return errors.New("temporary minio timeout")
+	}
 	if key, ok := ExtractOwnedMinioObjectKey(mediaURL, ownerID, s.host); ok {
 		s.deletedKeys = append(s.deletedKeys, key)
 	}
@@ -143,5 +160,37 @@ func TestCreateAndDeletePost_DeletesOnlyOwnerScopedMinioKey(t *testing.T) {
 
 	if len(storage.deletedKeys) != 1 || storage.deletedKeys[0] != "users/author-1/550e8400-e29b-41d4-a716-446655440000.jpg" {
 		t.Fatalf("clave eliminada inesperada: %v", storage.deletedKeys)
+	}
+}
+
+func TestCreatePost_CompensatesWithIndependentContextAndRetriesWhenClientCancels(t *testing.T) {
+	repo := newStubPostRepo()
+	repo.failCreate = true
+
+	reqCtx, cancelReq := context.WithCancel(context.Background())
+	storage := &spyMediaStorage{
+		host:                "minio.local:9000",
+		failDeletesBeforeOK: 1, // primer intento falla, segundo reintento tiene éxito
+		onUpload: func() {
+			// Simula que el cliente HTTP desconecta justo después de subir el archivo
+			cancelReq()
+		},
+	}
+	svc := NewPostServiceWithStorage(repo, storage)
+
+	_, err := svc.CreatePost(reqCtx, CreatePostInput{
+		AuthorID:  "author-1",
+		Content:   "post con cancelación",
+		MediaFile: &multipart.FileHeader{Filename: "foto.jpg", Size: 128},
+	})
+	if !errors.Is(err, ErrInternalPostCreation) {
+		t.Fatalf("esperado ErrInternalPostCreation, obtenido: %v", err)
+	}
+
+	if storage.deleteAttempts != 2 {
+		t.Fatalf("esperados 2 intentos de compensación con reintentos, obtenidos: %d", storage.deleteAttempts)
+	}
+	if len(storage.deletedKeys) != 1 || storage.deletedKeys[0] != "users/author-1/550e8400-e29b-41d4-a716-446655440000.jpg" {
+		t.Fatalf("la compensación debió eliminar el archivo en MinIO pese a cancelarse reqCtx, deletedKeys=%v", storage.deletedKeys)
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -56,9 +57,62 @@ type SQLPostRepository struct {
 	db *sql.DB
 }
 
-// NewPostRepository crea una nueva instancia del repositorio
+// NewPostRepository crea una nueva instancia del repositorio y asegura la restricción única en cancion(spotify_id)
 func NewPostRepository(db *sql.DB) *SQLPostRepository {
-	return &SQLPostRepository{db: db}
+	repo := &SQLPostRepository{db: db}
+	if db != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := repo.ensureUniqueMusicIndex(ctx); err != nil {
+			log.Printf("Advertencia: no se pudo asegurar índice único en cancion(spotify_id): %v", err)
+		}
+	}
+	return repo
+}
+
+func (r *SQLPostRepository) ensureUniqueMusicIndex(ctx context.Context) error {
+	_, err := r.db.ExecContext(ctx, `
+		CREATE UNIQUE INDEX IF NOT EXISTS ux_cancion_spotify_id
+		ON cancion (spotify_id)
+		WHERE spotify_id IS NOT NULL
+	`)
+	return err
+}
+
+// resolveOrInsertSong resuelve de forma atómica y concurrente una referencia musical usando ON CONFLICT (spotify_id)
+func resolveOrInsertSong(ctx context.Context, tx *sql.Tx, music *models.MusicReference) (string, error) {
+	refID := strings.TrimSpace(music.ReferenceID)
+
+	// Si el cliente envió directamente un id_cancion ya existente, reutilizarlo
+	var existingByPK string
+	err := tx.QueryRowContext(ctx, `SELECT id_cancion FROM cancion WHERE id_cancion = $1`, refID).Scan(&existingByPK)
+	if err == nil {
+		return existingByPK, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return "", fmt.Errorf("error consultando canción por id: %w", err)
+	}
+
+	newCancionID := uuid.NewString()
+	titulo := strings.TrimSpace(music.Title)
+	if titulo == "" {
+		titulo = refID
+	}
+	artista := "Artista Meloop"
+
+	var resolvedID string
+	upsertSongQuery := `
+		INSERT INTO cancion (id_cancion, spotify_id, titulo, artista_nombre)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (spotify_id) WHERE spotify_id IS NOT NULL
+		DO UPDATE SET spotify_id = EXCLUDED.spotify_id
+		RETURNING id_cancion
+	`
+	if err := tx.QueryRowContext(ctx, upsertSongQuery, newCancionID, refID, titulo, artista).Scan(&resolvedID); err != nil {
+		return "", fmt.Errorf("error registrando referencia musical: %w", err)
+	}
+
+	return resolvedID, nil
 }
 
 // CreatePost inserta la publicación (y su referencia en cancion si aplica) dentro de una transacción SQL (RF-16)
@@ -75,33 +129,11 @@ func (r *SQLPostRepository) CreatePost(ctx context.Context, params CreatePostPar
 
 	var resolvedCancionID *string
 	if params.Music != nil && strings.TrimSpace(params.Music.ReferenceID) != "" {
-		refID := strings.TrimSpace(params.Music.ReferenceID)
-		var existingID string
-
-		findSongQuery := `SELECT id_cancion FROM cancion WHERE id_cancion = $1 OR spotify_id = $1 LIMIT 1`
-		err := tx.QueryRowContext(ctx, findSongQuery, refID).Scan(&existingID)
+		songID, err := resolveOrInsertSong(ctx, tx, params.Music)
 		if err != nil {
-			if !errors.Is(err, sql.ErrNoRows) {
-				return nil, fmt.Errorf("error consultando canción: %w", err)
-			}
-
-			newCancionID := uuid.NewString()
-			titulo := strings.TrimSpace(params.Music.Title)
-			if titulo == "" {
-				titulo = refID
-			}
-			artista := "Artista Meloop"
-
-			insertSongQuery := `
-				INSERT INTO cancion (id_cancion, spotify_id, titulo, artista_nombre)
-				VALUES ($1, $2, $3, $4)
-				RETURNING id_cancion
-			`
-			if err := tx.QueryRowContext(ctx, insertSongQuery, newCancionID, refID, titulo, artista).Scan(&existingID); err != nil {
-				return nil, fmt.Errorf("error registrando referencia musical: %w", err)
-			}
+			return nil, err
 		}
-		resolvedCancionID = &existingID
+		resolvedCancionID = &songID
 	}
 
 	newPostID := uuid.NewString()
