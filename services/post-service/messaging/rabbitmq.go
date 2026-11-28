@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/meloop/services/common/logging"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
@@ -16,9 +17,10 @@ const (
 )
 
 type PostInteractionEvent struct {
-	Event  string `json:"event"`
-	UserID string `json:"userId"`
-	PostID string `json:"postId"`
+	Event   string `json:"event"`
+	EventID string `json:"event_id"`
+	UserID  string `json:"userId"`
+	PostID  string `json:"postId"`
 }
 
 type CommentLikedEvent struct {
@@ -85,9 +87,10 @@ func publishPostEvent(eventName, routingKey, userID, postID string) error {
 	}
 
 	event := PostInteractionEvent{
-		Event:  eventName,
-		UserID: userID,
-		PostID: postID,
+		Event:   eventName,
+		EventID: uuid.NewString(),
+		UserID:  userID,
+		PostID:  postID,
 	}
 	body, err := json.Marshal(event)
 	if err != nil {
@@ -100,8 +103,10 @@ func publishPostEvent(eventName, routingKey, userID, postID string) error {
 		false,
 		false,
 		amqp.Publishing{
-			ContentType: "application/json",
-			Body:        body,
+			ContentType:  "application/json",
+			DeliveryMode: amqp.Persistent,
+			MessageId:    event.EventID,
+			Body:         body,
 		},
 	)
 	if err != nil {

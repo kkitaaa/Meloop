@@ -31,6 +31,15 @@ func (e *UnroutedEventError) Error() string {
 }
 
 type FriendAcceptedEvent struct {
+	EventID    string              `json:"event_id"`
+	Event      string              `json:"event"`
+	RequestID  models.FriendshipID `json:"request_id"`
+	SenderID   string              `json:"sender_id"`
+	ReceiverID string              `json:"receiver_id"`
+}
+
+type FriendRequestedEvent struct {
+	EventID    string              `json:"event_id"`
 	Event      string              `json:"event"`
 	RequestID  models.FriendshipID `json:"request_id"`
 	SenderID   string              `json:"sender_id"`
@@ -92,14 +101,39 @@ func newPublisherWithDialer(url string, dialer amqpDialer) *Publisher {
 }
 
 func (p *Publisher) PublishFriendAccepted(_ context.Context, request *models.FriendRequest) error {
+	eventID, err := newUUID()
+	if err != nil {
+		return fmt.Errorf("generate friend.accepted event ID: %w", err)
+	}
 	body, err := json.Marshal(FriendAcceptedEvent{
-		Event: "friend.accepted", RequestID: request.ID,
+		EventID: eventID, Event: "friend.accepted", RequestID: request.ID,
 		SenderID: request.SenderID, ReceiverID: request.ReceiverID,
 	})
 	if err != nil {
 		return fmt.Errorf("error serializando evento: %w", err)
 	}
-	if err := p.publish("friend.accepted", "", body, false); err != nil {
+	if err := p.publish("friend.accepted", eventID, body, false); err != nil {
+		return fmt.Errorf("error publicando evento: %w", err)
+	}
+	return nil
+}
+
+func (p *Publisher) PublishFriendRequested(_ context.Context, request *models.FriendRequest) error {
+	if request == nil {
+		return fmt.Errorf("friend request is required")
+	}
+	eventID, err := newUUID()
+	if err != nil {
+		return fmt.Errorf("generate friend.requested event ID: %w", err)
+	}
+	body, err := json.Marshal(FriendRequestedEvent{
+		EventID: eventID, Event: "friend.requested", RequestID: request.ID,
+		SenderID: request.SenderID, ReceiverID: request.ReceiverID,
+	})
+	if err != nil {
+		return fmt.Errorf("error serializando evento: %w", err)
+	}
+	if err := p.publish("friend.requested", eventID, body, false); err != nil {
 		return fmt.Errorf("error publicando evento: %w", err)
 	}
 	return nil
@@ -144,9 +178,10 @@ func (p *Publisher) publish(routingKey, messageID string, body []byte, mandatory
 	}
 
 	if err := channel.Publish(exchange, routingKey, mandatory, false, amqp.Publishing{
-		ContentType: "application/json",
-		MessageId:   messageID,
-		Body:        body,
+		ContentType:  "application/json",
+		DeliveryMode: amqp.Persistent,
+		MessageId:    messageID,
+		Body:         body,
 	}); err != nil {
 		return err
 	}

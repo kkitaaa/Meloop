@@ -36,6 +36,7 @@ var (
 const MaxMutualFriendsLimit = 100
 
 type EventPublisher interface {
+	PublishFriendRequested(ctx context.Context, request *models.FriendRequest) error
 	PublishFriendAccepted(ctx context.Context, request *models.FriendRequest) error
 	PublishFriendRequestCancelled(ctx context.Context, request *models.FriendRequest) error
 }
@@ -92,7 +93,19 @@ func (s *friendshipService) SendRequest(ctx context.Context, senderID, receiverI
 		return nil, ErrSelfRequest
 	}
 	request, err := s.repo.CreatePending(ctx, senderID, receiverID)
-	return request, mapRepositoryError(err)
+	if err != nil {
+		return nil, mapRepositoryError(err)
+	}
+	if s.publisher != nil {
+		if err := s.publisher.PublishFriendRequested(ctx, request); err != nil {
+			if s.logger != nil {
+				s.logger.Warn("event_publish_failed", "event", "friend.requested", "error_type", fmt.Sprintf("%T", err), "delivery", "best_effort")
+			} else {
+				slog.Warn("event_publish_failed", "event", "friend.requested", "error_type", fmt.Sprintf("%T", err), "delivery", "best_effort")
+			}
+		}
+	}
+	return request, nil
 }
 
 func (s *friendshipService) ReceivedRequests(ctx context.Context, userID string) ([]models.FriendRequest, error) {

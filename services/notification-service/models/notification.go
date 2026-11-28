@@ -6,19 +6,24 @@ import (
 )
 
 type Event struct {
-	Name           string
-	ID             string
-	UserID         string
-	ActorID        string
-	RecipientID    string
-	ReceiverID     string
-	SenderID       string
-	TargetUserID   string
-	AffectedUserID string
-	ModeratorID    string
-	PostID         string
-	CommentID      string
-	MessageID      string
+	Name            string
+	ID              string
+	EventID         string
+	UserID          string
+	ActorID         string
+	RecipientID     string
+	ReceiverID      string
+	SenderID        string
+	TargetUserID    string
+	AffectedUserID  string
+	ModeratorID     string
+	PostID          string
+	CommentID       string
+	MessageID       string
+	CommentAuthorID string
+	TargetAuthorID  string
+	TargetType      string
+	TargetID        string
 }
 
 type Notification struct {

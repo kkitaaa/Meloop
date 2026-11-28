@@ -29,6 +29,9 @@ type recordingBlockPublisher struct {
 func (p *recordingBlockPublisher) PublishFriendAccepted(context.Context, *models.FriendRequest) error {
 	return nil
 }
+func (p *recordingBlockPublisher) PublishFriendRequested(context.Context, *models.FriendRequest) error {
+	return nil
+}
 
 func (p *recordingBlockPublisher) PublishFriendRequestCancelled(_ context.Context, request *models.FriendRequest) error {
 	p.requests = append(p.requests, *request)

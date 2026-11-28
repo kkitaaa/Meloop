@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/meloop/notification-service/models"
 )
 
@@ -49,7 +51,19 @@ func (e permanentError) Unwrap() error { return e.err }
 
 func IsPermanent(err error) bool {
 	var target permanentError
-	return errors.As(err, &target)
+	if errors.As(err, &target) || errors.Is(err, pgx.ErrNoRows) {
+		return true
+	}
+	var databaseError *pgconn.PgError
+	if errors.As(err, &databaseError) {
+		// Invalid references, null values, and check/unique violations cannot
+		// recover by endlessly requeueing the same event.
+		switch databaseError.Code {
+		case "23502", "23503", "23505", "23514":
+			return true
+		}
+	}
+	return false
 }
 
 func NewProcessor(repository Repository) *Processor {
@@ -66,6 +80,11 @@ func (p *Processor) Process(ctx context.Context, routingKey, messageID string, b
 	if typeName == "" {
 		typeName = normalizeEventName(event.Name)
 	}
+	// The post service uses comment.created for both top-level comments and replies.
+	// Its targetType distinguishes the two cases.
+	if typeName == eventCommentCreated && event.TargetType == "comment" {
+		typeName = eventCommentReplied
+	}
 	if !supportedEvents[typeName] {
 		return permanentError{fmt.Errorf("unsupported notification event %q", typeName)}
 	}
@@ -81,7 +100,7 @@ func (p *Processor) Process(ctx context.Context, routingKey, messageID string, b
 	if preference == "" {
 		return permanentError{fmt.Errorf("notification event %q has no preference mapping", typeName)}
 	}
-	eventID := firstNonEmpty(messageID, event.ID)
+	eventID := firstNonEmpty(messageID, event.EventID, event.ID)
 	if eventID == "" {
 		digest := sha256.Sum256(append([]byte(typeName+":"), body...))
 		eventID = hex.EncodeToString(digest[:])
@@ -135,13 +154,21 @@ func (p *Processor) resolveFields(ctx context.Context, typeName string, event mo
 	}
 	switch typeName {
 	case eventPostLiked, eventCommentCreated, eventCommentCommented:
-		fields.actor = firstNonEmpty(event.ActorID, event.UserID)
-		fields.targetID = event.PostID
-		return p.resolveOwner(ctx, fields, event.PostID, p.repository.ResolvePostOwner, "post")
+		fields.actor = firstNonEmpty(event.ActorID, event.CommentAuthorID, event.UserID)
+		fields.recipient = firstNonEmpty(fields.recipient, validTargetAuthor(event.TargetAuthorID))
+		objectID := firstNonEmpty(event.PostID, event.TargetID)
+		fields.targetID = objectID
+		if typeName == eventCommentCreated && event.TargetType == "comment" {
+			fields.targetID = firstNonEmpty(event.TargetID, event.CommentID)
+			return p.resolveOwner(ctx, fields, event.TargetID, p.repository.ResolveInteractionOwner, "comment")
+		}
+		return p.resolveOwner(ctx, fields, objectID, p.repository.ResolvePostOwner, "post")
 	case eventCommentReplied:
 		fields.actor = firstNonEmpty(event.ActorID, event.UserID)
-		fields.targetID = event.CommentID
-		return p.resolveOwner(ctx, fields, event.CommentID, p.repository.ResolveInteractionOwner, "comment")
+		fields.actor = firstNonEmpty(fields.actor, event.CommentAuthorID)
+		fields.recipient = firstNonEmpty(fields.recipient, validTargetAuthor(event.TargetAuthorID))
+		fields.targetID = firstNonEmpty(event.TargetID, event.CommentID)
+		return p.resolveOwner(ctx, fields, firstNonEmpty(event.TargetID, event.CommentID), p.repository.ResolveInteractionOwner, "comment")
 	case eventFriendRequested:
 		fields.actor = firstNonEmpty(event.SenderID, fields.actor)
 		fields.recipient = firstNonEmpty(fields.recipient, event.ReceiverID)
@@ -235,4 +262,12 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func validTargetAuthor(value string) string {
+	value = firstNonEmpty(value)
+	if strings.HasPrefix(strings.ToLower(value), "placeholder_") {
+		return ""
+	}
+	return value
 }
