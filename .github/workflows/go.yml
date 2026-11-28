@@ -70,24 +70,31 @@ jobs:
         shell: bash
         run: |
           failed=0
-          module_count=0
-          for module in services/*/; do
-            if [ -f "${module}go.mod" ]; then
-              module_count=$((module_count + 1))
-              echo "::group::${module%/}"
-              unformatted=$(gofmt -l "$module")
-              if [ -n "$unformatted" ]; then
-                echo "$unformatted"
-                failed=1
-              fi
-              if ! (cd "$module" && go test ./...); then
-                failed=1
-              fi
-              echo "::endgroup::"
-            fi
-          done
-          if [ "$module_count" -eq 0 ]; then
-            echo "::error::No Go modules found under services/"
-            failed=1
+          if [ ! -d services ]; then
+            echo "::error::services/ directory not found from $(pwd)"
+            exit 1
           fi
+
+          mapfile -t go_mod_files < <(find services -mindepth 2 -maxdepth 2 -type f -name go.mod -print | sort)
+          if [ "${#go_mod_files[@]}" -eq 0 ]; then
+            echo "::error::No go.mod files found under $(pwd)/services/"
+            find services -maxdepth 2 -type f -print | sort
+            exit 1
+          fi
+
+          for go_mod in "${go_mod_files[@]}"; do
+            module="${go_mod%/go.mod}"
+            echo "::group::$module"
+            unformatted=$(gofmt -l "$module")
+            if [ -n "$unformatted" ]; then
+              echo "$unformatted"
+              failed=1
+            fi
+            if ! (cd "$module" && go test ./...); then
+              failed=1
+            fi
+            echo "::endgroup::"
+          done
+
+          echo "Checked ${#go_mod_files[@]} Go modules."
           exit "$failed"

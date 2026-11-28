@@ -2251,8 +2251,12 @@ paths:
         - bearerAuth: []
       x-required-roles: user
       responses:
+        '200':
+          description: Respuesta de prueba procesada
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /test/unauthorized:
     get:
       tags: [Administración]
@@ -2299,6 +2303,10 @@ paths:
         - bearerAuth: []
       x-required-roles: user
       responses:
+        '200':
+          description: Respuesta de prueba procesada
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '500':
           $ref: '#/components/responses/InternalError'
   /test/panic:
