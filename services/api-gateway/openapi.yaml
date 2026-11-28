@@ -2252,7 +2252,7 @@ paths:
       x-required-roles: user
       responses:
         '200':
-          description: Respuesta de prueba procesada
+          description: Operación completada correctamente
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -2304,7 +2304,7 @@ paths:
       x-required-roles: user
       responses:
         '200':
-          description: Respuesta de prueba procesada
+          description: Operación completada correctamente
         '401':
           $ref: '#/components/responses/Unauthorized'
         '500':
@@ -2691,7 +2691,7 @@ components:
           format: int64
   responses:
     BadRequest:
-      description: Solicitud inválida
+      description: Error de validación
       content:
         application/json:
           schema:
