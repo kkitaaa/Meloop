@@ -55,6 +55,7 @@ type spotifyClient struct {
 type SpotifyCatalog struct {
 	client *spotifyClient
 	cache  SearchCache
+	songs  SongDetailStore
 }
 
 func NewSpotifyCatalog(cfg config.Config) (*SpotifyCatalog, error) {
@@ -122,12 +123,7 @@ func (s *SpotifyCatalog) Detail(
 	itemType string,
 	spotifyID string,
 ) (map[string]any, error) {
-	path := "/" + itemType + "/" + url.PathEscape(spotifyID)
-	params := make(url.Values)
-	if itemType != "artists" {
-		params.Set("market", s.client.market)
-	}
-	return s.client.get(ctx, path, params)
+	return s.getDetail(ctx, itemType, spotifyID)
 }
 
 func (c *spotifyClient) get(

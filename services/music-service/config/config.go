@@ -17,6 +17,7 @@ type Config struct {
 	SpotifyClientSecret string
 	SpotifyMarket       string
 	RedisURL            string
+	DatabaseURL         string
 }
 
 func Load() Config {
@@ -31,6 +32,7 @@ func Load() Config {
 		SpotifyClientSecret: strings.TrimSpace(os.Getenv("SPOTIFY_CLIENT_SECRET")),
 		SpotifyMarket:       strings.ToUpper(strings.TrimSpace(os.Getenv("SPOTIFY_MARKET"))),
 		RedisURL:            strings.TrimSpace(os.Getenv("REDIS_URL")),
+		DatabaseURL:         strings.TrimSpace(os.Getenv("DATABASE_URL")),
 	}
 }
 

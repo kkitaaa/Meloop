@@ -137,6 +137,9 @@ services:
       SPOTIFY_CLIENT_SECRET: ${SPOTIFY_CLIENT_SECRET:-}
       SPOTIFY_MARKET: ${SPOTIFY_MARKET:-}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      DATABASE_URL: ${DATABASE_URL:-postgres://postgres:postgres@host.docker.internal:5432/postgres?sslmode=disable}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       - redis
     networks:

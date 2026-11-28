@@ -117,6 +117,7 @@ void main() {
           ),
         ),
       );
+
       await tester.pumpAndSettle();
       expect(find.text('Canciones del álbum'), findsOneWidget);
       expect(find.text('Pista del álbum'), findsOneWidget);
@@ -141,6 +142,29 @@ void main() {
       unavailableClient.close();
     },
   );
+
+  testWidgets('displays normalized album details with no artwork', (
+    tester,
+  ) async {
+    final apiClient = ApiClient(
+      dio: Dio()
+        ..httpClientAdapter = _MusicDetailAdapter(type: 'normalizedAlbum'),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MusicDetailScreen(
+          type: 'album',
+          spotifyId: 'album-1',
+          apiClient: apiClient,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Álbum normalizado'), findsOneWidget);
+    expect(find.text('Pista normalizada'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    apiClient.close();
+  });
 
   testWidgets('shows Spotify unavailable error for a 503 response', (
     tester,
@@ -228,6 +252,26 @@ class _MusicDetailAdapter implements HttpClientAdapter {
 
     if (options.path.startsWith('/v1/music/')) {
       final data = switch (type) {
+        'normalizedAlbum' => {
+          'spotify_id': 'album-1',
+          'name': 'Álbum normalizado',
+          'artists': ['Artista demo'],
+          'album': null,
+          'image_url': null,
+          'external_url': null,
+          'genres': <String>[],
+          'tracks': [
+            {
+              'type': 'track',
+              'spotify_id': 'track-2',
+              'name': 'Pista normalizada',
+              'artists': ['Artista demo'],
+              'album': '',
+              'image_url': '',
+              'external_url': '',
+            },
+          ],
+        },
         'artist' => {
           'id': 'artist-1',
           'name': 'Artista demo',

@@ -45,6 +45,11 @@ spec:
                 configMapKeyRef:
                   name: meloop-config
                   key: REDIS_URL
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: meloop-secrets
+                  key: DATABASE_URL
           readinessProbe:
             httpGet:
               path: /health

@@ -104,6 +104,12 @@ paths:
   /v1/music/{type}/{id}:
     get:
       summary: Consultar detalle de una canción, artista o álbum
+      description: >
+        Devuelve en data un objeto normalizado con spotify_id, type, name,
+        artists, album, image_url, external_url, genres y tracks. Las imágenes
+        y URLs ausentes son null; genres puede estar vacío. Los álbumes incluyen
+        sus pistas. Los detalles se cachean hasta 24 horas cuando están
+        configurados Postgres (canciones) o Redis (artistas y álbumes).
       parameters:
         - name: type
           in: path
@@ -131,13 +137,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '404':
-          description: El elemento no existe en el catálogo
+          description: El elemento no existe en el catálogo (MUSIC_NOT_FOUND)
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-        '502':
-          description: Spotify no está disponible
+        '503':
+          description: Spotify no está disponible (MUSIC_UNAVAILABLE) o limitó las consultas (MUSIC_RATE_LIMITED, con Retry-After si Spotify lo proporciona)
           content:
             application/json:
               schema:

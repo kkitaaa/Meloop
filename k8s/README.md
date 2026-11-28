@@ -53,7 +53,12 @@ código ISO 3166-1 alpha-2 que el equipo elija (por ejemplo, `CL`).
 `music-service` usa `REDIS_URL` para cachear búsquedas cinco minutos; si el Redis
 del entorno requiere credenciales, inyecta la URL desde el gestor de Secrets en
 vez del valor sin contraseña de `meloop-config`. Sin Redis el servicio registra
-el fallo y consulta Spotify directamente.
+el fallo y consulta Spotify directamente. Redis también guarda detalles de
+artistas y álbumes por 24 horas. Para cachear canciones, aplica la migración
+`supabase/migrations/20261128150000_song_detail_cache.sql` e inyecta
+`DATABASE_URL` desde `meloop-secrets`; el servicio limpia periódicamente los
+detalles vencidos sin eliminar las filas de `CANCION`. Si falla la base,
+registra el error y consulta Spotify.
 
 ```powershell
 kubectl apply -f .\k8s\namespace.yaml

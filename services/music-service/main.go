@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"os"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/meloop/music-service/config"
@@ -39,6 +41,38 @@ func main() {
 		catalog.SetSearchCache(cache)
 	} else {
 		logger.Warn("search_cache_disabled", "reason", "REDIS_URL is not configured")
+	}
+	if cfg.DatabaseURL != "" {
+		store, err := services.NewPostgresSongDetailStore(context.Background(), cfg.DatabaseURL)
+		if err != nil {
+			logger.Error("song_detail_store_config_invalid")
+			os.Exit(1)
+		}
+		defer store.Close()
+		catalog.SetSongDetailStore(store)
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan struct{})
+		defer func() {
+			cancel()
+			<-done
+		}()
+		go func() {
+			defer close(done)
+			ticker := time.NewTicker(30 * time.Minute)
+			defer ticker.Stop()
+			for {
+				if err := store.ClearExpired(ctx); err != nil && ctx.Err() == nil {
+					logger.Warn("song_detail_cache_cleanup_failed", "error", err)
+				}
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+				}
+			}
+		}()
+	} else {
+		logger.Warn("song_detail_cache_disabled", "reason", "DATABASE_URL is not configured")
 	}
 
 	router := gin.New()

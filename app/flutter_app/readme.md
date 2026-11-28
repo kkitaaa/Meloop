@@ -82,9 +82,10 @@ clúster debe recibir las credenciales y el market requeridos.
   en el envelope Meloop. Los géneros tienen IDs propios de Meloop.
 - `GET /v1/music/tracks/{spotifyId}`,
   `GET /v1/music/artists/{spotifyId}` y
-  `GET /v1/music/albums/{spotifyId}` devuelven el objeto de catálogo Spotify,
-  directamente o dentro de `data`. Se usan `external_urls.spotify`, `images`,
-  `artists`, `album` y, para álbumes, `tracks.items`.
+  `GET /v1/music/albums/{spotifyId}` devuelven en `data` el detalle normalizado:
+  `spotify_id`, `name`, `artists`, `album`, `image_url`, `external_url`,
+  `genres` y `tracks`. Los campos de imagen y URL pueden ser nulos; Spotify
+  puede no entregar géneros. El cliente también acepta el formato nativo anterior.
 - La ruta `type=genre` es una extensión Meloop atendida por el catálogo curado
   en backend; Spotify Search no admite `genre` como tipo de resultado.
 - Client ID/Secret y token Spotify permanecen en el servidor/Kubernetes. No

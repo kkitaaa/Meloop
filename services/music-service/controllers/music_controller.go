@@ -61,7 +61,7 @@ func (ctrl *MusicController) Search(c *gin.Context) {
 
 	result, err := ctrl.catalog.Search(c.Request.Context(), query, itemType, offset, limit)
 	if err != nil {
-		writeCatalogError(c, err)
+		writeCatalogError(c, err, false)
 		return
 	}
 	httpresponse.SuccessGin(c, http.StatusOK, result)
@@ -92,7 +92,7 @@ func (ctrl *MusicController) detail(c *gin.Context, itemType string) {
 
 	result, err := ctrl.catalog.Detail(c.Request.Context(), itemType, spotifyID)
 	if err != nil {
-		writeCatalogError(c, err)
+		writeCatalogError(c, err, true)
 		return
 	}
 	httpresponse.SuccessGin(c, http.StatusOK, result)
@@ -106,12 +106,16 @@ func queryInt(c *gin.Context, key string, fallback int) (int, error) {
 	return strconv.Atoi(raw)
 }
 
-func writeCatalogError(c *gin.Context, err error) {
+func writeCatalogError(c *gin.Context, err error, detail bool) {
 	var spotifyErr *services.SpotifyAPIError
 	if errors.As(err, &spotifyErr) {
 		switch spotifyErr.StatusCode {
 		case http.StatusNotFound:
-			httpresponse.NotFoundGin(c, "No se encontró el elemento musical")
+			if detail {
+				httpresponse.ErrorGin(c, http.StatusNotFound, "MUSIC_NOT_FOUND", "No se encontró el elemento musical")
+			} else {
+				httpresponse.NotFoundGin(c, "No se encontró el elemento musical")
+			}
 			return
 		case http.StatusTooManyRequests:
 			if spotifyErr.RetryAfter != "" {
@@ -125,6 +129,11 @@ func writeCatalogError(c *gin.Context, err error) {
 			)
 			return
 		}
+	}
+
+	if detail {
+		httpresponse.ErrorGin(c, http.StatusServiceUnavailable, "MUSIC_UNAVAILABLE", "No se pudo consultar el catálogo musical")
+		return
 	}
 
 	if errors.Is(err, context.DeadlineExceeded) {

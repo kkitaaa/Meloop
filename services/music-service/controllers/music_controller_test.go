@@ -136,3 +136,30 @@ func TestSearchValidatesUnicodeLengthAndRequestedLimits(t *testing.T) {
 		}
 	}
 }
+
+func TestDetailReturnsContractErrors(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cases := []struct {
+		err    error
+		status int
+		code   string
+	}{
+		{&services.SpotifyAPIError{StatusCode: http.StatusNotFound}, http.StatusNotFound, "MUSIC_NOT_FOUND"},
+		{&services.SpotifyAPIError{StatusCode: http.StatusBadGateway}, http.StatusServiceUnavailable, "MUSIC_UNAVAILABLE"},
+		{&services.SpotifyAPIError{StatusCode: http.StatusTooManyRequests, RetryAfter: "7"}, http.StatusServiceUnavailable, "MUSIC_RATE_LIMITED"},
+		{context.DeadlineExceeded, http.StatusServiceUnavailable, "MUSIC_UNAVAILABLE"},
+	}
+	for _, tc := range cases {
+		router := gin.New()
+		routes.SetupRoutes(router, controllers.NewMusicController(fakeCatalog{err: tc.err}))
+		response := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodGet, "/v1/music/tracks/4iV5W9uYEdYUVa79Axb7Rh", nil)
+		router.ServeHTTP(response, request)
+		if response.Code != tc.status || !strings.Contains(response.Body.String(), tc.code) {
+			t.Errorf("error %v: got %d %s", tc.err, response.Code, response.Body.String())
+		}
+		if tc.code == "MUSIC_RATE_LIMITED" && response.Header().Get("Retry-After") != "7" {
+			t.Errorf("missing Retry-After: %v", response.Header())
+		}
+	}
+}

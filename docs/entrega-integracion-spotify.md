@@ -20,6 +20,17 @@ validado contra credenciales reales de Spotify ni contra el clúster remoto.
   que el backend combina páginas cuando se solicitan más.
 - Flutter consulta detalles por `GET /v1/music/tracks/{id}`,
   `/v1/music/artists/{id}` y `/v1/music/albums/{id}`.
+- El detalle valida IDs base62 de 22 caracteres y devuelve datos normalizados;
+  el artista puede venir sin géneros y el álbum incluye sus pistas paginadas.
+  Los detalles de canciones completos se cachean 24 horas en `CANCION`; los de
+  artistas y álbumes, en Redis. Los fallos de caché se registran y se consulta
+  Spotify. La limpieza periódica borra datos temporales vencidos, no filas ni
+  referencias de publicaciones.
+- Si la canción no existe, se crea una fila con su ID Spotify; no se rellenan
+  ni sobrescriben `titulo` y `artista_nombre`. Backend debe acordar cómo integrar
+  estos metadatos con publicaciones y recomendaciones. La paginación de álbumes
+  tiene un límite de seguridad de 1000 pistas; si lo supera, devuelve error en
+  vez de entregar una lista incompleta.
 - `music-service` obtiene tokens con Spotify Client Credentials, los reutiliza
   hasta su vencimiento y consulta el catálogo. La búsqueda de géneros usa el
   catálogo curado de Meloop y no llama a Spotify.
@@ -82,6 +93,9 @@ Las respuestas exitosas usan el envelope Meloop:
 
 - Aplicar, mediante el flujo de migraciones aprobado,  
   `supabase/migrations/20261128140100_music_preference_metadata.sql`.
+- Aplicar también `supabase/migrations/20261128150000_song_detail_cache.sql`
+  antes de desplegar el nuevo `music-service`. Confirmar que `DATABASE_URL`
+  permite leer y actualizar `CANCION` en el esquema compartido.
 - Confirmar en la base compartida que `PREFERENCIA_MUSICAL` tenga las columnas
   `nombre` y `artwork_url`, además de `spotify_id` y `fecha_creacion`.
 - Verificar que `DATABASE_URL` apunta a la base persistente compartida y que
@@ -98,12 +112,14 @@ Las respuestas exitosas usan el envelope Meloop:
   valor únicamente en el gestor de secretos.
 - Configurar `SPOTIFY_MARKET` como código ISO 3166-1 alpha-2 válido (por
   ejemplo, `CL`). El servicio lo exige al iniciar.
-- Asegurar que `meloop-secrets` contiene `DATABASE_URL`.
+- Asegurar que `meloop-secrets` contiene `DATABASE_URL` y se inyecta también
+  en `music-service`; sin conexión o migración no habrá caché de canciones.
 - Asegurar que `meloop-config` define `USER_SERVICE_URL`,
   `MUSIC_SERVICE_URL`, `AUTH_SERVICE_URL` y `MEDIA_SERVICE_URL` con los nombres
   DNS/puertos correctos del namespace.
 - Configurar `REDIS_URL` para `music-service` con credenciales desde el gestor
-  de secretos si Redis exige autenticación. Sin Redis no habrá caché de búsquedas.
+  de secretos si Redis exige autenticación. Sin Redis no habrá caché de búsquedas
+  ni de detalles de artistas y álbumes.
 
 ### 3. Publicar y desplegar
 
@@ -126,6 +142,10 @@ Usar una sesión de prueba y mantener el token fuera de logs, capturas y tickets
 1. Consultar el catálogo:
    `GET /v1/music/search?q=radiohead&type=track&limit=5`.
    Debe devolver resultados y metadatos utilizables por Flutter.
+   Consultar dos veces el detalle de una canción, artista y álbum y confirmar
+   mediante métricas o logs de pruebas que la segunda solicitud evita Spotify.
+   Comprobar la caducidad y limpieza de datos temporales, las pistas del álbum,
+   IDs inválidos y respuestas 404, 429 y 503 con servicios reales.
 2. Consultar `GET /v1/music/preferences` con `Authorization: Bearer <sesión>`.
    Sin preferencias, debe responder con listas vacías y límites de 30.
 3. Guardar una canción con `POST /v1/music/preferences`:
