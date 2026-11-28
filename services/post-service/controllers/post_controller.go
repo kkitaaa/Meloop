@@ -1,12 +1,14 @@
 package controllers
 
 import (
+	"errors"
 	"log"
 	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/meloop/post-service/messaging"
+	"github.com/meloop/post-service/repositories"
 	"github.com/meloop/post-service/services"
 )
 
@@ -136,8 +138,11 @@ func (ctrl *PostController) GetPostByID(c *gin.Context) {
 
 	post, err := ctrl.postService.GetPost(c.Request.Context(), postID, requesterID)
 	if err != nil {
-		println("ERROR REAL DE BD (GetPostByID):", err.Error())
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		if errors.Is(err, repositories.ErrPostNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "no se pudo cargar la publicación"})
 		return
 	}
 
@@ -188,6 +193,10 @@ func (ctrl *PostController) LikePost(c *gin.Context) {
 
 	err := ctrl.postService.AddLike(c.Request.Context(), postID, userID)
 	if err != nil {
+		if errors.Is(err, services.ErrBlocked) {
+			writeBlockedError(c)
+			return
+		}
 		if err.Error() == "el usuario ya dio me gusta a esta publicación" {
 			c.JSON(http.StatusConflict, gin.H{"error": err.Error()}) // 409 Conflict si ya existe
 			return

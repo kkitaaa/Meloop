@@ -40,12 +40,32 @@ func ValidateMusicReferences(refs []models.MusicReference) error {
 	return nil
 }
 
-type PostService struct {
-	repo *repositories.SQLPostRepository // <- Cambiado a SQLPostRepository
+type PostRepository interface {
+	CreatePost(context.Context, string, string, *string) (*repositories.Post, error)
+	UpdatePost(context.Context, string, string, string) error
+	DeletePost(context.Context, string, string) error
+	GetPostByIDExcluding(context.Context, string, string, []string) (*repositories.Post, error)
+	GetPostsByAuthorExcluding(context.Context, string, string, int, int, []string) ([]repositories.Post, error)
+	SearchPostsExcluding(context.Context, string, string, int, int, []string) ([]repositories.Post, error)
+	AddLike(context.Context, string, string) error
+	GetPostAuthorID(context.Context, string) (string, error)
+	SavePost(context.Context, string, string) error
+	UnsavePost(context.Context, string, string) error
+	GetSavedPosts(context.Context, string, []string, int, int) ([]repositories.Post, error)
+	RemoveLike(context.Context, string, string) error
 }
 
-func NewPostService(repo *repositories.SQLPostRepository) *PostService {
-	return &PostService{repo: repo}
+type PostService struct {
+	repo         PostRepository
+	blockedUsers BlockedUsersProvider
+}
+
+func NewPostService(repo PostRepository, blockedUsers ...BlockedUsersProvider) *PostService {
+	service := &PostService{repo: repo}
+	if len(blockedUsers) > 0 {
+		service.blockedUsers = blockedUsers[0]
+	}
+	return service
 }
 
 // CreatePost valida y envía la nueva publicación al repositorio
@@ -77,7 +97,11 @@ func (s *PostService) DeletePost(ctx context.Context, postID string, authorID st
 }
 
 func (s *PostService) GetPost(ctx context.Context, postID string, requesterID string) (*repositories.Post, error) {
-	return s.repo.GetPostByID(ctx, postID, requesterID)
+	blocked, err := s.blockedWith(ctx, requesterID)
+	if err != nil {
+		return nil, err
+	}
+	return s.repo.GetPostByIDExcluding(ctx, postID, requesterID, blocked)
 }
 
 func (s *PostService) GetAuthorPosts(ctx context.Context, authorID string, requesterID string, limit int, offset int) ([]repositories.Post, error) {
@@ -87,7 +111,11 @@ func (s *PostService) GetAuthorPosts(ctx context.Context, authorID string, reque
 	if offset < 0 {
 		offset = 0
 	}
-	return s.repo.GetPostsByAuthor(ctx, authorID, requesterID, limit, offset)
+	blocked, err := s.blockedWith(ctx, requesterID)
+	if err != nil {
+		return nil, err
+	}
+	return s.repo.GetPostsByAuthorExcluding(ctx, authorID, requesterID, limit, offset, blocked)
 }
 
 func (s *PostService) SearchPosts(ctx context.Context, query string, requesterID string, limit int, offset int) ([]repositories.Post, error) {
@@ -97,12 +125,96 @@ func (s *PostService) SearchPosts(ctx context.Context, query string, requesterID
 	if offset < 0 {
 		offset = 0
 	}
-	return s.repo.SearchPosts(ctx, query, requesterID, limit, offset)
+	blocked, err := s.blockedWith(ctx, requesterID)
+	if err != nil {
+		return nil, err
+	}
+	return s.repo.SearchPostsExcluding(ctx, query, requesterID, limit, offset, blocked)
 }
 
 // RF-20: Agregar Me gusta
 func (s *PostService) AddLike(ctx context.Context, postID string, userID string) error {
+	if err := s.EnsureCanInteract(ctx, userID, postID); err != nil {
+		return err
+	}
 	return s.repo.AddLike(ctx, postID, userID)
+}
+
+var ErrBlocked = errors.New("BLOCKED")
+
+func (s *PostService) EnsureCanInteract(ctx context.Context, userID, postID string) error {
+	authorID, err := s.repo.GetPostAuthorID(ctx, postID)
+	if err != nil {
+		return err
+	}
+	return s.EnsureCanInteractWithUser(ctx, userID, authorID)
+}
+
+func (s *PostService) EnsureCanInteractWithUser(ctx context.Context, userID, targetUserID string) error {
+	blocked, err := s.blockedWithFresh(ctx, userID)
+	if err != nil {
+		return err
+	}
+	for _, blockedID := range blocked {
+		if blockedID == targetUserID {
+			return ErrBlocked
+		}
+	}
+	return nil
+}
+
+func (s *PostService) SavePost(ctx context.Context, userID, postID string) error {
+	if err := s.EnsureCanInteract(ctx, userID, postID); err != nil {
+		return err
+	}
+	return s.repo.SavePost(ctx, userID, postID)
+}
+
+func (s *PostService) UnsavePost(ctx context.Context, userID, postID string) error {
+	return s.repo.UnsavePost(ctx, userID, postID)
+}
+
+func (s *PostService) GetSavedPosts(ctx context.Context, userID string, limit, offset int) ([]repositories.Post, bool, error) {
+	if limit <= 0 || limit > 50 {
+		limit = 20
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	blocked, err := s.blockedWith(ctx, userID)
+	if err != nil {
+		return nil, false, err
+	}
+	posts, err := s.repo.GetSavedPosts(ctx, userID, blocked, limit+1, offset)
+	if err != nil {
+		return nil, false, err
+	}
+	hasMore := len(posts) > limit
+	if hasMore {
+		posts = posts[:limit]
+	}
+	return posts, hasMore, nil
+}
+
+func (s *PostService) SharePost(ctx context.Context, userID, postID string) error {
+	return s.EnsureCanInteract(ctx, userID, postID)
+}
+
+func (s *PostService) blockedWith(ctx context.Context, userID string) ([]string, error) {
+	if s.blockedUsers == nil {
+		return nil, errors.New("blocked users provider is not configured")
+	}
+	return s.blockedUsers.BlockedWith(ctx, userID)
+}
+
+func (s *PostService) blockedWithFresh(ctx context.Context, userID string) ([]string, error) {
+	if s.blockedUsers == nil {
+		return nil, errors.New("blocked users provider is not configured")
+	}
+	if provider, ok := s.blockedUsers.(FreshBlockedUsersProvider); ok {
+		return provider.BlockedWithFresh(ctx, userID)
+	}
+	return s.blockedUsers.BlockedWith(ctx, userID)
 }
 
 // RF-20: Quitar Me gusta

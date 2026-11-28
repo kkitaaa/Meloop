@@ -6,11 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 var (
 	ErrPostNotFoundOrUnauthorized = errors.New("publicación no encontrada o no tienes permisos de autor")
 	ErrAlreadyLiked               = errors.New("el usuario ya dio me gusta a esta publicación")
+	ErrPostNotFound               = errors.New("publicación no encontrada")
 )
 
 // Post representa una publicación basada estrictamente en el MER
@@ -86,6 +89,10 @@ func (r *SQLPostRepository) DeletePost(ctx context.Context, postID string, autho
 
 // GetPostByID obtiene un post por su ID
 func (r *SQLPostRepository) GetPostByID(ctx context.Context, postID string, requesterID string) (*Post, error) {
+	return r.GetPostByIDExcluding(ctx, postID, requesterID, nil)
+}
+
+func (r *SQLPostRepository) GetPostByIDExcluding(ctx context.Context, postID, requesterID string, excludedAuthorIDs []string) (*Post, error) {
 	query := `
 		SELECT p.id_publicacion, p.id_usuario, p.texto, p.id_cancion, p.url_multimedia, p.fecha_creacion,
 			COALESCE(l.likes_count, 0),
@@ -103,8 +110,9 @@ func (r *SQLPostRepository) GetPostByID(ctx context.Context, postID string, requ
 			GROUP BY id_publicacion
 		) l ON p.id_publicacion = l.id_publicacion
 		WHERE p.id_publicacion = $1
+			AND p.id_usuario::text <> ALL($3::text[])
 	`
-	row := r.db.QueryRowContext(ctx, query, postID, requesterID)
+	row := r.db.QueryRowContext(ctx, query, postID, requesterID, postgresTextArray(excludedAuthorIDs))
 
 	var post Post
 	err := row.Scan(
@@ -119,7 +127,7 @@ func (r *SQLPostRepository) GetPostByID(ctx context.Context, postID string, requ
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, errors.New("publicación no encontrada")
+			return nil, ErrPostNotFound
 		}
 		return nil, fmt.Errorf("error al obtener post: %w", err)
 	}
@@ -129,6 +137,10 @@ func (r *SQLPostRepository) GetPostByID(ctx context.Context, postID string, requ
 
 // GetPostsByAuthor obtiene los posts de un perfil con paginación
 func (r *SQLPostRepository) GetPostsByAuthor(ctx context.Context, authorID string, requesterID string, limit int, offset int) ([]Post, error) {
+	return r.GetPostsByAuthorExcluding(ctx, authorID, requesterID, limit, offset, nil)
+}
+
+func (r *SQLPostRepository) GetPostsByAuthorExcluding(ctx context.Context, authorID, requesterID string, limit, offset int, excludedAuthorIDs []string) ([]Post, error) {
 	query := `
 		SELECT p.id_publicacion, p.id_usuario, p.texto, p.id_cancion, p.url_multimedia, p.fecha_creacion,
 			COALESCE(l.likes_count, 0),
@@ -146,10 +158,11 @@ func (r *SQLPostRepository) GetPostsByAuthor(ctx context.Context, authorID strin
 			GROUP BY id_publicacion
 		) l ON p.id_publicacion = l.id_publicacion
 		WHERE p.id_usuario = $1
+			AND p.id_usuario::text <> ALL($5::text[])
 		ORDER BY p.fecha_creacion DESC
 		LIMIT $3 OFFSET $4
 	`
-	rows, err := r.db.QueryContext(ctx, query, authorID, requesterID, limit, offset)
+	rows, err := r.db.QueryContext(ctx, query, authorID, requesterID, limit, offset, postgresTextArray(excludedAuthorIDs))
 	if err != nil {
 		return nil, fmt.Errorf("error al consultar posts por autor: %w", err)
 	}
@@ -181,6 +194,10 @@ func (r *SQLPostRepository) GetPostsByAuthor(ctx context.Context, authorID strin
 
 // SearchPosts busca posts por texto o canción
 func (r *SQLPostRepository) SearchPosts(ctx context.Context, searchTerm string, requesterID string, limit int, offset int) ([]Post, error) {
+	return r.SearchPostsExcluding(ctx, searchTerm, requesterID, limit, offset, nil)
+}
+
+func (r *SQLPostRepository) SearchPostsExcluding(ctx context.Context, searchTerm, requesterID string, limit, offset int, excludedAuthorIDs []string) ([]Post, error) {
 	searchPattern := "%" + searchTerm + "%"
 
 	query := `
@@ -200,10 +217,11 @@ func (r *SQLPostRepository) SearchPosts(ctx context.Context, searchTerm string, 
 			GROUP BY id_publicacion
 		) l ON p.id_publicacion = l.id_publicacion
 		WHERE (p.texto ILIKE $1 OR p.id_cancion ILIKE $1)
+			AND p.id_usuario::text <> ALL($5::text[])
 		ORDER BY p.fecha_creacion DESC
 		LIMIT $3 OFFSET $4
 	`
-	rows, err := r.db.QueryContext(ctx, query, searchPattern, requesterID, limit, offset)
+	rows, err := r.db.QueryContext(ctx, query, searchPattern, requesterID, limit, offset, postgresTextArray(excludedAuthorIDs))
 	if err != nil {
 		return nil, fmt.Errorf("error al buscar posts: %w", err)
 	}
@@ -233,10 +251,115 @@ func (r *SQLPostRepository) SearchPosts(ctx context.Context, searchTerm string, 
 	return posts, nil
 }
 
+func (r *SQLPostRepository) ListUserIDs(ctx context.Context) ([]string, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT id_usuario FROM usuario`)
+	if err != nil {
+		return nil, fmt.Errorf("list user IDs: %w", err)
+	}
+	defer rows.Close()
+	userIDs := []string{}
+	for rows.Next() {
+		var userID string
+		if err := rows.Scan(&userID); err != nil {
+			return nil, fmt.Errorf("scan user ID: %w", err)
+		}
+		userIDs = append(userIDs, userID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate user IDs: %w", err)
+	}
+	return userIDs, nil
+}
+
+func (r *SQLPostRepository) GetPostAuthorID(ctx context.Context, postID string) (string, error) {
+	var authorID string
+	err := r.db.QueryRowContext(ctx, `SELECT id_usuario FROM publicacion WHERE id_publicacion = $1`, postID).Scan(&authorID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", sql.ErrNoRows
+	}
+	if err != nil {
+		return "", fmt.Errorf("get post author: %w", err)
+	}
+	return authorID, nil
+}
+
+func (r *SQLPostRepository) SavePost(ctx context.Context, userID, postID string) error {
+	_, err := r.db.ExecContext(ctx, `
+		WITH save_request AS (
+			SELECT $1::varchar AS interaction_id, $2::varchar AS user_id, $3::varchar AS post_id
+		)
+		INSERT INTO interaccion (id_interaccion, id_usuario, id_publicacion, tipo, fecha_creacion)
+		SELECT save_request.interaction_id, save_request.user_id, save_request.post_id, 'save', NOW()
+		FROM save_request
+		WHERE NOT EXISTS (
+			SELECT 1 FROM interaccion
+			WHERE id_usuario = save_request.user_id
+				AND id_publicacion = save_request.post_id
+				AND LOWER(tipo) = 'save'
+		)
+	`, "save-"+uuid.NewString(), userID, postID)
+	if err != nil {
+		return fmt.Errorf("save post: %w", err)
+	}
+	return nil
+}
+
+func (r *SQLPostRepository) UnsavePost(ctx context.Context, userID, postID string) error {
+	_, err := r.db.ExecContext(ctx, `
+		DELETE FROM interaccion
+		WHERE id_usuario = $1 AND id_publicacion = $2 AND LOWER(tipo) = 'save'
+	`, userID, postID)
+	if err != nil {
+		return fmt.Errorf("unsave post: %w", err)
+	}
+	return nil
+}
+
+func (r *SQLPostRepository) GetSavedPosts(ctx context.Context, userID string, excludedAuthorIDs []string, limit, offset int) ([]Post, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT p.id_publicacion, p.id_usuario, p.texto, p.id_cancion, p.url_multimedia, p.fecha_creacion,
+			COALESCE(l.likes_count, 0),
+			EXISTS (
+				SELECT 1 FROM interaccion liked
+				WHERE liked.id_publicacion = p.id_publicacion
+					AND liked.id_usuario = $1
+					AND LOWER(liked.tipo) = 'like'
+			)
+		FROM interaccion saved
+		JOIN publicacion p ON p.id_publicacion = saved.id_publicacion
+		LEFT JOIN (
+			SELECT id_publicacion, COUNT(*) AS likes_count
+			FROM interaccion
+			WHERE LOWER(tipo) = 'like'
+			GROUP BY id_publicacion
+		) l ON l.id_publicacion = p.id_publicacion
+		WHERE saved.id_usuario = $1
+			AND LOWER(saved.tipo) = 'save'
+			AND p.id_usuario::text <> ALL($2::text[])
+		ORDER BY saved.fecha_creacion DESC
+		LIMIT $3 OFFSET $4
+	`, userID, postgresTextArray(excludedAuthorIDs), limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("get saved posts: %w", err)
+	}
+	defer rows.Close()
+	posts := []Post{}
+	for rows.Next() {
+		var post Post
+		if err := rows.Scan(&post.ID, &post.AuthorID, &post.Content, &post.MusicID, &post.UrlMultimedia, &post.CreatedAt, &post.LikesCount, &post.IsLiked); err != nil {
+			return nil, fmt.Errorf("scan saved post: %w", err)
+		}
+		posts = append(posts, post)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate saved posts: %w", err)
+	}
+	return posts, nil
+}
+
 // CreatePost inserta una nueva publicación en la base de datos
 func (r *SQLPostRepository) CreatePost(ctx context.Context, authorID string, content string, urlMultimedia *string) (*Post, error) {
-	// Generamos un ID simple basado en el timestamp actual (puedes cambiarlo a UUID si tu BD lo usa)
-	newID := fmt.Sprintf("post-%d", time.Now().UnixMilli())
+	newID := uuid.NewString()
 
 	query := `
 		INSERT INTO publicacion (id_publicacion, id_usuario, texto, url_multimedia, fecha_creacion)

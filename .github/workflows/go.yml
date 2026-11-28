@@ -7,6 +7,51 @@ on:
     branches: [main, develop]
 
 jobs:
+  post-service-postgres:
+    name: Post-service PostgreSQL integration tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: post_service_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d post_service_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.27'
+          cache: true
+          cache-dependency-path: |
+            services/**/go.mod
+            services/**/go.sum
+      - name: Apply Supabase migrations
+        env:
+          PGPASSWORD: postgres
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+          for migration in supabase/migrations/*.sql; do
+            psql "postgres://postgres:postgres@localhost:5432/post_service_test?sslmode=disable" \
+              -v ON_ERROR_STOP=1 -f "$migration"
+          done
+      - name: Run post-service PostgreSQL integration tests
+        working-directory: services/post-service
+        env:
+          TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/post_service_test?sslmode=disable
+          REQUIRE_TEST_DATABASE_URL: "1"
+        run: go test ./... -count=1
+
   go:
     name: Go tests (all modules)
     runs-on: ubuntu-latest
@@ -24,25 +69,33 @@ jobs:
       - name: Check formatting and run tests for every module
         shell: bash
         run: |
+          cd "${GITHUB_WORKSPACE:-$PWD}"
           failed=0
-          module_count=0
-          for module in services/*/; do
-            if [ -f "${module}go.mod" ]; then
-              module_count=$((module_count + 1))
-              echo "::group::${module%/}"
-              unformatted=$(gofmt -l "$module")
-              if [ -n "$unformatted" ]; then
-                echo "$unformatted"
-                failed=1
-              fi
-              if ! (cd "$module" && go test ./...); then
-                failed=1
-              fi
-              echo "::endgroup::"
-            fi
-          done
-          if [ "$module_count" -eq 0 ]; then
-            echo "::error::No Go modules found under services/"
-            failed=1
+          if [ ! -d services ]; then
+            echo "::error::services/ directory not found from $(pwd)"
+            exit 1
           fi
+
+          mapfile -t go_mod_files < <(find services -mindepth 2 -maxdepth 2 -type f -name go.mod -print | sort)
+          if [ "${#go_mod_files[@]}" -eq 0 ]; then
+            echo "::error::No go.mod files found under $(pwd)/services/"
+            find services -maxdepth 2 -type f -print | sort
+            exit 1
+          fi
+
+          for go_mod in "${go_mod_files[@]}"; do
+            module="${go_mod%/go.mod}"
+            echo "::group::$module"
+            unformatted=$(find "$module" -type f -name '*.go' -print0 | xargs -0 -r gofmt -l)
+            if [ -n "$unformatted" ]; then
+              echo "$unformatted"
+              failed=1
+            fi
+            if ! (cd "$module" && go test ./...); then
+              failed=1
+            fi
+            echo "::endgroup::"
+          done
+
+          echo "Checked ${#go_mod_files[@]} Go modules."
           exit "$failed"

@@ -1,6 +1,7 @@
 package repositories
 
 import (
+	"errors"
 	"time"
 
 	"github.com/meloop/post-service/models"
@@ -10,7 +11,10 @@ import (
 type CommentRepository interface {
 	Create(comment models.Comment) (models.Comment, error)
 	GetThreadedComments(postID string, cursor time.Time, limit int, excludedUserIDs []string) ([]models.Comment, error)
+	GetCommentAuthorID(commentID string) (string, error)
 }
+
+var ErrCommentNotFound = errors.New("comment not found")
 
 type PostgresCommentRepository struct {
 	db *gorm.DB
@@ -40,16 +44,12 @@ func (r *PostgresCommentRepository) GetThreadedComments(postID string, cursor ti
 	}
 
 	// Exclusión de usuarios (bloqueados o inactivos) (RF-64, RN-17, RN-05)
-	if len(excludedUserIDs) > 0 {
-		query = query.Where("id_usuario NOT IN ?", excludedUserIDs)
-	}
+	query = query.Where("id_usuario::text <> ALL(?::text[])", postgresTextArray(excludedUserIDs))
 
 	// Ejecutar consulta principal y hacer Preload de las respuestas (también filtrando respuestas de usuarios excluidos)
 	preloadQuery := func(db *gorm.DB) *gorm.DB {
-		if len(excludedUserIDs) > 0 {
-			return db.Where("id_usuario NOT IN ?", excludedUserIDs).Order("fecha_creacion ASC")
-		}
-		return db.Order("fecha_creacion ASC")
+		return db.Where("id_usuario::text <> ALL(?::text[])", postgresTextArray(excludedUserIDs)).
+			Order("fecha_creacion ASC")
 	}
 
 	err := query.
@@ -59,4 +59,16 @@ func (r *PostgresCommentRepository) GetThreadedComments(postID string, cursor ti
 		Find(&comments).Error
 
 	return comments, err
+}
+
+func (r *PostgresCommentRepository) GetCommentAuthorID(commentID string) (string, error) {
+	var comment models.Comment
+	err := r.db.Select("id_usuario").Where("id_comentario = ?", commentID).First(&comment).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return "", ErrCommentNotFound
+	}
+	if err != nil {
+		return "", err
+	}
+	return comment.AuthorID, nil
 }
