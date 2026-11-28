@@ -135,12 +135,9 @@ La hoja Compartir carga amigos mediante
 `POST /v1/posts/{id}/share` y `recipient_id`. Los errores `NOT_FRIENDS` y
 `BLOCKED` se presentan como "No puedes compartir con esta persona".
 
-**Dependencia del backend:** el Gateway enruta `/v1/social`, pero este
-repositorio todavía no implementa la lectura de amigos para compartir, las rutas
-de guardados ni `POST /v1/posts/{id}/share`. La UI y el cliente usan el contrato
-descrito arriba; guardar, cargar y compartir requieren completar esos endpoints
-en los servicios correspondientes y enrutar `/v1/me/saved` y `/v1/posts` en el
-Gateway.
+`post-service` implementa Guardados con paginación y Compartir con validación de
+bloqueo; el Gateway enruta `/v1/me/saved` hacia ese servicio. La carga de amigos
+para compartir sigue dependiendo de la implementación de `/v1/social/friends`.
 
 ### Conexión local
 

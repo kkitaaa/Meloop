@@ -115,7 +115,7 @@ Para permitir que otros microservicios consuman esta lógica sin necesidad de im
 La lógica aplica estrictamente las siguientes reglas:
 1. **Unilateral Saliente ($U \to C$):** Si el usuario de referencia $U$ bloqueó al candidato $C$, $C$ es excluido.
 2. **Unilateral Entrante ($C \to U$):** Si el candidato $C$ bloqueó al usuario de referencia $U$, $C$ es excluido.
-3. **Bloqueo Mutuo ($U \leftrightarrow C$):** Si ambos se bloquearon mutuamente, $C$ es excluido (sin duplicados en la respuesta).
+3. **Caché del consumidor:** si el consumidor cachea resultados de bloqueo, la ventana de frescura debe ser explícita y limitada. En post-service la caché Redis dura 60 segundos; si Redis no está disponible, se consulta directamente a social-service y se continúa sin caché. Los cambios de bloqueo/desbloqueo pueden tardar hasta 60 segundos en reflejarse mientras no exista invalidación por evento.*Bloqueo Mutuo ($U \leftrightarrow C$):** Si ambos se bloquearon mutuamente, $C$ es excluido (sin duplicados en la respuesta).
 4. **Sin Bloqueo:** Si no existe registro en `BLOQUEO` entre $U$ y $C$, $C$ se conserva en su posición relativa.
 5. **Ausencia de falsos positivos:** Si $C$ o $U$ tienen bloqueos con terceros no involucrados en la consulta, estos no afectan el resultado.
 6. **Inmutabilidad:** El slice `candidateIDs` original nunca es modificado ni rebanado in-place; se asigna y retorna una nueva estructura limpia.

@@ -1,79 +1,182 @@
 package controllers
 
 import (
-	"github.com/gin-gonic/gin"
+	"context"
+	"database/sql"
+	"errors"
 	"net/http"
+	"strconv"
+	"strings"
+
+	"github.com/gin-gonic/gin"
+	"github.com/meloop/post-service/repositories"
+	"github.com/meloop/post-service/services"
+	"github.com/meloop/services/common/httpresponse"
 )
 
 type InteractionController struct {
-	// Aquí iría tu InteractionService cuando conectes la base de datos
+	service *services.PostService
 }
 
-func NewInteractionController() *InteractionController {
-	return &InteractionController{}
-}
-
-// SavePost permite al usuario guardar una publicación (RF-23)[cite: 8]
-func (ctrl *InteractionController) SavePost(c *gin.Context) {
-	postID := c.Param("id")
-	// Simulamos obtener el ID del usuario desde el token JWT
-	userID := c.DefaultQuery("user_id", "current_user_123")
-
-	// TODO: Llamar a service.SavePost(userID, postID)
-	c.JSON(http.StatusOK, gin.H{
-		"message": "Publicación guardada exitosamente",
-		"post_id": postID,
-		"user_id": userID,
-	})
-}
-
-// UnsavePost quitan una publicación de la lista de guardados (RF-23)[cite: 8]
-func (ctrl *InteractionController) UnsavePost(c *gin.Context) {
-	postID := c.Param("id")
-	userID := c.DefaultQuery("user_id", "current_user_123")
-
-	// TODO: Llamar a service.UnsavePost(userID, postID)
-	c.JSON(http.StatusOK, gin.H{
-		"message": "Publicación eliminada de guardados",
-		"post_id": postID,
-		"user_id": userID, // ¡Listo! Variable utilizada.
-	})
-}
-
-// GetSavedPosts devuelve la lista de publicaciones guardadas del usuario (RF-23)[cite: 8]
-func (ctrl *InteractionController) GetSavedPosts(c *gin.Context) {
-	userID := c.DefaultQuery("user_id", "current_user_123")
-
-	// TODO: Llamar a service.GetSavedPosts(userID)
-	// Retornamos una lista vacía simulando la consulta a Supabase
-	c.JSON(http.StatusOK, gin.H{
-		"user_id": userID,
-		"data":    []interface{}{},
-	})
-}
-
-// SharePost implementa la lógica base para compartir publicaciones (RF-24)[cite: 8]
-func (ctrl *InteractionController) SharePost(c *gin.Context) {
-	postID := c.Param("id")
-
-	type ShareRequest struct {
-		TargetUserID string `json:"target_user_id"` // Para mensajes privados[cite: 8]
-		Platform     string `json:"platform"`       // ej. "whatsapp", "internal"
+func NewInteractionController(service ...*services.PostService) *InteractionController {
+	controller := &InteractionController{}
+	if len(service) > 0 {
+		controller.service = service[0]
 	}
+	return controller
+}
 
-	var req ShareRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Cuerpo de petición inválido"})
+func (ctrl *InteractionController) SavePost(c *gin.Context) {
+	userID := c.GetString("userID")
+	if !ctrl.ready(c, userID) {
 		return
 	}
+	postID := c.Param("id")
+	if postID == "" {
+		var req struct {
+			PostID string `json:"post_id" binding:"required"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "post_id es requerido"})
+			return
+		}
+		postID = req.PostID
+	}
+	if err := ctrl.service.SavePost(c.Request.Context(), userID, postID); err != nil {
+		writeInteractionError(c, err)
+		return
+	}
+	httpresponse.SuccessGin(c, http.StatusOK, gin.H{"message": "Publicación guardada exitosamente", "post_id": postID})
+}
 
-	// Se genera la referencia compartida o enlace al contenido original[cite: 8]
-	shareLink := "https://meloop.app/p/" + postID
+func (ctrl *InteractionController) UnsavePost(c *gin.Context) {
+	userID := c.GetString("userID")
+	if !ctrl.ready(c, userID) {
+		return
+	}
+	if err := ctrl.service.UnsavePost(c.Request.Context(), userID, c.Param("id")); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "no se pudo quitar la publicación de guardados"})
+		return
+	}
+	httpresponse.SuccessGin(c, http.StatusOK, gin.H{"message": "Publicación eliminada de guardados", "post_id": c.Param("id")})
+}
 
-	c.JSON(http.StatusOK, gin.H{
-		"message":    "Referencia compartida generada",
-		"post_id":    postID,
-		"share_link": shareLink,
-		"shared_via": req.Platform,
+func (ctrl *InteractionController) GetSavedPosts(c *gin.Context) {
+	userID := c.GetString("userID")
+	if !ctrl.ready(c, userID) {
+		return
+	}
+	limit, offset, ok := parseSavedPostsPagination(c)
+	if !ok {
+		return
+	}
+	posts, hasMore, err := ctrl.service.GetSavedPosts(c.Request.Context(), userID, limit, offset)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "no se pudieron cargar las publicaciones guardadas"})
+		return
+	}
+	httpresponse.SuccessGin(c, http.StatusOK, gin.H{"items": posts, "hasMore": hasMore})
+}
+
+const (
+	defaultSavedPostsLimit = 20
+	maxSavedPostsLimit     = 50
+	maxSavedPostsOffset    = 10000
+)
+
+func parseSavedPostsPagination(c *gin.Context) (int, int, bool) {
+	limit, offset := defaultSavedPostsLimit, 0
+	if rawLimit, exists := c.GetQuery("limit"); exists {
+		parsed, err := strconv.Atoi(rawLimit)
+		if err != nil || parsed < 1 || parsed > maxSavedPostsLimit {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "limit debe ser un entero entre 1 y 50"})
+			return 0, 0, false
+		}
+		limit = parsed
+	}
+	if rawOffset, exists := c.GetQuery("offset"); exists {
+		parsed, err := strconv.Atoi(rawOffset)
+		if err != nil || parsed < 0 || parsed > maxSavedPostsOffset {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "offset debe ser un entero entre 0 y 10000"})
+			return 0, 0, false
+		}
+		offset = parsed
+	}
+	return limit, offset, true
+}
+
+func (ctrl *InteractionController) SharePost(c *gin.Context) {
+	userID := c.GetString("userID")
+	if !ctrl.ready(c, userID) {
+		return
+	}
+	var req struct {
+		FriendID string `json:"friend_id" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "friend_id es obligatorio"})
+		return
+	}
+	req.FriendID = strings.TrimSpace(req.FriendID)
+	if req.FriendID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "friend_id es obligatorio"})
+		return
+	}
+	messageID, err := ctrl.service.SharePost(
+		c.Request.Context(),
+		userID,
+		c.Param("id"),
+		req.FriendID,
+		c.GetHeader("Authorization"),
+	)
+	if err != nil {
+		writeInteractionError(c, err)
+		return
+	}
+	httpresponse.SuccessGin(c, http.StatusOK, gin.H{
+		"message":    "Publicación compartida por chat",
+		"post_id":    c.Param("id"),
+		"friend_id":  req.FriendID,
+		"message_id": messageID,
 	})
+}
+
+func (ctrl *InteractionController) ready(c *gin.Context, userID string) bool {
+	if userID == "" {
+		httpresponse.UnauthorizedGin(c, "usuario no autenticado")
+		return false
+	}
+	if ctrl.service == nil {
+		httpresponse.InternalErrorGin(c)
+		return false
+	}
+	return true
+}
+
+func writeInteractionError(c *gin.Context, err error) {
+	if errors.Is(err, services.ErrBlocked) {
+		writeBlockedError(c)
+		return
+	}
+	if errors.Is(err, services.ErrNotFriend) {
+		httpresponse.ForbiddenGin(c, "Solo puedes compartir publicaciones con un amigo sin bloqueo")
+		return
+	}
+	if errors.Is(err, services.ErrSharingUnavailable) {
+		httpresponse.ErrorGin(c, http.StatusServiceUnavailable, "SHARING_UNAVAILABLE", "No se pudo completar la compartición")
+		return
+	}
+	if errors.Is(err, repositories.ErrPostNotFound) || errors.Is(err, sql.ErrNoRows) {
+		httpresponse.NotFoundGin(c, "Publicación no encontrada")
+		return
+	}
+	if errors.Is(err, context.Canceled) {
+		httpresponse.ErrorGin(c, http.StatusRequestTimeout, "REQUEST_CANCELLED", "solicitud cancelada")
+		return
+	}
+	httpresponse.InternalErrorGin(c)
+}
+
+func writeBlockedError(c *gin.Context) {
+	httpresponse.ErrorGin(c, http.StatusForbidden, "BLOCKED", "No se permiten interacciones entre usuarios bloqueados")
 }

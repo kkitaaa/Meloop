@@ -53,6 +53,7 @@ func SetupRoutes(router *gin.Engine) {
 		"/api/v1/posts",
 		"/v1/posts",
 		"/v1/feed",
+		"/v1/me",
 		"/posts",
 	} {
 		router.Any(prefix,

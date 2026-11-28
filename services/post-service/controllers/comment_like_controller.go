@@ -17,20 +17,15 @@ func NewCommentLikeController(service *services.CommentLikeService) *CommentLike
 	return &CommentLikeController{service: service}
 }
 
-type commentLikeRequest struct {
-	UserID string `json:"user_id" binding:"required"`
-}
-
 func (c *CommentLikeController) AddLike(ctx *gin.Context) {
 	commentID := ctx.Param("id")
-
-	var req commentLikeRequest
-	if err := ctx.ShouldBindJSON(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "user_id es obligatorio"})
+	userID := ctx.GetString("userID")
+	if userID == "" {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "usuario no autenticado"})
 		return
 	}
 
-	like, count, err := c.service.AddLike(commentID, req.UserID)
+	like, count, err := c.service.AddLike(commentID, userID)
 	if err != nil {
 		if errors.Is(err, repositories.ErrLikeAlreadyExists) {
 			ctx.JSON(http.StatusConflict, gin.H{"error": "el usuario ya dio like a este comentario"})
@@ -52,10 +47,10 @@ func (c *CommentLikeController) AddLike(ctx *gin.Context) {
 
 func (c *CommentLikeController) RemoveLike(ctx *gin.Context) {
 	commentID := ctx.Param("id")
-	userID := ctx.Param("userId")
+	userID := ctx.GetString("userID")
 
 	if userID == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "user_id es requerido"})
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "usuario no autenticado"})
 		return
 	}
 

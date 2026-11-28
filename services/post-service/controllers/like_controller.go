@@ -1,41 +1,60 @@
 package controllers
 
 import (
+	"context"
+	"database/sql"
 	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/meloop/post-service/repositories"
 	"github.com/meloop/post-service/services"
+	"github.com/meloop/services/common/httpresponse"
 	"github.com/meloop/services/common/logging"
 )
 
 type LikeController struct {
-	service *services.LikeService
-}
-
-func NewLikeController(service *services.LikeService) *LikeController {
-	return &LikeController{
-		service: service,
+	service    *services.LikeService
+	postAccess interface {
+		EnsureCanInteract(context.Context, string, string) error
 	}
 }
 
-type likeRequest struct {
-	UserID string `json:"user_id" binding:"required"`
+func NewLikeController(service *services.LikeService, postAccess ...interface {
+	EnsureCanInteract(context.Context, string, string) error
+}) *LikeController {
+	controller := &LikeController{service: service}
+	if len(postAccess) > 0 {
+		controller.postAccess = postAccess[0]
+	}
+	return controller
 }
 
 func (c *LikeController) AddLike(ctx *gin.Context) {
 	postID := ctx.Param("postId")
-
-	var request likeRequest
-	if err := ctx.ShouldBindJSON(&request); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{
-			"error": "user_id es obligatorio",
-		})
+	userID := ctx.GetString("userID")
+	if userID == "" {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "usuario no autenticado"})
+		return
+	}
+	if c.postAccess == nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "no se pudo validar la interacción"})
+		return
+	}
+	if err := c.postAccess.EnsureCanInteract(ctx.Request.Context(), userID, postID); err != nil {
+		if errors.Is(err, services.ErrBlocked) {
+			writeBlockedError(ctx)
+			return
+		}
+		if errors.Is(err, repositories.ErrPostNotFound) || errors.Is(err, sql.ErrNoRows) {
+			httpresponse.NotFoundGin(ctx, "Publicación no encontrada")
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "no se pudo validar la interacción"})
 		return
 	}
 
-	like, count, err := c.service.AddLike(postID, request.UserID)
+	like, count, err := c.service.AddLike(postID, userID)
 	if err != nil {
 		if errors.Is(err, repositories.ErrLikeAlreadyExists) {
 			ctx.JSON(http.StatusConflict, gin.H{
@@ -48,7 +67,7 @@ func (c *LikeController) AddLike(ctx *gin.Context) {
 		logger.Error(
 			"like_creation_failed",
 			"post_id", postID,
-			"user_id", request.UserID,
+			"user_id", userID,
 			"error", err,
 		)
 
@@ -66,7 +85,11 @@ func (c *LikeController) AddLike(ctx *gin.Context) {
 
 func (c *LikeController) RemoveLike(ctx *gin.Context) {
 	postID := ctx.Param("postId")
-	userID := ctx.Param("userId")
+	userID := ctx.GetString("userID")
+	if userID == "" {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "usuario no autenticado"})
+		return
+	}
 
 	count, err := c.service.RemoveLike(postID, userID)
 	if err != nil {

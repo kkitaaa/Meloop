@@ -905,6 +905,37 @@ func (r *postgresFriendshipRepository) ValidateInteraction(ctx context.Context, 
 	return nil
 }
 
+func (r *postgresFriendshipRepository) ValidateFriendship(ctx context.Context, user1ID, user2ID string) error {
+	if r.pool == nil {
+		return errors.New("database connection pool is not initialized")
+	}
+
+	var blocked, friends bool
+	err := r.pool.QueryRow(ctx, `
+		SELECT
+			EXISTS (
+				SELECT 1 FROM bloqueo
+				WHERE (id_usuario_bloqueador::text = $1 AND id_usuario_bloqueado::text = $2)
+				   OR (id_usuario_bloqueador::text = $2 AND id_usuario_bloqueado::text = $1)
+			),
+			EXISTS (
+				SELECT 1 FROM amistad
+				WHERE ((id_usuario_1::text = $1 AND id_usuario_2::text = $2)
+				    OR (id_usuario_1::text = $2 AND id_usuario_2::text = $1))
+				  AND estado = 'ACEPTADA'
+			)`, user1ID, user2ID).Scan(&blocked, &friends)
+	if err != nil {
+		return err
+	}
+	if blocked {
+		return ErrBlocked
+	}
+	if !friends {
+		return ErrNotFriends
+	}
+	return nil
+}
+
 func (r *postgresFriendshipRepository) GetFriendProfile(ctx context.Context, userID, friendID string) (*models.FriendProfile, error) {
 	if r.pool == nil {
 		return nil, errors.New("database connection pool is not initialized")

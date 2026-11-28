@@ -6,7 +6,7 @@ La estrategia comienza con pruebas rápidas y aisladas, y deja preparada la ampl
 
 - **Unitarias:** validan lógica y controladores sin depender de infraestructura externa.
 - **API básicas:** usan `httptest` en Go y `TestClient` en FastAPI para comprobar estados HTTP y respuestas.
-- **Integración futura:** conectarán servicios reales con Redis, RabbitMQ, Docker Compose y bases de datos.
+- **Integración:** conectan servicios reales con Redis, RabbitMQ, Docker Compose y bases de datos cuando corresponda.
 - **End-to-end futura:** validará flujos completos desde el gateway o Flutter.
 
 ## Ejecutar localmente
@@ -18,6 +18,8 @@ Desde cada módulo:
 ```powershell
 go test ./...
 ```
+
+Las pruebas del post-service se ejecutan desde la raíz con `make test-post` (o `mingw32-make test-post` en Windows). Para correr también las pruebas de persistencia contra PostgreSQL, configura `TEST_DATABASE_URL` con una base de pruebas que ya tenga aplicadas las migraciones de Supabase; sin esa variable, Go ejecuta el resto de la suite y omite únicamente la integración PostgreSQL.
 
 Para revisar todos los módulos desde la raíz:
 
@@ -44,7 +46,7 @@ flutter analyze
 
 ## CI
 
-GitHub Actions ejecuta las pruebas de cada plataforma en workflows separados. Los módulos Go se validan en un único job: para cada módulo bajo `services/`, CI revisa el formato con `gofmt` y ejecuta `go test ./...`; los fallos de un módulo no impiden revisar los demás. Las pruebas unitarias no requieren Docker. Las pruebas de integración que necesiten Redis, RabbitMQ u otros servicios deberán levantar explícitamente los servicios requeridos con Docker Compose.
+GitHub Actions ejecuta las pruebas de cada plataforma en workflows separados. Los módulos Go se validan en un job general. Además, un job dedicado levanta PostgreSQL, aplica las migraciones de Supabase y ejecuta las pruebas de integración del post-service con `REQUIRE_TEST_DATABASE_URL=1`, de modo que CI falla si no llega a probar la persistencia real.
 
 ## Reglas para nuevas pruebas
 
