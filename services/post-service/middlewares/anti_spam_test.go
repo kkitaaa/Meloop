@@ -85,6 +85,9 @@ func setupAntiSpamTestRouter(limiter RateLimiter, nowFn func() time.Time) *gin.E
 	r.DELETE("/posts/:postId/likes", okHandler)
 	r.POST("/api/v1/posts/:id/comments", okHandler)
 	r.POST("/api/v1/posts/:id/comments/:commentId/replies", okHandler)
+	r.POST("/api/v1/posts/:id/save", okHandler)
+	r.DELETE("/api/v1/posts/:id/save", okHandler)
+	r.POST("/api/v1/posts/:id/share", okHandler)
 	return r
 }
 
@@ -102,6 +105,9 @@ func TestAntiSpam_RejectsUnauthenticatedInteractionsWith401(t *testing.T) {
 		{http.MethodDelete, "/posts/post-1/likes"},
 		{http.MethodPost, "/api/v1/posts/post-1/comments"},
 		{http.MethodPost, "/api/v1/posts/post-1/comments/c-1/replies"},
+		{http.MethodPost, "/api/v1/posts/post-1/save"},
+		{http.MethodDelete, "/api/v1/posts/post-1/save"},
+		{http.MethodPost, "/api/v1/posts/post-1/share"},
 	}
 
 	for _, ep := range endpoints {
@@ -122,17 +128,23 @@ func TestAntiSpam_Allows50Blocks51AndEnforces15MinBlock(t *testing.T) {
 	r := setupAntiSpamTestRouter(limiter, func() time.Time { return currentTime })
 
 	for i := 1; i <= 50; i++ {
-		req, _ := http.NewRequest(http.MethodPost, "/api/v1/posts/post-1/comments", nil)
+		path := "/api/v1/posts/post-1/comments"
+		if i%3 == 0 {
+			path = "/api/v1/posts/post-1/share"
+		} else if i%2 == 0 {
+			path = "/api/v1/posts/post-1/save"
+		}
+		req, _ := http.NewRequest(http.MethodPost, path, nil)
 		req.Header.Set("Authorization", "Bearer tok-spam")
 		w := httptest.NewRecorder()
 		r.ServeHTTP(w, req)
 		if w.Code != http.StatusOK {
-			t.Fatalf("interacción %d falló: esperado 200, obtenido %d", i, w.Code)
+			t.Fatalf("interacción %d (%s) falló: esperado 200, obtenido %d", i, path, w.Code)
 		}
 		currentTime = currentTime.Add(10 * time.Second)
 	}
 
-	req51, _ := http.NewRequest(http.MethodPost, "/v1/posts/post-1/like", nil)
+	req51, _ := http.NewRequest(http.MethodPost, "/api/v1/posts/post-1/share", nil)
 	req51.Header.Set("Authorization", "Bearer tok-spam")
 	w51 := httptest.NewRecorder()
 	r.ServeHTTP(w51, req51)
@@ -219,9 +231,11 @@ func TestAntiSpam_SlidingWindowBehavior(t *testing.T) {
 	}
 }
 
-func TestAntiSpam_IgnoresNonInteractionsAndHandlesRedisErrors(t *testing.T) {
-	limiter := newMemorySlidingLimiter()
-	r := setupAntiSpamTestRouter(limiter, time.Now)
+func TestAntiSpam_IgnoresNonInteractionsAndDegradesGracefullyOnRedisError(t *testing.T) {
+	primary := newMemorySlidingLimiter()
+	primary.failErr = errors.New("connection refused")
+	resilient := NewResilientSlidingWindowLimiter(primary, NewMemorySlidingWindowLimiter())
+	r := setupAntiSpamTestRouter(resilient, time.Now)
 
 	nonInteractions := []struct {
 		method string
@@ -245,12 +259,22 @@ func TestAntiSpam_IgnoresNonInteractionsAndHandlesRedisErrors(t *testing.T) {
 		}
 	}
 
-	limiter.failErr = errors.New("connection refused")
-	reqFail, _ := http.NewRequest(http.MethodPost, "/v1/posts/123/like", nil)
-	reqFail.Header.Set("Authorization", "Bearer tok-crud")
-	wFail := httptest.NewRecorder()
-	r.ServeHTTP(wFail, reqFail)
-	if wFail.Code != http.StatusInternalServerError {
-		t.Fatalf("esperado 500 ante fallo de Redis, obtenido %d", wFail.Code)
+	// Con Redis caído, el fallback en memoria mantiene operativo el límite de 50 interacciones sin devolver 500
+	for i := 1; i <= MaxInteractions; i++ {
+		req, _ := http.NewRequest(http.MethodPost, "/v1/posts/123/like", nil)
+		req.Header.Set("Authorization", "Bearer tok-crud")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("interacción %d en modo fallback: esperado 200, obtenido %d", i, w.Code)
+		}
+	}
+
+	reqBlocked, _ := http.NewRequest(http.MethodPost, "/v1/posts/123/like", nil)
+	reqBlocked.Header.Set("Authorization", "Bearer tok-crud")
+	wBlocked := httptest.NewRecorder()
+	r.ServeHTTP(wBlocked, reqBlocked)
+	if wBlocked.Code != http.StatusTooManyRequests {
+		t.Fatalf("esperado 429 en modo fallback al superar cuota, obtenido %d", wBlocked.Code)
 	}
 }

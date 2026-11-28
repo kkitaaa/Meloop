@@ -17,7 +17,7 @@ export const options = {
             maxDuration: '30s',
             exec: 'spammerBurst',
         },
-        // 2. Usuarios concurrentes independientes comprobando aislamiento de cuota y rechazo sin token
+        // 2. Usuarios concurrentes independientes comprobando aislamiento de cuota, rutas save/share y rechazo sin token
         concurrent_multi_user_isolation: {
             executor: 'per-vu-iterations',
             vus: 4,
@@ -110,11 +110,30 @@ export function spammerBurst(data) {
         Authorization: `Bearer ${data.spammerToken}`,
     };
 
-    // Alternar entre endpoints v1 y legacy unificado
-    const useLegacy = __ITER % 2 === 0;
-    const res = useLegacy
-        ? http.post(`${POST_BASE_URL}/posts/${data.postId}/likes`, JSON.stringify({ user_id: 'otro-usuario' }), { headers })
-        : http.post(`${POST_BASE_URL}/v1/posts/${data.postId}/like`, null, { headers });
+    // Rotar entre like v1, like legacy, save y share para validar que todas comparten la cuota de 50 interacciones
+    let res;
+    switch (__ITER % 4) {
+        case 0:
+            res = http.post(
+                `${POST_BASE_URL}/posts/${data.postId}/likes`,
+                JSON.stringify({ user_id: 'otro-usuario' }),
+                { headers }
+            );
+            break;
+        case 1:
+            res = http.post(`${POST_BASE_URL}/v1/posts/${data.postId}/like`, null, { headers });
+            break;
+        case 2:
+            res = http.post(`${POST_BASE_URL}/api/v1/posts/${data.postId}/save`, null, { headers });
+            break;
+        default:
+            res = http.post(
+                `${POST_BASE_URL}/api/v1/posts/${data.postId}/share`,
+                JSON.stringify({ platform: 'internal' }),
+                { headers }
+            );
+            break;
+    }
 
     if (res.status === 200 || res.status === 201 || res.status === 409) {
         spammerAllowed.add(1);
@@ -134,17 +153,27 @@ export function spammerBurst(data) {
 }
 
 export function isolatedUserTraffic(data) {
-    // 1. Verificar que suplantación con X-User-ID sin Bearer token es rechazada (401)
-    const spoofRes = http.post(
-        `${POST_BASE_URL}/v1/posts/${data.postId}/like`,
-        null,
-        { headers: { 'X-User-ID': 'attacker-spoof' } }
+    // 1. Verificar que suplantación con X-User-ID sin Bearer token es rechazada (401) en like, save y share
+    const spoofHeaders = { headers: { 'X-User-ID': 'attacker-spoof', 'Content-Type': 'application/json' } };
+    const spoofLike = http.post(`${POST_BASE_URL}/v1/posts/${data.postId}/like`, null, spoofHeaders);
+    const spoofSave = http.post(`${POST_BASE_URL}/api/v1/posts/${data.postId}/save`, null, spoofHeaders);
+    const spoofShare = http.post(
+        `${POST_BASE_URL}/api/v1/posts/${data.postId}/share`,
+        JSON.stringify({ platform: 'whatsapp' }),
+        spoofHeaders
     );
-    check(spoofRes, {
-        'Interacción sin sesión (solo X-User-ID) rechazada con 401': (r) => r.status === 401,
+
+    check(spoofLike, {
+        'Like sin sesión (solo X-User-ID) rechazado con 401': (r) => r.status === 401,
+    });
+    check(spoofSave, {
+        'Save sin sesión (solo X-User-ID) rechazado con 401': (r) => r.status === 401,
+    });
+    check(spoofShare, {
+        'Share sin sesión (solo X-User-ID) rechazado con 401': (r) => r.status === 401,
     });
 
-    // 2. Usuario limpio concurrente no se ve afectado por el bloqueo del spammer
+    // 2. Usuario limpio concurrente ejecuta comentario, save, share, unsave y consulta de guardados
     const token = data.cleanUserTokens[(__VU - 1) % data.cleanUserTokens.length];
     const cleanHeaders = {
         'Content-Type': 'application/json',
@@ -156,9 +185,41 @@ export function isolatedUserTraffic(data) {
         JSON.stringify({ content: `Comentario concurrente VU ${__VU} iter ${__ITER}` }),
         { headers: cleanHeaders }
     );
+    const saveRes = http.post(`${POST_BASE_URL}/api/v1/posts/${data.postId}/save`, null, { headers: cleanHeaders });
+    const shareRes = http.post(
+        `${POST_BASE_URL}/api/v1/posts/${data.postId}/share`,
+        JSON.stringify({ platform: 'internal' }),
+        { headers: cleanHeaders }
+    );
+    const unsaveRes = http.del(`${POST_BASE_URL}/api/v1/posts/${data.postId}/save`, null, { headers: cleanHeaders });
+    const savedListRes = http.get(
+        `${POST_BASE_URL}/api/v1/users/me/saved?user_id=attacker-spoof`,
+        { headers: cleanHeaders }
+    );
+
+    let savedBody = {};
+    try {
+        savedBody = JSON.parse(savedListRes.body);
+    } catch (_) {}
 
     check(commentRes, {
-        'Usuario autenticado distinto conserva su cuota bajo concurrencia (201)': (r) => r.status === 201,
+        'Usuario autenticado distinto conserva su cuota en comentarios (201)': (r) => r.status === 201,
+    });
+    check(saveRes, {
+        'Save autenticado responde 200': (r) => r.status === 200,
+    });
+    check(shareRes, {
+        'Share autenticado responde 200': (r) => r.status === 200,
+    });
+    check(unsaveRes, {
+        'Unsave autenticado responde 200': (r) => r.status === 200,
+    });
+    check(savedListRes, {
+        'GET /api/v1/users/me/saved usa identidad Bearer e ignora query user_id (200)': (r) =>
+            r.status === 200 &&
+            savedBody.user_id &&
+            savedBody.user_id !== 'attacker-spoof' &&
+            savedBody.user_id !== 'current_user_123',
     });
 }
 

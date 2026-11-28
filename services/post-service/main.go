@@ -134,7 +134,7 @@ func main() {
 	commentService := services.NewCommentService(commentRepo)
 	commentController := controllers.NewCommentController(commentService)
 
-	// 7. Inyectar dependencias de Publicaciones (Post)
+	// 7. Inyectar dependencias de Publicaciones (Post) e Interacciones (Guardar/Compartir)
 	sqlDB, err := db.DB()
 	if err != nil {
 		log.Fatalf("Error crítico al obtener la conexión SQL: %v", err)
@@ -143,25 +143,31 @@ func main() {
 	postRepo := repositories.NewPostRepository(sqlDB)
 	postService := services.NewPostService(postRepo)
 	postController := controllers.NewPostController(postService)
+	interactionController := controllers.NewInteractionController()
 
 	// 8. Inyectar dependencias del FEED PRINCIPAL
 	feedRepo := repositories.NewPostgresFeedRepository(db)
 	feedService := services.NewFeedService(feedRepo)
 	feedController := controllers.NewFeedController(feedService)
 
-	// 9. Inicializar y verificar Redis para el limitador anti-spam
+	// 9. Inicializar y verificar Redis para el limitador anti-spam (con degradación operativa en memoria)
 	rdb, redisAddr, err := newRedisClientFromEnv()
 	if err != nil {
-		log.Fatalf("Error crítico en configuración de Redis: %v", err)
+		if strings.EqualFold(os.Getenv("REDIS_REQUIRED"), "true") {
+			log.Fatalf("Error crítico en configuración de Redis: %v", err)
+		}
+		log.Printf("Advertencia: configuración de Redis inválida (%v); continuando con fallback anti-spam en memoria", err)
+		rdb = nil
 	}
 
-	pingCtx, cancelPing := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancelPing()
-	if err := rdb.Ping(pingCtx).Err(); err != nil {
-		if strings.EqualFold(os.Getenv("REDIS_REQUIRED"), "false") {
-			log.Printf("Advertencia: Redis (%s) no disponible y REDIS_REQUIRED=false: %v", redisAddr, err)
-		} else {
-			log.Fatalf("Error crítico: Redis (%s) inaccesible o credenciales inválidas (verifica REDIS_ADDR/REDIS_PASSWORD): %v", redisAddr, err)
+	if rdb != nil {
+		pingCtx, cancelPing := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancelPing()
+		if err := rdb.Ping(pingCtx).Err(); err != nil {
+			if strings.EqualFold(os.Getenv("REDIS_REQUIRED"), "true") {
+				log.Fatalf("Error crítico: Redis (%s) inaccesible o credenciales inválidas (verifica REDIS_ADDR/REDIS_PASSWORD): %v", redisAddr, err)
+			}
+			log.Printf("Advertencia: Redis (%s) no disponible; activando fallback anti-spam en memoria: %v", redisAddr, err)
 		}
 	}
 
@@ -174,11 +180,12 @@ func main() {
 	// Resolver la identidad del token Bearer antes del control de cuota anti-spam
 	router.Use(middlewares.OptionalAuthMiddleware(authValidator))
 
-	// Middleware Anti-Spam (Redis Lua Sliding Window)
+	// Middleware Anti-Spam (Redis Lua Sliding Window + fallback operativo en memoria)
 	router.Use(middlewares.AntiSpamMiddleware(rdb))
 
 	// Rutas de módulos
 	routes.SetupRoutes(router, likeController, commentController, postController, minioClient, authValidator)
+	routes.SetupInteractionRoutes(router, interactionController, authValidator)
 
 	// Ruta del Feed Principal (identidad opcional ya resuelta por el middleware global)
 	router.GET("/v1/feed", feedController.GetMainFeed)

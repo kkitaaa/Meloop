@@ -31,6 +31,7 @@ services:
       TEST_SERVICE_URL: http://test-service:8081
       USER_SERVICE_URL: http://user-service:8082
       AUTH_SERVICE_URL: http://auth-service:8083
+      POST_SERVICE_URL: http://post-service:8084
       MEDIA_SERVICE_URL: http://media-service:8085
       SOCIAL_SERVICE_URL: http://social-service:8086
       RECOMMENDATION_SERVICE_URL: http://recommendation-service:8087
@@ -44,6 +45,7 @@ services:
       - test-service
       - user-service
       - auth-service
+      - post-service
       - social-service
       - media-service
       - recommendation-service
@@ -113,6 +115,37 @@ services:
       - "host.docker.internal:host-gateway"
     depends_on:
       - redis
+    networks:
+      - meloop-network
+
+  post-service:
+    build:
+      context: .
+      dockerfile: services/post-service/Dockerfile
+    container_name: meloop-post-service
+    ports:
+      - "8084:8084"
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgres://postgres:postgres@host.docker.internal:5432/postgres?sslmode=disable}
+      AUTH_SERVICE_URL: http://auth-service:8083
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      REDIS_REQUIRED: ${REDIS_REQUIRED:-false}
+      RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/
+      MINIO_ENDPOINT: minio:9000
+      MINIO_MEDIA_USER: ${MINIO_MEDIA_USER}
+      MINIO_MEDIA_PASSWORD: ${MINIO_MEDIA_PASSWORD}
+      MINIO_MEDIA_BUCKET: ${MINIO_MEDIA_BUCKET:-meloop-media}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      redis:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
+      auth-service:
+        condition: service_started
+      minio:
+        condition: service_started
     networks:
       - meloop-network
 
