@@ -29,6 +29,7 @@ func SetupRoutes(router *gin.Engine, controller *controllers.FriendshipControlle
 		protected.DELETE("/blocks/:id", controller.UnblockUser)
 		protected.GET("/validate-interaction", controller.ValidateInteraction)
 		protected.POST("/validate-interaction", controller.ValidateInteraction)
+		protected.POST("/validate-friendship", controller.ValidateFriendship)
 		protected.POST("/blocks/exclude", controller.ExcludeBlocked)
 
 		// RF-14: Sugerencias de amistad

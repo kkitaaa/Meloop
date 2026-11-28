@@ -286,6 +286,26 @@ func (s *friendshipService) ValidateInteraction(ctx context.Context, user1ID, us
 	return mapRepositoryError(err)
 }
 
+type friendshipValidationRepository interface {
+	ValidateFriendship(context.Context, string, string) error
+}
+
+func (s *friendshipService) ValidateFriendship(ctx context.Context, user1ID, user2ID string) error {
+	user1ID = strings.TrimSpace(user1ID)
+	user2ID = strings.TrimSpace(user2ID)
+	if user1ID == "" || user2ID == "" {
+		return ErrInvalidUser
+	}
+	if user1ID == user2ID {
+		return ErrNotFriends
+	}
+	repository, ok := s.repo.(friendshipValidationRepository)
+	if !ok {
+		return errors.New("friendship repository does not support friendship validation")
+	}
+	return mapRepositoryError(repository.ValidateFriendship(ctx, user1ID, user2ID))
+}
+
 // ExcludeBlocked filtra candidateIDs retornando los candidatos sin relación de bloqueo
 // bidireccional con el usuario de referencia. No modifica el slice original y gestiona listas vacías.
 func (s *friendshipService) ExcludeBlocked(ctx context.Context, userID string, candidateIDs []string) ([]string, error) {

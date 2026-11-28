@@ -2,6 +2,7 @@
 
 - [Contrato REST OpenAPI del Gateway](./api/openapi.yaml)
 - [Estado de la API WebSocket de Chat](./chat-ws.md)
+- [Extensión del MER para publicaciones guardadas](./diagrams/Diagrama_MER_guardados.md)
 - [Guía del API Gateway y su inventario de prefijos](../services/api-gateway/README.md)
 - [Roles, permisos y procedimiento de verificación](./microservices.md#17-roles-y-autorización)
 

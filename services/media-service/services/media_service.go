@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -33,9 +34,10 @@ func (e *ValidationError) Error() string {
 	return e.Message
 }
 
-// MediaService define la interfaz de operaciones de negocio para multimedia de perfil (REI-03 / CU-03)
+// MediaService define la interfaz de operaciones de negocio para multimedia de perfiles y publicaciones.
 type MediaService interface {
 	CreatePresignedUpload(ctx context.Context, userID string, req *models.PresignedUploadRequest) (*models.PresignedUploadResponse, error)
+	CreatePresignedDownload(ctx context.Context, userID, objectKey string) (*models.PresignedDownloadResponse, error)
 	VerifyMedia(ctx context.Context, objectKey string) (*models.VerifyMediaResponse, error)
 }
 
@@ -48,7 +50,7 @@ func NewMediaService(storageRepo repositories.StorageRepository) MediaService {
 	return &mediaService{storageRepo: storageRepo}
 }
 
-// CreatePresignedUpload valida el archivo y genera la URL prefirmada de subida para foto de perfil o banner (REI-03 / CU-03)
+// CreatePresignedUpload valida el archivo y genera la URL prefirmada de subida para perfiles o publicaciones.
 func (s *mediaService) CreatePresignedUpload(ctx context.Context, userID string, req *models.PresignedUploadRequest) (*models.PresignedUploadResponse, error) {
 	ownerID := strings.TrimSpace(userID)
 	if ownerID == "" {
@@ -68,15 +70,17 @@ func (s *mediaService) CreatePresignedUpload(ctx context.Context, userID string,
 		return nil, &ValidationError{
 			Field:   "resource_type",
 			Issue:   "required",
-			Message: "El tipo de recurso es obligatorio ('profile_photo' o 'banner')",
+			Message: "El tipo de recurso es obligatorio ('profile_photo', 'banner' o 'post_attachment')",
 		}
 	}
 
-	if resourceType != models.ResourceTypeProfilePhoto && resourceType != models.ResourceTypeBanner {
+	if resourceType != models.ResourceTypeProfilePhoto &&
+		resourceType != models.ResourceTypeBanner &&
+		resourceType != models.ResourceTypePostAttachment {
 		return nil, &ValidationError{
 			Field:   "resource_type",
 			Issue:   "unsupported_type",
-			Message: fmt.Sprintf("Tipo de recurso no soportado para esta operación: '%s'. Solo se permite 'profile_photo' o 'banner'", resourceType),
+			Message: fmt.Sprintf("Tipo de recurso no soportado para esta operación: '%s'.", resourceType),
 		}
 	}
 
@@ -110,7 +114,7 @@ func (s *mediaService) CreatePresignedUpload(ctx context.Context, userID string,
 		return nil, &ValidationError{
 			Field:   "file_size",
 			Issue:   "size_exceeded",
-			Message: "El archivo supera el tamaño máximo permitido de 5 MB para imágenes de perfil/banner",
+			Message: "El archivo supera el tamaño máximo permitido de 5 MB",
 		}
 	}
 
@@ -124,6 +128,8 @@ func (s *mediaService) CreatePresignedUpload(ctx context.Context, userID string,
 		objectKey = fmt.Sprintf("profiles/%s/%s%s", ownerID, mediaID, ext)
 	case models.ResourceTypeBanner:
 		objectKey = fmt.Sprintf("banners/%s/%s%s", ownerID, mediaID, ext)
+	case models.ResourceTypePostAttachment:
+		objectKey = fmt.Sprintf("posts/%s/%s%s", ownerID, mediaID, ext)
 	}
 
 	// Generar URL prefirmada de subida (validez 15 minutos)
@@ -169,6 +175,52 @@ func (s *mediaService) VerifyMedia(ctx context.Context, objectKey string) (*mode
 		ObjectKey:   key,
 		ContentType: contentType,
 		SizeBytes:   size,
+	}, nil
+}
+
+// CreatePresignedDownload genera una URL GET temporal para un objeto multimedia existente.
+func (s *mediaService) CreatePresignedDownload(ctx context.Context, userID, objectKey string) (*models.PresignedDownloadResponse, error) {
+	if strings.TrimSpace(userID) == "" {
+		return nil, ErrUnauthorized
+	}
+
+	key := strings.TrimSpace(objectKey)
+	if key == "" {
+		return nil, &ValidationError{
+			Field:   "object_key",
+			Issue:   "required",
+			Message: "La clave del objeto es obligatoria para generar la URL de descarga",
+		}
+	}
+	if len(key) > 255 || strings.Contains(key, "\\") || path.Clean(key) != key ||
+		!(strings.HasPrefix(key, "profiles/") ||
+			strings.HasPrefix(key, "banners/") ||
+			strings.HasPrefix(key, "posts/")) {
+		return nil, &ValidationError{
+			Field:   "object_key",
+			Issue:   "invalid_path",
+			Message: "La clave no pertenece a una ruta multimedia permitida",
+		}
+	}
+
+	exists, _, _, err := s.storageRepo.ObjectExists(ctx, key)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrStorageUnreachable, err)
+	}
+	if !exists {
+		return nil, ErrObjectNotFound
+	}
+
+	const expiresIn = 900
+	downloadURL, err := s.storageRepo.GeneratePresignedDownloadURL(ctx, key, time.Duration(expiresIn)*time.Second)
+	if err != nil {
+		return nil, fmt.Errorf("error al generar URL de descarga: %w", err)
+	}
+
+	return &models.PresignedDownloadResponse{
+		DownloadURL: downloadURL,
+		ObjectKey:   key,
+		ExpiresIn:   expiresIn,
 	}, nil
 }
 

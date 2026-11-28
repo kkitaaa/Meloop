@@ -482,6 +482,13 @@ func (s *profileService) UpdateProfile(ctx context.Context, userID string, req *
 				Message: "La referencia de archivo contiene caracteres no permitidos",
 			}
 		}
+		if fotoKey != "" && !strings.HasPrefix(fotoKey, "profiles/"+userID+"/") {
+			return nil, &ValidationError{
+				Field:   "foto_perfil",
+				Issue:   "not_owned",
+				Message: "La foto de perfil debe pertenecer al usuario autenticado",
+			}
+		}
 
 		// Si cambió y no está vacía, verificar su existencia física en MinIO/S3 a través de media-service
 		if fotoKey != "" && fotoKey != profileToUpdate.FotoPerfil && s.mediaVerifier != nil {
@@ -515,6 +522,13 @@ func (s *profileService) UpdateProfile(ctx context.Context, userID string, req *
 				Field:   "banner",
 				Issue:   "invalid_path",
 				Message: "La referencia de archivo contiene caracteres no permitidos",
+			}
+		}
+		if bannerKey != "" && !strings.HasPrefix(bannerKey, "banners/"+userID+"/") {
+			return nil, &ValidationError{
+				Field:   "banner",
+				Issue:   "not_owned",
+				Message: "El banner debe pertenecer al usuario autenticado",
 			}
 		}
 

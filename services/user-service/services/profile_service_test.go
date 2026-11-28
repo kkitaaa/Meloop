@@ -353,6 +353,32 @@ func TestProfileService_ConsistenciaAnteFallos_CU03(t *testing.T) {
 	})
 }
 
+func TestProfileService_UpdateProfile_RejectsMediaOwnedByAnotherUser(t *testing.T) {
+	userRepo := &mockUserRepository{
+		users: map[string]*models.Usuario{
+			"usr-2": {IDUsuario: "usr-2", Username: "user2", Correo: "u2@test.com"},
+		},
+	}
+	profileRepo := &mockProfileRepository{}
+	mediaVerifier := &mockMediaVerifier{}
+	srv := services.NewProfileService(profileRepo, userRepo, mediaVerifier)
+
+	otherUsersPhoto := "profiles/usr-1/photo.png"
+	_, err := srv.UpdateProfile(context.Background(), "usr-2", &models.UpdateProfileRequest{
+		FotoPerfil: &otherUsersPhoto,
+	})
+	var validationErr *services.ValidationError
+	if !errors.As(err, &validationErr) || validationErr.Issue != "not_owned" {
+		t.Fatalf("se esperaba el rechazo not_owned, se obtuvo: %v", err)
+	}
+	if profileRepo.updatedRecord != nil {
+		t.Fatal("no se debía persistir una foto perteneciente a otro usuario")
+	}
+	if len(mediaVerifier.verifiedKeys) != 0 {
+		t.Fatalf("no se debe consultar MinIO para una clave ajena: %v", mediaVerifier.verifiedKeys)
+	}
+}
+
 // =========================================================================
 // Tests exhaustivos para Consulta de Perfiles (RF-06 / RN-09 / RF-55 / RNF-11)
 // =========================================================================

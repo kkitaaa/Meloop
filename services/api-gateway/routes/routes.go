@@ -44,8 +44,8 @@ func SetupRoutes(router *gin.Engine) {
 	router.Any("/v1/users/*any", controllers.ProxyToService("USER_SERVICE_URL", "http://localhost:8082", ""))
 	router.Any("/v1/social/*any", controllers.ProxyToService("SOCIAL_SERVICE_URL", "http://localhost:8086", ""))
 	router.Any("/v1/social", controllers.ProxyToService("SOCIAL_SERVICE_URL", "http://localhost:8086", "/v1/social"))
-	router.Any("/v1/media", controllers.ProxyToService("MEDIA_SERVICE_URL", "http://localhost:8085", ""))
-	router.Any("/v1/media/*any", controllers.ProxyToService("MEDIA_SERVICE_URL", "http://localhost:8085", ""))
+	router.Any("/v1/media", controllers.SessionAuth(), controllers.ProxyToService("MEDIA_SERVICE_URL", "http://localhost:8085", ""))
+	router.Any("/v1/media/*any", controllers.SessionAuth(), controllers.ProxyToService("MEDIA_SERVICE_URL", "http://localhost:8085", ""))
 
 	// Enrutar peticiones de Post Service
 	postServiceDefault := "http://post-service.student-mcrisosto.svc.cluster.local:8084"
@@ -53,6 +53,7 @@ func SetupRoutes(router *gin.Engine) {
 		"/api/v1/posts",
 		"/v1/posts",
 		"/v1/feed",
+		"/v1/me",
 		"/posts",
 	} {
 		router.Any(prefix,

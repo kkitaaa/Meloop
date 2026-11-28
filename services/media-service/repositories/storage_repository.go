@@ -15,15 +15,15 @@ import (
 // StorageRepository define las operaciones sobre el almacenamiento de objetos MinIO/S3
 type StorageRepository interface {
 	GeneratePresignedUploadURL(ctx context.Context, objectKey string, contentType string, expires time.Duration) (string, error)
+	GeneratePresignedDownloadURL(ctx context.Context, objectKey string, expires time.Duration) (string, error)
 	ObjectExists(ctx context.Context, objectKey string) (bool, int64, string, error)
 	DeleteObject(ctx context.Context, objectKey string) error
 }
 
 type minioStorageRepository struct {
-	client         *minio.Client
-	signingClient  *minio.Client
-	bucketName     string
-	publicEndpoint string
+	client        *minio.Client
+	signingClient *minio.Client
+	bucketName    string
 }
 
 // NewMinIOStorageRepository crea una nueva instancia de StorageRepository conectada a MinIO/S3
@@ -41,38 +41,37 @@ func NewMinIOStorageRepository(endpoint, accessKey, secretKey, bucketName string
 	if publicEndpoint != "" {
 		publicHost := publicEndpoint
 		publicSSL := useSSL
-		if u, err := url.Parse(publicEndpoint); err == nil && u.Host != "" {
-			publicHost = u.Host
-			if u.Scheme == "https" {
-				publicSSL = true
-			} else if u.Scheme == "http" {
-				publicSSL = false
-			}
+		u, err := url.Parse(publicEndpoint)
+		if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") ||
+			(u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" {
+			return nil, fmt.Errorf("MINIO_PUBLIC_ENDPOINT debe ser una URL HTTP(S) absoluta")
 		}
-		if sClient, err := minio.New(publicHost, &minio.Options{
+		publicHost = u.Host
+		publicSSL = u.Scheme == "https"
+		sClient, err := minio.New(publicHost, &minio.Options{
 			Creds:  credentials.NewStaticV4(accessKey, secretKey, ""),
 			Secure: publicSSL,
 			Region: region,
-		}); err == nil {
-			signingClient = sClient
+		})
+		if err != nil {
+			return nil, fmt.Errorf("error al inicializar cliente de firma pública MinIO: %w", err)
 		}
+		signingClient = sClient
 	}
 
 	return &minioStorageRepository{
-		client:         minioClient,
-		signingClient:  signingClient,
-		bucketName:     bucketName,
-		publicEndpoint: publicEndpoint,
+		client:        minioClient,
+		signingClient: signingClient,
+		bucketName:    bucketName,
 	}, nil
 }
 
 // NewMinIOStorageRepositoryWithClient permite inyectar un cliente MinIO existente (útil para pruebas)
-func NewMinIOStorageRepositoryWithClient(client *minio.Client, bucketName, publicEndpoint string) StorageRepository {
+func NewMinIOStorageRepositoryWithClient(client *minio.Client, bucketName, _ string) StorageRepository {
 	return &minioStorageRepository{
-		client:         client,
-		signingClient:  client,
-		bucketName:     bucketName,
-		publicEndpoint: publicEndpoint,
+		client:        client,
+		signingClient: client,
+		bucketName:    bucketName,
 	}
 }
 
@@ -91,6 +90,23 @@ func (r *minioStorageRepository) GeneratePresignedUploadURL(ctx context.Context,
 		return "", fmt.Errorf("error al generar URL prefirmada de subida: %w", err)
 	}
 
+	return u.String(), nil
+}
+
+// GeneratePresignedDownloadURL genera una URL prefirmada GET para lectura temporal.
+func (r *minioStorageRepository) GeneratePresignedDownloadURL(ctx context.Context, objectKey string, expires time.Duration) (string, error) {
+	clientToUse := r.signingClient
+	if clientToUse == nil {
+		clientToUse = r.client
+	}
+	if clientToUse == nil {
+		return "", errors.New("cliente de almacenamiento no inicializado")
+	}
+
+	u, err := clientToUse.PresignedGetObject(ctx, r.bucketName, objectKey, expires, nil)
+	if err != nil {
+		return "", fmt.Errorf("error al generar URL prefirmada de descarga: %w", err)
+	}
 	return u.String(), nil
 }
 
@@ -119,26 +135,4 @@ func (r *minioStorageRepository) DeleteObject(ctx context.Context, objectKey str
 	}
 
 	return r.client.RemoveObject(ctx, r.bucketName, objectKey, minio.RemoveObjectOptions{})
-}
-
-// adjustPublicURL reemplaza el host interno por el endpoint público accesible para el cliente
-func (r *minioStorageRepository) adjustPublicURL(rawURL string) string {
-	if r.publicEndpoint == "" {
-		return rawURL
-	}
-
-	parsedPublic, err := url.Parse(r.publicEndpoint)
-	if err != nil || parsedPublic.Host == "" {
-		return rawURL
-	}
-
-	parsedGenerated, err := url.Parse(rawURL)
-	if err != nil {
-		return rawURL
-	}
-
-	parsedGenerated.Scheme = parsedPublic.Scheme
-	parsedGenerated.Host = parsedPublic.Host
-
-	return parsedGenerated.String()
 }

@@ -40,3 +40,7 @@ func (s *CommentService) CreateReply(parentCommentID string, postID string, req 
 func (s *CommentService) GetThreadedComments(postID string, cursor time.Time, limit int, excludedUserIDs []string) ([]models.Comment, error) {
 	return s.repo.GetThreadedComments(postID, cursor, limit, excludedUserIDs)
 }
+
+func (s *CommentService) GetCommentAuthorID(commentID string) (string, error) {
+	return s.repo.GetCommentAuthorID(commentID)
+}
