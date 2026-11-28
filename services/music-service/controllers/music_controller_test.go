@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -97,10 +99,40 @@ func TestRateLimitPropagatesRetryAfterWithoutProviderDetails(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/v1/music/search?q=hello", nil)
 	router.ServeHTTP(response, request)
 
-	if response.Code != http.StatusTooManyRequests {
-		t.Fatalf("status = %d, want 429", response.Code)
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503", response.Code)
 	}
 	if got := response.Header().Get("Retry-After"); got != "7" {
 		t.Fatalf("Retry-After = %q, want 7", got)
+	}
+	if !strings.Contains(response.Body.String(), "MUSIC_RATE_LIMITED") {
+		t.Fatalf("unexpected error body: %s", response.Body.String())
+	}
+}
+
+func TestSearchValidatesUnicodeLengthAndRequestedLimits(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	routes.SetupRoutes(router, controllers.NewMusicController(fakeCatalog{
+		searchResult: map[string]any{"results": []any{}},
+	}))
+	cases := []struct {
+		query  string
+		status int
+	}{
+		{"/v1/music/search?q=" + url.QueryEscape(strings.Repeat("á", 100)) + "&limit=20", 200},
+		{"/v1/music/search?q=" + url.QueryEscape(strings.Repeat("á", 101)), 400},
+		{"/v1/music/search?q=ok&limit=21", 400},
+		{"/v1/music/search?q=ok&offset=1000&limit=11", 400},
+	}
+	for _, tc := range cases {
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, tc.query, nil))
+		if response.Code != tc.status {
+			t.Errorf("%s: status = %d, want %d", tc.query, response.Code, tc.status)
+		}
+		if tc.status == 400 && !strings.Contains(response.Body.String(), "INVALID_PARAMETER") {
+			t.Errorf("%s: unexpected error: %s", tc.query, response.Body.String())
+		}
 	}
 }

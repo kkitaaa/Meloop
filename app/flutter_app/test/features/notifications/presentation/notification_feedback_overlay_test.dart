@@ -89,8 +89,10 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           home: const Scaffold(body: SizedBox.expand()),
-          builder: (context, child) =>
-              NotificationFeedbackOverlay(controller: controller, child: child!),
+          builder: (context, child) => NotificationFeedbackOverlay(
+            controller: controller,
+            child: child!,
+          ),
         ),
       );
       controller.start();

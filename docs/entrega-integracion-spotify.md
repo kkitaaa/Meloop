@@ -16,15 +16,19 @@ validado contra credenciales reales de Spotify ni contra el clúster remoto.
 
 - Flutter consulta `GET /v1/music/search` con `q`, `type`, `offset` y `limit`.
   Los tipos admitidos son `track`, `artist`, `album` y `genre`; el límite de
-  resultados por llamada es 10.
+  resultados por llamada es 20. Spotify acepta hasta 10 por petición, por lo
+  que el backend combina páginas cuando se solicitan más.
 - Flutter consulta detalles por `GET /v1/music/tracks/{id}`,
   `/v1/music/artists/{id}` y `/v1/music/albums/{id}`.
 - `music-service` obtiene tokens con Spotify Client Credentials, los reutiliza
   hasta su vencimiento y consulta el catálogo. La búsqueda de géneros usa el
   catálogo curado de Meloop y no llama a Spotify.
 - El Gateway envía las rutas de catálogo a `music-service`. Los errores de
-  Spotify se comunican con status HTTP y códigos explícitos, incluido `429`
-  con `Retry-After`.
+  Spotify se comunican con status HTTP y códigos explícitos: un `429` de
+  Spotify se traduce a `503 MUSIC_RATE_LIMITED` con `Retry-After`.
+- La búsqueda devuelve resultados normalizados en `data.results` y guarda
+  búsquedas exitosas en Redis durante cinco minutos. Si Redis no está
+  configurado o falla, se registra el problema y la búsqueda continúa.
 
 ### Preferencias musicales persistentes
 
@@ -98,6 +102,8 @@ Las respuestas exitosas usan el envelope Meloop:
 - Asegurar que `meloop-config` define `USER_SERVICE_URL`,
   `MUSIC_SERVICE_URL`, `AUTH_SERVICE_URL` y `MEDIA_SERVICE_URL` con los nombres
   DNS/puertos correctos del namespace.
+- Configurar `REDIS_URL` para `music-service` con credenciales desde el gestor
+  de secretos si Redis exige autenticación. Sin Redis no habrá caché de búsquedas.
 
 ### 3. Publicar y desplegar
 

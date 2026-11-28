@@ -849,10 +849,7 @@ class ArtistsAndSongsScreenState extends State<ArtistsAndSongsScreen> {
 
     final pillTabs = MeloopPillTabs<_MusicFeedTab>(
       items: const [
-        MeloopPillItem(
-          value: _MusicFeedTab.recommended,
-          label: 'Recomendados',
-        ),
+        MeloopPillItem(value: _MusicFeedTab.recommended, label: 'Recomendados'),
         MeloopPillItem(value: _MusicFeedTab.trending, label: 'Tendencia'),
       ],
       selectedValue: _activeTab == _MusicFeedTab.friendsArtists
@@ -1174,9 +1171,13 @@ class ArtistsAndSongsScreenState extends State<ArtistsAndSongsScreen> {
       child: ListView(
         scrollDirection: Axis.horizontal,
         children: [
-          _friendChip(label: 'Todos', selected: _selectedFriendFilter == null, onTap: () {
-            setState(() => _selectedFriendFilter = null);
-          }),
+          _friendChip(
+            label: 'Todos',
+            selected: _selectedFriendFilter == null,
+            onTap: () {
+              setState(() => _selectedFriendFilter = null);
+            },
+          ),
           for (final friend in _friendNames)
             _friendChip(
               label: friend,
@@ -1723,125 +1724,338 @@ class _AlbumDetailPaperDialogState extends State<_AlbumDetailPaperDialog> {
             isCompact ? 16 : 24,
           ),
           child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // Cabecera estilo Spotify sobre papel
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    SizedBox(
-                      width: coverSize + vinylDiameter * 0.42,
-                      height: coverSize,
-                      child: Stack(
-                        clipBehavior: Clip.none,
-                        alignment: Alignment.centerLeft,
-                        children: [
-                          Positioned(
-                            right: 0,
-                            child: _VinylDiscGraphic(
-                              diameter: vinylDiameter,
-                              labelColor: widget.album.vinylLabelColor,
-                            ),
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Cabecera estilo Spotify sobre papel
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: coverSize + vinylDiameter * 0.42,
+                    height: coverSize,
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      alignment: Alignment.centerLeft,
+                      children: [
+                        Positioned(
+                          right: 0,
+                          child: _VinylDiscGraphic(
+                            diameter: vinylDiameter,
+                            labelColor: widget.album.vinylLabelColor,
                           ),
-                          Positioned(
-                            left: 0,
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withValues(alpha: 0.22),
-                                    blurRadius: 16,
-                                    offset: const Offset(0, 6),
-                                  ),
-                                ],
-                              ),
-                              child: _AlbumSleevePlaceholder(size: coverSize),
+                        ),
+                        Positioned(
+                          left: 0,
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.22),
+                                  blurRadius: 16,
+                                  offset: const Offset(0, 6),
+                                ),
+                              ],
                             ),
+                            child: _AlbumSleevePlaceholder(size: coverSize),
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
-                    SizedBox(width: isCompact ? 14 : 24),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 9,
-                                  vertical: 3,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: MeloopThemeController
-                                      .instance
-                                      .softBadgeBgColor,
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: Text(
-                                  'ÁLBUM',
-                                  style: MeloopTypography.lexend(
-                                    fontSize: 10.5,
-                                    fontWeight: FontWeight.w700,
-                                    color: MeloopThemeController
-                                        .instance
-                                        .softBadgeFgColor,
-                                    letterSpacing: 1.1,
-                                  ),
-                                ),
+                  ),
+                  SizedBox(width: isCompact ? 14 : 24),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 9,
+                                vertical: 3,
                               ),
-                              const SizedBox(width: 8),
-                              Flexible(
-                                child: Text(
-                                  widget.album.genre,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: MeloopTypography.lexend(
-                                    fontSize: 11.5,
-                                    color: MeloopThemeController
-                                        .instance
-                                        .cardMutedColor,
-                                  ),
-                                ),
+                              decoration: BoxDecoration(
+                                color: MeloopThemeController
+                                    .instance
+                                    .softBadgeBgColor,
+                                borderRadius: BorderRadius.circular(12),
                               ),
-                            ],
-                          ),
-                          SizedBox(height: isCompact ? 6 : 10),
-                          Text(
-                            widget.album.title,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: MeloopTypography.lexend(
-                              fontSize: isCompact ? 20 : 28,
-                              fontWeight: FontWeight.w700,
-                              color:
-                                  MeloopThemeController.instance.cardTitleColor,
-                              height: 1.15,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          Wrap(
-                            spacing: 6,
-                            runSpacing: 4,
-                            crossAxisAlignment: WrapCrossAlignment.center,
-                            children: [
-                              Text(
-                                widget.album.artist,
+                              child: Text(
+                                'ÁLBUM',
                                 style: MeloopTypography.lexend(
-                                  fontSize: isCompact ? 13.5 : 15,
+                                  fontSize: 10.5,
                                   fontWeight: FontWeight.w700,
                                   color: MeloopThemeController
                                       .instance
-                                      .accentLinkColor,
+                                      .softBadgeFgColor,
+                                  letterSpacing: 1.1,
                                 ),
                               ),
-                              Text(
-                                '· ${widget.album.year} · ${widget.album.songs.length} canciones · ${_totalDurationLabel()}',
+                            ),
+                            const SizedBox(width: 8),
+                            Flexible(
+                              child: Text(
+                                widget.album.genre,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                                 style: MeloopTypography.lexend(
-                                  fontSize: isCompact ? 12 : 13,
+                                  fontSize: 11.5,
+                                  color: MeloopThemeController
+                                      .instance
+                                      .cardMutedColor,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        SizedBox(height: isCompact ? 6 : 10),
+                        Text(
+                          widget.album.title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: MeloopTypography.lexend(
+                            fontSize: isCompact ? 20 : 28,
+                            fontWeight: FontWeight.w700,
+                            color:
+                                MeloopThemeController.instance.cardTitleColor,
+                            height: 1.15,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 4,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            Text(
+                              widget.album.artist,
+                              style: MeloopTypography.lexend(
+                                fontSize: isCompact ? 13.5 : 15,
+                                fontWeight: FontWeight.w700,
+                                color: MeloopThemeController
+                                    .instance
+                                    .accentLinkColor,
+                              ),
+                            ),
+                            Text(
+                              '· ${widget.album.year} · ${widget.album.songs.length} canciones · ${_totalDurationLabel()}',
+                              style: MeloopTypography.lexend(
+                                fontSize: isCompact ? 12 : 13,
+                                color: MeloopThemeController
+                                    .instance
+                                    .cardMutedColor,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Cerrar',
+                    onPressed: widget.onClose,
+                    icon: Icon(
+                      Icons.close_rounded,
+                      color: MeloopThemeController.instance.cardMutedColor,
+                      size: 22,
+                    ),
+                  ),
+                ],
+              ),
+
+              SizedBox(height: isCompact ? 16 : 22),
+
+              // Barra de acciones: Play, Me gusta y Favorito
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  Material(
+                    color: _tealAccent,
+                    shape: const CircleBorder(),
+                    elevation: 3,
+                    shadowColor: _tealAccent.withValues(alpha: 0.35),
+                    child: InkWell(
+                      customBorder: const CircleBorder(),
+                      onTap: _togglePlayAlbum,
+                      child: SizedBox(
+                        width: 48,
+                        height: 48,
+                        child: Icon(
+                          _playingTrackIndex != null
+                              ? Icons.pause_rounded
+                              : Icons.play_arrow_rounded,
+                          color: Colors.white,
+                          size: 28,
+                        ),
+                      ),
+                    ),
+                  ),
+                  _AlbumActionPillButton(
+                    icon: _isLiked
+                        ? Icons.favorite_rounded
+                        : Icons.favorite_border_rounded,
+                    label: _isLiked ? 'Te gusta' : 'Me gusta',
+                    active: _isLiked,
+                    activeColor: const Color(0xFFFF5C5C),
+                    onTap: () {
+                      final liked = widget.onToggleLike();
+                      setState(() => _isLiked = liked);
+                    },
+                  ),
+                  _AlbumActionPillButton(
+                    icon: _isFavorite
+                        ? Icons.star_rounded
+                        : Icons.star_border_rounded,
+                    label: _isFavorite
+                        ? 'En tus favoritos'
+                        : 'Marcar como favorito',
+                    active: _isFavorite,
+                    activeColor: const Color(0xFFE69F17),
+                    onTap: () {
+                      final fav = widget.onToggleFavorite();
+                      setState(() => _isFavorite = fav);
+                    },
+                  ),
+                ],
+              ),
+
+              SizedBox(height: isCompact ? 14 : 20),
+
+              // Encabezado de tabla de pistas estilo Spotify
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 28,
+                      child: Text(
+                        '#',
+                        style: MeloopTypography.lexend(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                          color: const Color(0xFF7B8B8B),
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: Text(
+                        'TÍTULO',
+                        style: MeloopTypography.lexend(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 0.8,
+                          color: const Color(0xFF7B8B8B),
+                        ),
+                      ),
+                    ),
+                    const Icon(
+                      Icons.schedule_rounded,
+                      size: 15,
+                      color: Color(0xFF7B8B8B),
+                    ),
+                  ],
+                ),
+              ),
+              Divider(
+                height: 1,
+                thickness: 1,
+                color: Colors.black.withValues(alpha: 0.10),
+              ),
+
+              // Lista de canciones
+              Flexible(
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  itemCount: widget.album.songs.length,
+                  separatorBuilder: (context, index) => Divider(
+                    height: 1,
+                    color: Colors.black.withValues(alpha: 0.05),
+                  ),
+                  itemBuilder: (context, index) {
+                    final isPlaying = _playingTrackIndex == index;
+                    return Material(
+                      color: isPlaying
+                          ? MeloopThemeController.instance.softBadgeBgColor
+                          : Colors.transparent,
+                      child: InkWell(
+                        onTap: () {
+                          setState(() {
+                            _playingTrackIndex = isPlaying ? null : index;
+                          });
+                        },
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 11,
+                          ),
+                          child: Row(
+                            children: [
+                              SizedBox(
+                                width: 28,
+                                child: isPlaying
+                                    ? Icon(
+                                        Icons.graphic_eq_rounded,
+                                        size: 17,
+                                        color: _tealAccent,
+                                      )
+                                    : Text(
+                                        '${index + 1}',
+                                        style: MeloopTypography.lexend(
+                                          fontSize: 13,
+                                          color: MeloopThemeController
+                                              .instance
+                                              .cardMutedColor,
+                                        ),
+                                      ),
+                              ),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      widget.album.songs[index],
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: MeloopTypography.lexend(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w600,
+                                        color: isPlaying
+                                            ? MeloopThemeController
+                                                  .instance
+                                                  .accentLinkColor
+                                            : MeloopThemeController
+                                                  .instance
+                                                  .cardTitleColor,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 1),
+                                    Text(
+                                      widget.album.artist,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: MeloopTypography.lexend(
+                                        fontSize: 11.5,
+                                        color: MeloopThemeController
+                                            .instance
+                                            .cardMutedColor,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Text(
+                                _trackDuration(index),
+                                style: MeloopTypography.musicPlayer(
+                                  fontSize: 13.5,
                                   color: MeloopThemeController
                                       .instance
                                       .cardMutedColor,
@@ -1849,265 +2063,48 @@ class _AlbumDetailPaperDialogState extends State<_AlbumDetailPaperDialog> {
                               ),
                             ],
                           ),
-                        ],
-                      ),
-                    ),
-                    IconButton(
-                      tooltip: 'Cerrar',
-                      onPressed: widget.onClose,
-                      icon: Icon(
-                        Icons.close_rounded,
-                        color: MeloopThemeController.instance.cardMutedColor,
-                        size: 22,
-                      ),
-                    ),
-                  ],
-                ),
-
-                SizedBox(height: isCompact ? 16 : 22),
-
-                // Barra de acciones: Play, Me gusta y Favorito
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    Material(
-                      color: _tealAccent,
-                      shape: const CircleBorder(),
-                      elevation: 3,
-                      shadowColor: _tealAccent.withValues(alpha: 0.35),
-                      child: InkWell(
-                        customBorder: const CircleBorder(),
-                        onTap: _togglePlayAlbum,
-                        child: SizedBox(
-                          width: 48,
-                          height: 48,
-                          child: Icon(
-                            _playingTrackIndex != null
-                                ? Icons.pause_rounded
-                                : Icons.play_arrow_rounded,
-                            color: Colors.white,
-                            size: 28,
-                          ),
                         ),
                       ),
-                    ),
-                    _AlbumActionPillButton(
-                      icon: _isLiked
-                          ? Icons.favorite_rounded
-                          : Icons.favorite_border_rounded,
-                      label: _isLiked ? 'Te gusta' : 'Me gusta',
-                      active: _isLiked,
-                      activeColor: const Color(0xFFFF5C5C),
-                      onTap: () {
-                        final liked = widget.onToggleLike();
-                        setState(() => _isLiked = liked);
-                      },
-                    ),
-                    _AlbumActionPillButton(
-                      icon: _isFavorite
-                          ? Icons.star_rounded
-                          : Icons.star_border_rounded,
-                      label: _isFavorite
-                          ? 'En tus favoritos'
-                          : 'Marcar como favorito',
-                      active: _isFavorite,
-                      activeColor: const Color(0xFFE69F17),
-                      onTap: () {
-                        final fav = widget.onToggleFavorite();
-                        setState(() => _isFavorite = fav);
-                      },
-                    ),
-                  ],
+                    );
+                  },
                 ),
+              ),
 
-                SizedBox(height: isCompact ? 14 : 20),
-
-                // Encabezado de tabla de pistas estilo Spotify
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
+              const SizedBox(height: 10),
+              Divider(height: 1, color: Colors.black.withValues(alpha: 0.08)),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Lanzamiento: ${widget.album.year} · ${widget.album.genre}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: MeloopTypography.lexend(
+                        fontSize: 11.5,
+                        color: const Color(0xFF7D8C8C),
+                      ),
+                    ),
                   ),
-                  child: Row(
-                    children: [
-                      SizedBox(
-                        width: 28,
-                        child: Text(
-                          '#',
-                          style: MeloopTypography.lexend(
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.w600,
-                            color: const Color(0xFF7B8B8B),
-                          ),
-                        ),
-                      ),
-                      Expanded(
-                        child: Text(
-                          'TÍTULO',
-                          style: MeloopTypography.lexend(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 0.8,
-                            color: const Color(0xFF7B8B8B),
-                          ),
-                        ),
-                      ),
-                      const Icon(
-                        Icons.schedule_rounded,
-                        size: 15,
-                        color: Color(0xFF7B8B8B),
-                      ),
-                    ],
-                  ),
-                ),
-                Divider(
-                  height: 1,
-                  thickness: 1,
-                  color: Colors.black.withValues(alpha: 0.10),
-                ),
-
-                // Lista de canciones
-                Flexible(
-                  child: ListView.separated(
-                    shrinkWrap: true,
-                    padding: const EdgeInsets.symmetric(vertical: 6),
-                    itemCount: widget.album.songs.length,
-                    separatorBuilder: (context, index) => Divider(
-                      height: 1,
-                      color: Colors.black.withValues(alpha: 0.05),
-                    ),
-                    itemBuilder: (context, index) {
-                      final isPlaying = _playingTrackIndex == index;
-                      return Material(
-                        color: isPlaying
-                            ? MeloopThemeController.instance.softBadgeBgColor
-                            : Colors.transparent,
-                        child: InkWell(
-                          onTap: () {
-                            setState(() {
-                              _playingTrackIndex = isPlaying ? null : index;
-                            });
-                          },
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 11,
-                            ),
-                            child: Row(
-                              children: [
-                                SizedBox(
-                                  width: 28,
-                                  child: isPlaying
-                                      ? Icon(
-                                          Icons.graphic_eq_rounded,
-                                          size: 17,
-                                          color: _tealAccent,
-                                        )
-                                      : Text(
-                                          '${index + 1}',
-                                          style: MeloopTypography.lexend(
-                                            fontSize: 13,
-                                            color: MeloopThemeController
-                                                .instance
-                                                .cardMutedColor,
-                                          ),
-                                        ),
-                                ),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        widget.album.songs[index],
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: MeloopTypography.lexend(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w600,
-                                          color: isPlaying
-                                              ? MeloopThemeController
-                                                    .instance
-                                                    .accentLinkColor
-                                              : MeloopThemeController
-                                                    .instance
-                                                    .cardTitleColor,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 1),
-                                      Text(
-                                        widget.album.artist,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: MeloopTypography.lexend(
-                                          fontSize: 11.5,
-                                          color: MeloopThemeController
-                                              .instance
-                                              .cardMutedColor,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Text(
-                                  _trackDuration(index),
-                                  style: MeloopTypography.musicPlayer(
-                                    fontSize: 13.5,
-                                    color: MeloopThemeController
-                                        .instance
-                                        .cardMutedColor,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-
-                const SizedBox(height: 10),
-                Divider(
-                  height: 1,
-                  color: Colors.black.withValues(alpha: 0.08),
-                ),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    Expanded(
+                  if (!isCompact) ...[
+                    const SizedBox(width: 12),
+                    Flexible(
                       child: Text(
-                        'Lanzamiento: ${widget.album.year} · ${widget.album.genre}',
+                        'Integración con Spotify próximamente',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.end,
                         style: MeloopTypography.lexend(
-                          fontSize: 11.5,
-                          color: const Color(0xFF7D8C8C),
+                          fontSize: 11,
+                          color: const Color(0xFF96A5A5),
                         ),
                       ),
                     ),
-                    if (!isCompact) ...[
-                      const SizedBox(width: 12),
-                      Flexible(
-                        child: Text(
-                          'Integración con Spotify próximamente',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          textAlign: TextAlign.end,
-                          style: MeloopTypography.lexend(
-                            fontSize: 11,
-                            color: const Color(0xFF96A5A5),
-                          ),
-                        ),
-                      ),
-                    ],
                   ],
-                ),
-              ],
-            ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );

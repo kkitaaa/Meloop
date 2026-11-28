@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 	"github.com/meloop/music-service/services"
@@ -30,8 +31,8 @@ func NewMusicController(catalog Catalog) *MusicController {
 
 func (ctrl *MusicController) Search(c *gin.Context) {
 	query := strings.TrimSpace(c.Query("q"))
-	if query == "" || len(query) > 100 {
-		httpresponse.BadRequestGin(c, "q debe contener entre 1 y 100 caracteres")
+	if query == "" || !utf8.ValidString(query) || utf8.RuneCountInString(query) > 100 {
+		invalidParameter(c, "q debe contener entre 1 y 100 caracteres")
 		return
 	}
 
@@ -39,18 +40,22 @@ func (ctrl *MusicController) Search(c *gin.Context) {
 	switch itemType {
 	case "track", "artist", "album", "genre":
 	default:
-		httpresponse.BadRequestGin(c, "type debe ser track, artist, album o genre")
+		invalidParameter(c, "type debe ser track, artist, album o genre")
 		return
 	}
 
 	offset, err := queryInt(c, "offset", 0)
 	if err != nil || offset < 0 || offset > 1000 {
-		httpresponse.BadRequestGin(c, "offset debe estar entre 0 y 1000")
+		invalidParameter(c, "offset debe estar entre 0 y 1000")
 		return
 	}
 	limit, err := queryInt(c, "limit", 10)
-	if err != nil || limit < 1 || limit > 10 {
-		httpresponse.BadRequestGin(c, "limit debe estar entre 1 y 10")
+	if err != nil || limit < 1 || limit > 20 {
+		invalidParameter(c, "limit debe estar entre 1 y 20")
+		return
+	}
+	if itemType != "genre" && offset+limit > 1010 {
+		invalidParameter(c, "offset y limit exceden el rango accesible de Spotify")
 		return
 	}
 
@@ -60,6 +65,10 @@ func (ctrl *MusicController) Search(c *gin.Context) {
 		return
 	}
 	httpresponse.SuccessGin(c, http.StatusOK, result)
+}
+
+func invalidParameter(c *gin.Context, message string) {
+	httpresponse.ErrorGin(c, http.StatusBadRequest, "INVALID_PARAMETER", message)
 }
 
 func (ctrl *MusicController) Track(c *gin.Context) {
@@ -110,8 +119,8 @@ func writeCatalogError(c *gin.Context, err error) {
 			}
 			httpresponse.ErrorGin(
 				c,
-				http.StatusTooManyRequests,
-				"SPOTIFY_RATE_LIMITED",
+				http.StatusServiceUnavailable,
+				"MUSIC_RATE_LIMITED",
 				"Spotify limitó temporalmente las consultas",
 			)
 			return

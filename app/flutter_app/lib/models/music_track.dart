@@ -44,7 +44,9 @@ class MusicTrack {
       id: id,
       title: title,
       artist: artist,
-      artworkUrl: artworkUrl as String?,
+      artworkUrl: artworkUrl is String && artworkUrl.isNotEmpty
+          ? artworkUrl
+          : null,
       type: type,
     );
   }

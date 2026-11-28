@@ -27,6 +27,8 @@ paths:
       description: |
         El catálogo usa Spotify Client Credentials en el music-service. El tipo
         genre consulta el catálogo curado de Meloop y no se envía a Spotify.
+        El límite es 20; para Spotify se combinan páginas de hasta 10 resultados.
+        Para canciones, artistas y álbumes, offset + limit no puede superar 1010.
       parameters:
         - name: q
           in: query
@@ -53,23 +55,38 @@ paths:
           schema:
             type: integer
             minimum: 1
-            maximum: 10
+            maximum: 20
             default: 10
       responses:
         '200':
-          description: Resultados de búsqueda con paginación Spotify/Meloop
+          description: Resultados normalizados y paginación en data
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/SuccessResponse'
+              example:
+                success: true
+                data:
+                  results:
+                    - type: track
+                      spotify_id: 4iV5W9uYEdYUVa79Axb7Rh
+                      name: Ejemplo
+                      artists: [Artista]
+                      album: Álbum
+                      image_url: ""
+                      external_url: ""
+                  offset: 0
+                  limit: 10
+                  total: 1
+                error: null
         '400':
-          description: Parámetros inválidos
+          description: Parámetros inválidos (INVALID_PARAMETER)
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-        '429':
-          description: Spotify limitó temporalmente las consultas
+        '503':
+          description: Spotify limitó temporalmente las consultas (MUSIC_RATE_LIMITED)
           headers:
             Retry-After:
               schema:

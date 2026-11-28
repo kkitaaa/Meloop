@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -55,6 +54,7 @@ type spotifyClient struct {
 
 type SpotifyCatalog struct {
 	client *spotifyClient
+	cache  SearchCache
 }
 
 func NewSpotifyCatalog(cfg config.Config) (*SpotifyCatalog, error) {
@@ -81,18 +81,40 @@ func (s *SpotifyCatalog) Search(
 	offset int,
 	limit int,
 ) (map[string]any, error) {
-	if itemType == "genre" {
-		return searchGenres(query, offset, limit), nil
+	key := searchCacheKey(query, itemType, offset, limit, s.clientMarket())
+	if s.cache != nil {
+		cached, found, err := s.cache.Get(ctx, key)
+		if err != nil {
+			searchLogger.Warn("search_cache_read_failed", "error", err)
+		} else if found {
+			return cached, nil
+		}
 	}
 
-	params := url.Values{
-		"q":      {query},
-		"type":   {itemType},
-		"offset": {strconv.Itoa(offset)},
-		"limit":  {strconv.Itoa(limit)},
-		"market": {s.client.market},
+	var result map[string]any
+	var err error
+	if itemType == "genre" {
+		result = searchGenres(query, offset, limit)
+	} else {
+		result, err = s.searchSpotify(ctx, query, itemType, offset, limit)
+		if err != nil {
+			return nil, err
+		}
 	}
-	return s.client.get(ctx, "/search", params)
+
+	if s.cache != nil {
+		if err := s.cache.Set(ctx, key, result, searchCacheTTL); err != nil {
+			searchLogger.Warn("search_cache_write_failed", "error", err)
+		}
+	}
+	return result, nil
+}
+
+func (s *SpotifyCatalog) clientMarket() string {
+	if s.client == nil {
+		return ""
+	}
+	return s.client.market
 }
 
 func (s *SpotifyCatalog) Detail(
@@ -196,7 +218,10 @@ func (c *spotifyClient) accessToken(ctx context.Context) (string, error) {
 	}
 	defer response.Body.Close()
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
-		return "", &SpotifyAPIError{StatusCode: response.StatusCode}
+		return "", &SpotifyAPIError{
+			StatusCode: response.StatusCode,
+			RetryAfter: response.Header.Get("Retry-After"),
+		}
 	}
 
 	var tokenResponse spotifyTokenResponse
@@ -272,19 +297,16 @@ func searchGenres(query string, offset int, limit int) map[string]any {
 
 	start := min(offset, len(filtered))
 	end := min(start+limit, len(filtered))
-	items := filtered[start:end]
-	nextOffset := any(nil)
-	if end < len(filtered) {
-		nextOffset = end
+	items := make([]musicSearchItem, 0, end-start)
+	for _, item := range filtered[start:end] {
+		items = append(items, musicSearchItem{
+			Type: "genre", SpotifyID: item.ID, Name: item.Name, Artists: []string{},
+		})
 	}
 	return map[string]any{
-		"genres": map[string]any{
-			"items":       items,
-			"offset":      offset,
-			"limit":       limit,
-			"total":       len(filtered),
-			"has_more":    end < len(filtered),
-			"next_offset": nextOffset,
-		},
+		"results": items,
+		"offset":  offset,
+		"limit":   limit,
+		"total":   len(filtered),
 	}
 }

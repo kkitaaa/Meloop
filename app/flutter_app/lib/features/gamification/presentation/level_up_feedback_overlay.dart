@@ -590,7 +590,9 @@ class _SideCannonConfettiPainter extends CustomPainter {
       final x =
           originX +
           launchVx * dragFactor +
-          math.sin(t * p.swayFreq + p.phase) * p.swayAmp * (t / 2.0).clamp(0, 1);
+          math.sin(t * p.swayFreq + p.phase) *
+              p.swayAmp *
+              (t / 2.0).clamp(0, 1);
       final y = originY + launchVy * dragFactor + 0.5 * p.gravity * t * t;
 
       if (y > size.height + 24 || x < -24 || x > size.width + 24) continue;
@@ -599,7 +601,8 @@ class _SideCannonConfettiPainter extends CustomPainter {
       canvas.save();
       canvas.translate(x, y);
       canvas.rotate(p.phase + t * p.spinSpeed);
-      final flipScaleY = 0.25 + 0.75 * math.cos(t * p.flipSpeed + p.phase).abs();
+      final flipScaleY =
+          0.25 + 0.75 * math.cos(t * p.flipSpeed + p.phase).abs();
       canvas.scale(1.0, flipScaleY);
       if (p.isCircle) {
         canvas.drawCircle(Offset.zero, p.width * 0.42, paint);

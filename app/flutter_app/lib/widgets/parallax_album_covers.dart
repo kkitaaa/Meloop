@@ -98,45 +98,47 @@ class ParallaxAlbumCovers extends StatefulWidget {
 
 class _ParallaxAlbumCoversState extends State<ParallaxAlbumCovers>
     with SingleTickerProviderStateMixin {
-
   // Planos de paralaje con carriles horizontales desfasados entre sí para que
   // las portadas se repartan de forma uniforme y solo solapen bordes/esquinas.
-  static const _depthSpecs = <({
-    double minSize,
-    double maxSize,
-    double speedPxPerSec,
-    double opacity,
-    double shadowBlur,
-    List<double> laneCenters,
-  })>[
-    // Plano 0: Fondo (pequeño-mediano, deriva ambiental muy suave)
-    (
-      minSize: 170,
-      maxSize: 210,
-      speedPxPerSec: 11,
-      opacity: 0.78,
-      shadowBlur: 12,
-      laneCenters: [0.06, 0.27, 0.48, 0.70, 0.91],
-    ),
-    // Plano 1: Medio (mediano-grande, velocidad media calma)
-    (
-      minSize: 240,
-      maxSize: 285,
-      speedPxPerSec: 19,
-      opacity: 0.92,
-      shadowBlur: 18,
-      laneCenters: [0.16, 0.39, 0.62, 0.85],
-    ),
-    // Plano 2: Primer plano (grande, movimiento fluido sin distraer a 60+ fps)
-    (
-      minSize: 315,
-      maxSize: 360,
-      speedPxPerSec: 30,
-      opacity: 1.0,
-      shadowBlur: 26,
-      laneCenters: [0.09, 0.35, 0.57, 0.80],
-    ),
-  ];
+  static const _depthSpecs =
+      <
+        ({
+          double minSize,
+          double maxSize,
+          double speedPxPerSec,
+          double opacity,
+          double shadowBlur,
+          List<double> laneCenters,
+        })
+      >[
+        // Plano 0: Fondo (pequeño-mediano, deriva ambiental muy suave)
+        (
+          minSize: 170,
+          maxSize: 210,
+          speedPxPerSec: 11,
+          opacity: 0.78,
+          shadowBlur: 12,
+          laneCenters: [0.06, 0.27, 0.48, 0.70, 0.91],
+        ),
+        // Plano 1: Medio (mediano-grande, velocidad media calma)
+        (
+          minSize: 240,
+          maxSize: 285,
+          speedPxPerSec: 19,
+          opacity: 0.92,
+          shadowBlur: 18,
+          laneCenters: [0.16, 0.39, 0.62, 0.85],
+        ),
+        // Plano 2: Primer plano (grande, movimiento fluido sin distraer a 60+ fps)
+        (
+          minSize: 315,
+          maxSize: 360,
+          speedPxPerSec: 30,
+          opacity: 1.0,
+          shadowBlur: 26,
+          laneCenters: [0.09, 0.35, 0.57, 0.80],
+        ),
+      ];
 
   final List<_ParallaxAlbumInstance> _activeAlbums = [];
   final math.Random _random = math.Random(42);
@@ -366,7 +368,8 @@ class _ParallaxAlbumCoversState extends State<ParallaxAlbumCovers>
 
     if (respawnDepths.isNotEmpty) {
       for (final depth in respawnDepths) {
-        final spawnY = _viewportSize.height + 24.0 + _random.nextDouble() * 44.0;
+        final spawnY =
+            _viewportSize.height + 24.0 + _random.nextDouble() * 44.0;
         _spawnAlbum(
           depth: depth,
           y: spawnY,

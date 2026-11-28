@@ -54,11 +54,11 @@ en `media_urls`.
 `pickForPreference` y `browse`. Busca después de 400 ms y desde dos caracteres;
 las pestañas Canciones, Artistas, Álbumes y Géneros consultan
 `GET /v1/music/search?q=<texto>&type=<track|artist|album|genre>&offset=<n>`.
-Para canciones, artistas y álbumes, el cliente envía `limit=10` (el máximo de
-la búsqueda de Spotify), `offset` y `type`; acepta el JSON nativo de Spotify o
-el envelope Meloop `{success, data, error}`. Cada resultado usa el ID de
-Spotify, `name`, `artists` y `album.images[].url`; artista e imagen pueden
-estar ausentes. Los modos de selección devuelven el resultado a la pantalla
+El cliente envía `limit=10` por defecto y permite hasta 20 resultados; el backend
+combina páginas de Spotify de hasta 10. Acepta el JSON nativo de Spotify o
+el envelope Meloop `{success, data, error}` con resultados normalizados. Cada
+resultado usa el ID, nombre, artistas e imagen, que puede estar ausente.
+Los modos de selección devuelven el resultado a la pantalla
 previa, mientras `browse` abre la ficha musical.
 
 La app no necesita iniciar sesión en Spotify ni contiene credenciales. El
@@ -78,9 +78,8 @@ clúster debe recibir las credenciales y el market requeridos.
 #### Contrato requerido del catálogo musical
 
 - `GET /v1/music/search?q=<texto>&type=<track|artist|album|genre>&offset=<n>&limit=10`
-  devuelve la estructura de búsqueda Spotify (`tracks.items`,
-  `artists.items` o `albums.items`, junto con `offset`, `limit`, `total` y
-  `next`) o los mismos datos dentro de `data` en el envelope Meloop.
+  devuelve `data.results`, `offset`, `limit` y `total` con resultados normalizados
+  en el envelope Meloop. Los géneros tienen IDs propios de Meloop.
 - `GET /v1/music/tracks/{spotifyId}`,
   `GET /v1/music/artists/{spotifyId}` y
   `GET /v1/music/albums/{spotifyId}` devuelven el objeto de catálogo Spotify,

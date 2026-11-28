@@ -95,10 +95,7 @@ class _AuthScreenState extends State<AuthScreen>
       final preloadTask = widget.preloadImages != null
           ? widget.preloadImages!(context, isDesktop)
           : Future.wait<void>([
-              MeloopLogoSticker.preload(
-                context,
-                height: isDesktop ? 76 : 56,
-              ),
+              MeloopLogoSticker.preload(context, height: isDesktop ? 76 : 56),
               if (isDesktop) ParallaxAlbumCovers.preload(context),
               if (!_isTestBinding)
                 GoogleFonts.pendingFonts()
@@ -385,10 +382,7 @@ class _AuthScreenState extends State<AuthScreen>
             switchOutCurve: Curves.easeOutCubic,
             layoutBuilder: (currentChild, previousChildren) => Stack(
               alignment: Alignment.topCenter,
-              children: [
-                ...previousChildren,
-                ?currentChild,
-              ],
+              children: [...previousChildren, ?currentChild],
             ),
             transitionBuilder: (child, animation) {
               final isIncomingRegister =

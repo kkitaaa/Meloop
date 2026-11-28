@@ -458,24 +458,22 @@ class _DesktopNavigationShellState extends State<DesktopNavigationShell>
                             // Cuando se abre Búsqueda, Perfil o una subpantalla,
                             // primero desvanecemos y ocultamos la pestaña base
                             // para que nunca se vea detrás de la nueva pantalla.
-                            final fadeOut = Tween<double>(
-                              begin: 1.0,
-                              end: 0.0,
-                            ).animate(
-                              CurvedAnimation(
-                                parent: secondaryAnimation,
-                                curve: const Interval(
-                                  0.0,
-                                  0.44,
-                                  curve: Curves.easeOut,
-                                ),
-                                reverseCurve: const Interval(
-                                  0.0,
-                                  0.48,
-                                  curve: Curves.easeIn,
-                                ),
-                              ),
-                            );
+                            final fadeOut = Tween<double>(begin: 1.0, end: 0.0)
+                                .animate(
+                                  CurvedAnimation(
+                                    parent: secondaryAnimation,
+                                    curve: const Interval(
+                                      0.0,
+                                      0.44,
+                                      curve: Curves.easeOut,
+                                    ),
+                                    reverseCurve: const Interval(
+                                      0.0,
+                                      0.48,
+                                      curve: Curves.easeIn,
+                                    ),
+                                  ),
+                                );
                             return AnimatedBuilder(
                               animation: secondaryAnimation,
                               builder: (context, innerChild) {

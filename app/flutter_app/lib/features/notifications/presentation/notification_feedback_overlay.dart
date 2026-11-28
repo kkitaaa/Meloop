@@ -172,9 +172,8 @@ class _NotificationFeedbackOverlayState
                   child: Row(
                     children: [
                       CircleAvatar(
-                        backgroundColor: const Color(
-                          0xFF00AF92,
-                        ).withValues(alpha: .14),
+                        backgroundColor: const Color(0xFF00AF92)
+                            .withValues(alpha: .14),
                         child: Icon(
                           switch (notification.kind) {
                             NotificationKind.like => Icons.favorite,

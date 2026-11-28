@@ -173,10 +173,7 @@ class DesktopAppHeader extends StatelessWidget {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           if (showFullMiniPlayer) ...[
-                            _HeaderMiniPlayer(
-                              width: 340,
-                              pillColor: pillColor,
-                            ),
+                            _HeaderMiniPlayer(width: 340, pillColor: pillColor),
                             const SizedBox(width: 14),
                           ] else if (showCompactMiniPlayer) ...[
                             _HeaderMiniPlayer(
@@ -527,8 +524,7 @@ class _DesktopHeaderNavAndSearchState extends State<_DesktopHeaderNavAndSearch>
                 color: const Color(0xFF1A2424),
               ),
               decoration: InputDecoration(
-                hintText:
-                    'Buscar publicaciones, canciones o amigos (Enter)...',
+                hintText: 'Buscar publicaciones, canciones o amigos (Enter)...',
                 hintStyle: MeloopTypography.lexend(
                   fontSize: 13.5,
                   color: const Color(0xFF7D908E),

@@ -28,56 +28,56 @@ class MobileAppHeader extends StatelessWidget {
       builder: (context, _) => Container(
         height: 55,
         color: themeCtrl.primaryColor,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          Positioned.fill(
-            child: IgnorePointer(
-              child: Center(
-                child: MeloopLogoSticker(height: 26, strokeWidth: 1.6),
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Center(
+                  child: MeloopLogoSticker(height: 26, strokeWidth: 1.6),
+                ),
               ),
             ),
-          ),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              if (onSearchTap == null && onModerationTap == null)
-                const SizedBox(width: 48)
-              else
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                if (onSearchTap == null && onModerationTap == null)
+                  const SizedBox(width: 48)
+                else
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (onSearchTap != null)
+                        IconButton(
+                          tooltip: 'Búsqueda global',
+                          onPressed: onSearchTap,
+                          icon: const Icon(Icons.search, color: Colors.white),
+                        ),
+                      if (onModerationTap != null)
+                        IconButton(
+                          tooltip: 'Cola de moderación',
+                          onPressed: onModerationTap,
+                          icon: const Icon(
+                            Icons.shield_outlined,
+                            color: Colors.white,
+                          ),
+                        ),
+                    ],
+                  ),
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    if (onSearchTap != null)
-                      IconButton(
-                        tooltip: 'Búsqueda global',
-                        onPressed: onSearchTap,
-                        icon: const Icon(Icons.search, color: Colors.white),
-                      ),
-                    if (onModerationTap != null)
-                      IconButton(
-                        tooltip: 'Cola de moderación',
-                        onPressed: onModerationTap,
-                        icon: const Icon(
-                          Icons.shield_outlined,
-                          color: Colors.white,
-                        ),
-                      ),
+                    ...actions,
+                    AppSettingsMenu(apiClient: apiClient),
+                    const NotificationsMenu(),
                   ],
                 ),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  ...actions,
-                  AppSettingsMenu(apiClient: apiClient),
-                  const NotificationsMenu(),
-                ],
-              ),
-            ],
-          ),
-        ],
+              ],
+            ),
+          ],
+        ),
       ),
-    ),
     );
   }
 }

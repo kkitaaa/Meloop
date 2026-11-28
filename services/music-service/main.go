@@ -25,6 +25,21 @@ func main() {
 		logger.Error("spotify_catalog_init_failed", "error", err)
 		os.Exit(1)
 	}
+	if cfg.RedisURL != "" {
+		cache, err := services.NewRedisSearchCache(cfg.RedisURL)
+		if err != nil {
+			logger.Error("search_cache_config_invalid", "error", err)
+			os.Exit(1)
+		}
+		defer func() {
+			if err := cache.Close(); err != nil {
+				logger.Warn("search_cache_close_failed", "error", err)
+			}
+		}()
+		catalog.SetSearchCache(cache)
+	} else {
+		logger.Warn("search_cache_disabled", "reason", "REDIS_URL is not configured")
+	}
 
 	router := gin.New()
 	router.Use(logging.GinMiddleware(logger))

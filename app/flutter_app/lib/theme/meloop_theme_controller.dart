@@ -70,15 +70,12 @@ class MeloopThemeController extends ChangeNotifier {
   Color get inputBorderColor => isDarkCardStyle
       ? Colors.white.withValues(alpha: 0.20)
       : const Color(0xFFD5E1DF);
-  Color get placeholderBgColor => isDarkCardStyle
-      ? const Color(0xFF283142)
-      : const Color(0xFFE7ECEB);
-  Color get placeholderIconColor => isDarkCardStyle
-      ? const Color(0xFF9AA7BD)
-      : const Color(0xFF7B8E8C);
-  Color get placeholderBorderColor => isDarkCardStyle
-      ? const Color(0xFF3D4B63)
-      : const Color(0xFFD0DADA);
+  Color get placeholderBgColor =>
+      isDarkCardStyle ? const Color(0xFF283142) : const Color(0xFFE7ECEB);
+  Color get placeholderIconColor =>
+      isDarkCardStyle ? const Color(0xFF9AA7BD) : const Color(0xFF7B8E8C);
+  Color get placeholderBorderColor =>
+      isDarkCardStyle ? const Color(0xFF3D4B63) : const Color(0xFFD0DADA);
   Color get softBadgeBgColor => isDarkCardStyle
       ? colorTheme.primary.withValues(alpha: 0.22)
       : colorTheme.softCardTint;

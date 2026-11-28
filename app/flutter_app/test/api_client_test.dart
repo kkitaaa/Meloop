@@ -275,6 +275,48 @@ void main() {
       },
     );
 
+    test('parses normalized music results and empty artwork', () async {
+      final dio = Dio();
+      dio.httpClientAdapter = _DioMockAdapter((options) {
+        expect(options.uri.queryParameters['limit'], '20');
+        return ResponseBody.fromString(
+          jsonEncode({
+            'success': true,
+            'data': {
+              'results': [
+                {
+                  'type': 'track',
+                  'spotify_id': 'track-1',
+                  'name': 'Canción',
+                  'artists': ['Rosalía'],
+                  'album': '',
+                  'image_url': '',
+                  'external_url': '',
+                },
+              ],
+              'limit': 20,
+              'offset': 0,
+              'total': 2,
+            },
+            'error': null,
+          }),
+          200,
+          headers: {
+            Headers.contentTypeHeader: ['application/json'],
+          },
+        );
+      });
+      final client = ApiClient(dio: dio);
+      final page = (await client.searchMusicTracks('Rosalía', limit: 20)).data!;
+      expect(page.items.single.id, 'track-1');
+      expect(page.items.single.artist, 'Rosalía');
+      expect(page.items.single.artworkUrl, isNull);
+      expect(page.total, 2);
+      expect(page.hasMore, isTrue);
+      client.close();
+      dio.close(force: true);
+    });
+
     test('accepts a login response without an optional role', () async {
       final client = ApiClient(
         session: AuthSession(persistent: false),

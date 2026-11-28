@@ -1020,8 +1020,7 @@ class FeedScreenState extends State<FeedScreen> {
                 : _posts.isEmpty
                 ? const EmptyState(
                     title: "Feed vacío",
-                    message:
-                        "Aún no hay publicaciones recientes. ¡Sé el primero en crear un blog!",
+                    message: "Aún no hay publicaciones recientes. ¡Sé el primero en crear un blog!",
                     icon: Icons.post_add,
                   )
                 : NotificationListener<ScrollNotification>(
@@ -1314,7 +1313,10 @@ class _MobileFeedCollapsibleHeader extends StatelessWidget {
           final xpH = ui.lerpDouble(95.0, 60.0, t)!;
 
           final expandedRightLeft = hPad + expandedLeftW + gap;
-          final expandedRightW = math.max(0.0, innerWidth - expandedLeftW - gap);
+          final expandedRightW = math.max(
+            0.0,
+            innerWidth - expandedLeftW - gap,
+          );
           final listeningTop = ui.lerpDouble(123.0, 76.0, 1.0 - listeningT)!;
           final listeningScale = ui.lerpDouble(0.92, 1.0, listeningT)!;
 
@@ -1330,12 +1332,10 @@ class _MobileFeedCollapsibleHeader extends StatelessWidget {
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
                         colors: [
-                          const Color(
-                            0xFF0A4754,
-                          ).withValues(alpha: 0.92 * rawT),
-                          const Color(
-                            0xFF0A4754,
-                          ).withValues(alpha: 0.72 * rawT),
+                          const Color(0xFF0A4754)
+                              .withValues(alpha: 0.92 * rawT),
+                          const Color(0xFF0A4754)
+                              .withValues(alpha: 0.72 * rawT),
                           const Color(0xFF0A4754).withValues(alpha: 0.0),
                         ],
                         stops: const [0.0, 0.78, 1.0],
@@ -1410,10 +1410,7 @@ class _MobileFeedCollapsibleHeader extends StatelessWidget {
                       opacity: pinT,
                       child: Transform.scale(
                         scale: ui.lerpDouble(0.35, 1.0, pinT)!,
-                        child: CustomizablePin(
-                          color: activePinColor,
-                          size: 38,
-                        ),
+                        child: CustomizablePin(color: activePinColor, size: 38),
                       ),
                     ),
                   ),
@@ -1435,7 +1432,8 @@ class _MobileFeedCollapsibleHeader extends StatelessWidget {
     final innerW = math.max(0.0, width - padding * 2);
     final innerH = math.max(0.0, height - padding * 2);
     final expandedPhotoH = math.min(innerW, 114.0);
-    final photoH = ui.lerpDouble(expandedPhotoH, innerH, collapseT)!
+    final photoH = ui
+        .lerpDouble(expandedPhotoH, innerH, collapseT)!
         .clamp(0.0, innerH);
     final photoW = ui.lerpDouble(innerW, innerH, collapseT)!.clamp(0.0, innerW);
     final iconSize = ui.lerpDouble(34.0, 24.0, collapseT)!;
@@ -1482,7 +1480,8 @@ class _MobileFeedCollapsibleHeader extends StatelessWidget {
                           style: MeloopTypography.username(
                             fontSize: 18.5,
                             fontWeight: FontWeight.w700,
-                            color: MeloopThemeController.instance.cardTitleColor,
+                            color:
+                                MeloopThemeController.instance.cardTitleColor,
                             height: 1.15,
                           ),
                         ),
@@ -1718,7 +1717,11 @@ class _MobileFeedCollapsibleHeader extends StatelessWidget {
                   color: emphasized ? null : colorTheme.headerTop,
                   borderRadius: BorderRadius.circular(height / 2),
                   border: Border.all(
-                    color: Color.lerp(colorTheme.pillTrack, Colors.black, 0.18)!,
+                    color: Color.lerp(
+                      colorTheme.pillTrack,
+                      Colors.black,
+                      0.18,
+                    )!,
                     width: 1.4,
                   ),
                 ),
@@ -1771,7 +1774,11 @@ class _MobileFeedCollapsibleHeader extends StatelessWidget {
                     height: 34,
                     iconSize: 16,
                     borderRadius: const BorderRadius.all(Radius.circular(5)),
-                    backgroundColor: Color.lerp(trackColor, Colors.black, 0.25)!,
+                    backgroundColor: Color.lerp(
+                      trackColor,
+                      Colors.black,
+                      0.25,
+                    )!,
                     iconColor: Colors.white.withValues(alpha: 0.78),
                     borderColor: Colors.white.withValues(alpha: 0.22),
                   ),

@@ -202,11 +202,7 @@ class DesktopFriendsSidebar extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 10),
-          Divider(
-            height: 1,
-            thickness: 1,
-            color: themeCtrl.cardDividerColor,
-          ),
+          Divider(height: 1, thickness: 1, color: themeCtrl.cardDividerColor),
           const SizedBox(height: 12),
           for (final friend in onlineFriends)
             _ProfilePreviewTile(
@@ -244,11 +240,7 @@ class DesktopFriendsSidebar extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 10),
-          Divider(
-            height: 1,
-            thickness: 1,
-            color: themeCtrl.cardDividerColor,
-          ),
+          Divider(height: 1, thickness: 1, color: themeCtrl.cardDividerColor),
           const SizedBox(height: 12),
           for (final profile in recommendedProfiles)
             _ProfilePreviewTile(

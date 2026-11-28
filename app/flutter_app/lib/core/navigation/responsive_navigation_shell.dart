@@ -35,8 +35,9 @@ class MobileShellScope extends InheritedWidget {
 
   final MobileShellController controller;
 
-  static MobileShellController? maybeOf(BuildContext context) =>
-      context.dependOnInheritedWidgetOfExactType<MobileShellScope>()?.controller;
+  static MobileShellController? maybeOf(BuildContext context) => context
+      .dependOnInheritedWidgetOfExactType<MobileShellScope>()
+      ?.controller;
 
   @override
   bool updateShouldNotify(MobileShellScope oldWidget) => true;

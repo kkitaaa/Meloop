@@ -118,8 +118,7 @@ class SlidingTabStackState extends State<SlidingTabStack>
       child: AnimatedBuilder(
         animation: _curvedAnimation,
         builder: (context, _) {
-          final isAnimating =
-              _previousIndex != null && _controller.value < 1.0;
+          final isAnimating = _previousIndex != null && _controller.value < 1.0;
           final t = _curvedAnimation.value;
 
           return Stack(

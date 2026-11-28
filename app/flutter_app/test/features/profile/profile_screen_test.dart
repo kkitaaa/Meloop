@@ -93,7 +93,10 @@ void main() {
       await tester.tap(find.text('Cuadrícula pastel'));
       await tester.pumpAndSettle();
 
-      expect(MeloopThemeController.instance.appStyle, MeloopAppStyle.flatSquare);
+      expect(
+        MeloopThemeController.instance.appStyle,
+        MeloopAppStyle.flatSquare,
+      );
       expect(
         MeloopThemeController.instance.colorTheme,
         MeloopColorTheme.sakuraPink,

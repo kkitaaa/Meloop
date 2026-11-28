@@ -26,10 +26,7 @@ class AppBackground extends StatelessWidget {
 }
 
 class _AppBackgroundPainter extends CustomPainter {
-  const _AppBackgroundPainter({
-    required this.theme,
-    required this.pattern,
-  });
+  const _AppBackgroundPainter({required this.theme, required this.pattern});
 
   final MeloopColorTheme theme;
   final MeloopBackgroundPattern pattern;
@@ -82,10 +79,7 @@ class _AppBackgroundPainter extends CustomPainter {
   }
 
   void _paintPastelGrid(Canvas canvas, Size size) {
-    canvas.drawRect(
-      Offset.zero & size,
-      Paint()..color = theme.gridBg,
-    );
+    canvas.drawRect(Offset.zero & size, Paint()..color = theme.gridBg);
     final linePaint = Paint()
       ..color = theme.gridLine
       ..strokeWidth = 2.0;

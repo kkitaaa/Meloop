@@ -40,6 +40,11 @@ spec:
                 configMapKeyRef:
                   name: meloop-config
                   key: SPOTIFY_MARKET
+            - name: REDIS_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: meloop-config
+                  key: REDIS_URL
           readinessProbe:
             httpGet:
               path: /health

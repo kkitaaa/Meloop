@@ -225,12 +225,16 @@ class _StyledAppCard extends StatelessWidget {
               end: Alignment.bottomCenter,
               colors: [
                 Colors.white.withValues(alpha: 0.94),
-                Color.lerp(Colors.white, baseTint, 0.55)!.withValues(
-                  alpha: 0.88,
-                ),
-                Color.lerp(baseTint, colorTheme.headerTop, 0.18)!.withValues(
-                  alpha: 0.84,
-                ),
+                Color.lerp(
+                  Colors.white,
+                  baseTint,
+                  0.55,
+                )!.withValues(alpha: 0.88),
+                Color.lerp(
+                  baseTint,
+                  colorTheme.headerTop,
+                  0.18,
+                )!.withValues(alpha: 0.84),
               ],
               stops: const [0.0, 0.45, 1.0],
             ),
@@ -770,9 +774,7 @@ class MeloopLogoSticker extends StatelessWidget {
         final isDark = themeCtrl.isDarkTheme;
         // Claro/colorido (svg_meloop_invert): letras del color del tema + borde blanco.
         // Oscuro (svg_meloop original): letras blancas + borde/disco en tono oscuro del tema.
-        final Color letterFill = isDark
-            ? Colors.white
-            : themeCtrl.primaryColor;
+        final Color letterFill = isDark ? Colors.white : themeCtrl.primaryColor;
         final Color outlineAndDisc = isDark
             ? themeCtrl.pillTrackColor
             : Colors.white;
@@ -929,9 +931,7 @@ class _MeloopLogoPaths {
   static const String _vinylCenterRingSvgData =
       'M381.032 59.343C390.593 58.4907 399.032 65.5576 399.872 75.12C400.711 84.6824 393.634 93.1123 384.071 93.9398C374.525 94.7658 366.114 87.7041 365.275 78.159C364.437 68.6142 371.488 60.1938 381.032 59.343ZM386.437 76.1646C386.164 74.0443 384.229 72.5432 382.108 72.8061C379.972 73.0708 378.459 75.0214 378.734 77.1556C379.008 79.2896 380.966 80.7939 383.099 80.5097C385.218 80.2269 386.71 78.2848 386.437 76.1646Z';
 
-  static final RegExp _tokenPattern = RegExp(
-    r'[MLHVCZ]|-?(?:\d+\.?\d*|\.\d+)',
-  );
+  static final RegExp _tokenPattern = RegExp(r'[MLHVCZ]|-?(?:\d+\.?\d*|\.\d+)');
 
   static Path _parseSvgPath(
     String data, {

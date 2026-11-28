@@ -578,8 +578,8 @@ class ApiClient implements PostPublisher {
     if (offset < 0 || offset > 1000) {
       throw RangeError.range(offset, 0, 1000, 'offset');
     }
-    if (limit < 1 || limit > 10) {
-      throw RangeError.range(limit, 1, 10, 'limit');
+    if (limit < 1 || limit > 20) {
+      throw RangeError.range(limit, 1, 20, 'limit');
     }
 
     return _musicCatalogGet(

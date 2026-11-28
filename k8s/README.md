@@ -50,6 +50,10 @@ Antes de desplegar `music-service`, el Secret `meloop-secrets` debe contener
 secretos aprobado por el equipo. No guardes los valores en este repositorio ni
 en `k8s/secret.yaml`. Configura `SPOTIFY_MARKET` en `k8s/configmap.yaml` con el
 código ISO 3166-1 alpha-2 que el equipo elija (por ejemplo, `CL`).
+`music-service` usa `REDIS_URL` para cachear búsquedas cinco minutos; si el Redis
+del entorno requiere credenciales, inyecta la URL desde el gestor de Secrets en
+vez del valor sin contraseña de `meloop-config`. Sin Redis el servicio registra
+el fallo y consulta Spotify directamente.
 
 ```powershell
 kubectl apply -f .\k8s\namespace.yaml

@@ -817,8 +817,7 @@ class FriendsScreenState extends State<FriendsScreen> {
         key: key,
         icon: Icons.people_outline_rounded,
         title: 'Aún no tienes amigos',
-        subtitle:
-            'Explora los perfiles sugeridos para empezar a construir tu red musical.',
+        subtitle: 'Explora los perfiles sugeridos para empezar a construir tu red musical.',
       );
     }
 
@@ -857,8 +856,7 @@ class FriendsScreenState extends State<FriendsScreen> {
         key: key,
         icon: Icons.mark_email_read_outlined,
         title: 'No tienes solicitudes pendientes',
-        subtitle:
-            'Cuando alguien quiera conectar contigo, aparecerá aquí para que aceptes o rechaces.',
+        subtitle: 'Cuando alguien quiera conectar contigo, aparecerá aquí para que aceptes o rechaces.',
       );
     }
 
@@ -889,8 +887,7 @@ class FriendsScreenState extends State<FriendsScreen> {
         key: key,
         icon: Icons.auto_awesome_outlined,
         title: '¡Al día con las sugerencias!',
-        subtitle:
-            'Pronto te recomendaremos más perfiles según tus playlists y artistas favoritos.',
+        subtitle: 'Pronto te recomendaremos más perfiles según tus playlists y artistas favoritos.',
       );
     }
 
@@ -1434,7 +1431,10 @@ class _SuggestedProfileTile extends StatelessWidget {
                         ),
                       ),
                       onPressed: onAddTap,
-                      icon: const Icon(Icons.person_add_alt_1_rounded, size: 15),
+                      icon: const Icon(
+                        Icons.person_add_alt_1_rounded,
+                        size: 15,
+                      ),
                       label: Text(
                         'Agregar',
                         style: MeloopTypography.lexend(

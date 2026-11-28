@@ -201,21 +201,9 @@ enum MeloopBackgroundPattern {
     label: 'Gradiente clásico',
     requiredLevel: 1,
   ),
-  pastelGrid(
-    id: 'pastel_grid',
-    label: 'Cuadrícula pastel',
-    requiredLevel: 3,
-  ),
-  aeroBubbles(
-    id: 'aero_bubbles',
-    label: 'Burbujas Aero',
-    requiredLevel: 6,
-  ),
-  dotNotebook(
-    id: 'dot_notebook',
-    label: 'Libreta de puntos',
-    requiredLevel: 8,
-  ),
+  pastelGrid(id: 'pastel_grid', label: 'Cuadrícula pastel', requiredLevel: 3),
+  aeroBubbles(id: 'aero_bubbles', label: 'Burbujas Aero', requiredLevel: 6),
+  dotNotebook(id: 'dot_notebook', label: 'Libreta de puntos', requiredLevel: 8),
   starlightNight(
     id: 'starlight_night',
     label: 'Noche estrellada',

@@ -16,50 +16,55 @@ import 'package:flutter_app/widgets/post_card.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  testWidgets('submits queries explicitly and isolates a music search failure', (
-    tester,
-  ) async {
-    final adapter = _SearchAdapter();
-    final apiClient = ApiClient(dio: Dio()..httpClientAdapter = adapter);
-    await tester.pumpWidget(
-      MaterialApp(home: GlobalSearchScreen(apiClient: apiClient)),
-    );
+  testWidgets(
+    'submits queries explicitly and isolates a music search failure',
+    (tester) async {
+      final adapter = _SearchAdapter();
+      final apiClient = ApiClient(dio: Dio()..httpClientAdapter = adapter);
+      await tester.pumpWidget(
+        MaterialApp(home: GlobalSearchScreen(apiClient: apiClient)),
+      );
 
-    final appBar = tester.widget<PreferredSize>(
-      find.byType(PreferredSize).first,
-    );
-    expect(appBar.preferredSize.height, 55);
-    expect(find.byType(MeloopLogoSticker), findsOneWidget);
+      final appBar = tester.widget<PreferredSize>(
+        find.byType(PreferredSize).first,
+      );
+      expect(appBar.preferredSize.height, 55);
+      expect(find.byType(MeloopLogoSticker), findsOneWidget);
 
-    // Typing and pausing does NOT auto-trigger search or pollute recent history.
-    await tester.enterText(find.byType(TextField), 'ana');
-    await tester.pump(const Duration(seconds: 1));
-    expect(adapter.paths, isEmpty);
+      // Typing and pausing does NOT auto-trigger search or pollute recent history.
+      await tester.enterText(find.byType(TextField), 'ana');
+      await tester.pump(const Duration(seconds: 1));
+      expect(adapter.paths, isEmpty);
 
-    // Pressing the Buscar button executes the search.
-    await tester.tap(find.text('Buscar'));
-    await tester.pumpAndSettle();
-    expect(
-      adapter.paths,
-      containsAll(['/v1/search/users', '/v1/search/posts', '/v1/music/search']),
-    );
-    expect(
-      adapter.requests
-          .where((request) => request.path == '/v1/search/posts')
-          .single
-          .queryParameters,
-      {'q': 'ana', 'filter': 'text'},
-    );
+      // Pressing the Buscar button executes the search.
+      await tester.tap(find.text('Buscar'));
+      await tester.pumpAndSettle();
+      expect(
+        adapter.paths,
+        containsAll([
+          '/v1/search/users',
+          '/v1/search/posts',
+          '/v1/music/search',
+        ]),
+      );
+      expect(
+        adapter.requests
+            .where((request) => request.path == '/v1/search/posts')
+            .single
+            .queryParameters,
+        {'q': 'ana', 'filter': 'text'},
+      );
 
-    await tester.tap(find.text('Música'));
-    await tester.pumpAndSettle();
-    expect(find.text('Spotify no está disponible.'), findsOneWidget);
+      await tester.tap(find.text('Música'));
+      await tester.pumpAndSettle();
+      expect(find.text('Spotify no está disponible.'), findsOneWidget);
 
-    await tester.tap(find.text('Usuarios'));
-    await tester.pumpAndSettle();
-    expect(find.text('Ana'), findsOneWidget);
-    expect(find.text('Nivel 4'), findsOneWidget);
-  });
+      await tester.tap(find.text('Usuarios'));
+      await tester.pumpAndSettle();
+      expect(find.text('Ana'), findsOneWidget);
+      expect(find.text('Nivel 4'), findsOneWidget);
+    },
+  );
 
   testWidgets('Android search header and content respect system insets', (
     tester,
@@ -152,7 +157,9 @@ void main() {
       await tester.pumpWidget(
         NotificationScope(
           controller: notifController,
-          child: MaterialApp(home: DesktopNavigationShell(apiClient: apiClient)),
+          child: MaterialApp(
+            home: DesktopNavigationShell(apiClient: apiClient),
+          ),
         ),
       );
       await tester.pumpAndSettle();

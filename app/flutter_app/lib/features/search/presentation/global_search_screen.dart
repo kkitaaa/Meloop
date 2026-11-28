@@ -636,9 +636,8 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
           ),
         ),
         TextButton(
-          onPressed: () => _openInFriendsTab(
-            _activeQuery.isNotEmpty ? _activeQuery : null,
-          ),
+          onPressed: () =>
+              _openInFriendsTab(_activeQuery.isNotEmpty ? _activeQuery : null),
           style: TextButton.styleFrom(
             foregroundColor: _accentLink,
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -800,9 +799,7 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
     if (_loading[_SearchSource.posts] == true) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 28),
-        child: Center(
-          child: CircularProgressIndicator(color: _tealAccent),
-        ),
+        child: Center(child: CircularProgressIndicator(color: _tealAccent)),
       );
     }
     if (error != null) {
@@ -1024,7 +1021,8 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
       return const _StateCard(
         icon: Icons.music_note_rounded,
         title: 'Encuentra música al instante',
-        message: 'Toca una canción o artista para abrirlo en Artistas y canciones.',
+        message:
+            'Toca una canción o artista para abrirlo en Artistas y canciones.',
       );
     }
     if (_tracks.isEmpty) {
@@ -1200,7 +1198,12 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
     }
 
     return ListView.separated(
-      padding: EdgeInsets.fromLTRB(isDesktop ? 0 : 12, 8, isDesktop ? 0 : 12, 24),
+      padding: EdgeInsets.fromLTRB(
+        isDesktop ? 0 : 12,
+        8,
+        isDesktop ? 0 : 12,
+        24,
+      ),
       itemCount: _users.length,
       separatorBuilder: (_, _) => const SizedBox(height: 8),
       itemBuilder: (context, index) => _buildUserCard(_users[index]),
@@ -1229,7 +1232,9 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
                   width: 44,
                   height: 44,
                   decoration: BoxDecoration(
-                    border: Border.all(color: _themeCtrl.placeholderBorderColor),
+                    border: Border.all(
+                      color: _themeCtrl.placeholderBorderColor,
+                    ),
                   ),
                   child: Image.network(
                     user.avatarUrl!,
@@ -1355,8 +1360,7 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
       child: _StateCard(
         icon: Icons.people_alt_outlined,
         title: 'Busca amigos rápidamente',
-        message:
-            'Escribe un nombre para encontrar personas o abre tu red completa en Amigos.',
+        message: 'Escribe un nombre para encontrar personas o abre tu red completa en Amigos.',
         action: OutlinedButton.icon(
           onPressed: () => _openInFriendsTab(null),
           icon: const Icon(Icons.arrow_forward_rounded, size: 16),
@@ -1445,17 +1449,18 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
     }
 
     return ListView(
-      padding: EdgeInsets.fromLTRB(isDesktop ? 0 : 16, 8, isDesktop ? 0 : 16, 20),
+      padding: EdgeInsets.fromLTRB(
+        isDesktop ? 0 : 16,
+        8,
+        isDesktop ? 0 : 16,
+        20,
+      ),
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(2, 4, 2, 10),
           child: Row(
             children: [
-              Icon(
-                Icons.history_rounded,
-                size: 18,
-                color: _accentLink,
-              ),
+              Icon(Icons.history_rounded, size: 18, color: _accentLink),
               const SizedBox(width: 8),
               Text(
                 'Búsquedas recientes',
@@ -1757,11 +1762,7 @@ class _StateCard extends StatelessWidget {
                   color: themeCtrl.softBadgeBgColor,
                   borderRadius: BorderRadius.circular(14),
                 ),
-                child: Icon(
-                  icon,
-                  color: themeCtrl.softBadgeFgColor,
-                  size: 26,
-                ),
+                child: Icon(icon, color: themeCtrl.softBadgeFgColor, size: 26),
               ),
               const SizedBox(height: 12),
               Text(

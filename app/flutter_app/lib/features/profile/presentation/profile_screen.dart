@@ -559,9 +559,9 @@ class _ProfileScreenState extends State<ProfileScreen>
       mobileShell.openFriends();
       return;
     }
-    Navigator.of(
-      context,
-    ).push<void>(MaterialPageRoute<void>(builder: (_) => const FriendsScreen()));
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(builder: (_) => const FriendsScreen()),
+    );
   }
 
   void _openArtistsSection({String? query}) {
@@ -1148,10 +1148,7 @@ class _ProfileScreenState extends State<ProfileScreen>
       clipBehavior: Clip.none,
       children: [
         Padding(padding: const EdgeInsets.only(top: 14), child: polaroidBody),
-        Positioned(
-          top: -6,
-          child: CustomizablePin(color: pinColor, size: 46),
-        ),
+        Positioned(top: -6, child: CustomizablePin(color: pinColor, size: 46)),
       ],
     );
   }
@@ -1227,7 +1224,10 @@ class _ProfileScreenState extends State<ProfileScreen>
               ),
             ],
           ),
-          child: ClipRRect(borderRadius: BorderRadius.circular(6), child: photo),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: photo,
+          ),
         );
       case ProfileBorderStyle.rainbowRgb:
         return AnimatedBuilder(
@@ -1560,75 +1560,78 @@ class _ProfileScreenState extends State<ProfileScreen>
         width: double.infinity,
         child: Column(
           children: [
-          Text(
-            'Artistas que me gustan',
-            style: MeloopTypography.lexend(
-              fontSize: 15,
-              fontWeight: FontWeight.w700,
-              color: isDark ? Colors.white : const Color(0xFF1A2626),
+            Text(
+              'Artistas que me gustan',
+              style: MeloopTypography.lexend(
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+                color: isDark ? Colors.white : const Color(0xFF1A2626),
+              ),
             ),
-          ),
-          const SizedBox(height: 12),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final twoCols = constraints.maxWidth >= 430;
-              if (!twoCols) {
-                return Column(
+            const SizedBox(height: 12),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final twoCols = constraints.maxWidth >= 430;
+                if (!twoCols) {
+                  return Column(
+                    children: [
+                      for (final artist in _favoriteArtists.take(4))
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: _buildArtistMiniTile(artist, config),
+                        ),
+                    ],
+                  );
+                }
+                final leftCol = <Widget>[];
+                final rightCol = <Widget>[];
+                for (var i = 0; i < _favoriteArtists.length; i++) {
+                  final tile = Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: _buildArtistMiniTile(_favoriteArtists[i], config),
+                  );
+                  if (i.isEven) {
+                    leftCol.add(tile);
+                  } else {
+                    rightCol.add(tile);
+                  }
+                }
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    for (final artist in _favoriteArtists.take(4))
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: _buildArtistMiniTile(artist, config),
-                      ),
+                    Expanded(child: Column(children: leftCol)),
+                    const SizedBox(width: 10),
+                    Expanded(child: Column(children: rightCol)),
                   ],
                 );
-              }
-              final leftCol = <Widget>[];
-              final rightCol = <Widget>[];
-              for (var i = 0; i < _favoriteArtists.length; i++) {
-                final tile = Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: _buildArtistMiniTile(_favoriteArtists[i], config),
-                );
-                if (i.isEven) {
-                  leftCol.add(tile);
-                } else {
-                  rightCol.add(tile);
-                }
-              }
-              return Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(child: Column(children: leftCol)),
-                  const SizedBox(width: 10),
-                  Expanded(child: Column(children: rightCol)),
-                ],
-              );
-            },
-          ),
-          const SizedBox(height: 6),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: accent,
-              foregroundColor: Colors.white,
-              elevation: 0,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
-              minimumSize: const Size(0, 32),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(18),
+              },
+            ),
+            const SizedBox(height: 6),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: accent,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 6,
+                ),
+                minimumSize: const Size(0, 32),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(18),
+                ),
+              ),
+              onPressed: () => _openArtistsSection(),
+              child: Text(
+                'Ver más',
+                style: MeloopTypography.lexend(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white,
+                ),
               ),
             ),
-            onPressed: () => _openArtistsSection(),
-            child: Text(
-              'Ver más',
-              style: MeloopTypography.lexend(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: Colors.white,
-              ),
-            ),
-          ),
-        ],
+          ],
         ),
       ),
     );
@@ -1926,9 +1929,8 @@ class _ProfileScreenState extends State<ProfileScreen>
     final displayedPosts = List<Map<String, dynamic>>.from(_posts);
     if (_blogsFilter == _ProfileBlogsFilter.trending) {
       displayedPosts.sort(
-        (a, b) => ((b['likes'] as num?) ?? 0).compareTo(
-          (a['likes'] as num?) ?? 0,
-        ),
+        (a, b) =>
+            ((b['likes'] as num?) ?? 0).compareTo((a['likes'] as num?) ?? 0),
       );
     }
 
@@ -2080,7 +2082,9 @@ class _ProfileScreenState extends State<ProfileScreen>
               if (_isLoadingMore)
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 16),
-                  child: Center(child: CircularProgressIndicator(color: accent)),
+                  child: Center(
+                    child: CircularProgressIndicator(color: accent),
+                  ),
                 )
               else
                 Padding(

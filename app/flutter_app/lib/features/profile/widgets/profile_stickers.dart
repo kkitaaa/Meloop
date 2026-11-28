@@ -103,9 +103,7 @@ class ProfileStickerArtwork extends StatelessWidget {
     return SizedBox(
       width: size,
       height: size,
-      child: CustomPaint(
-        painter: _StickerVectorPainter(stickerId: stickerId),
-      ),
+      child: CustomPaint(painter: _StickerVectorPainter(stickerId: stickerId)),
     );
   }
 }
@@ -128,11 +126,7 @@ class _StickerVectorPainter extends CustomPainter {
     canvas.drawCircle(Offset(cx, cy + s * 0.05), s * 0.37, shadowPaint);
 
     // Borde blanco die-cut
-    canvas.drawCircle(
-      Offset(cx, cy),
-      s * 0.42,
-      Paint()..color = Colors.white,
-    );
+    canvas.drawCircle(Offset(cx, cy), s * 0.42, Paint()..color = Colors.white);
 
     switch (stickerId) {
       case 'cat_shy':
@@ -204,26 +198,51 @@ class _StickerVectorPainter extends CustomPainter {
 
     // Ojos y chapitas
     final eyePaint = Paint()..color = const Color(0xFF2B353D);
-    canvas.drawCircle(Offset(cx - s * 0.11, cy - s * 0.01), s * 0.036, eyePaint);
-    canvas.drawCircle(Offset(cx + s * 0.11, cy - s * 0.01), s * 0.036, eyePaint);
-    final blush = Paint()..color = const Color(0xFFFF9DBB).withValues(alpha: 0.7);
+    canvas.drawCircle(
+      Offset(cx - s * 0.11, cy - s * 0.01),
+      s * 0.036,
+      eyePaint,
+    );
+    canvas.drawCircle(
+      Offset(cx + s * 0.11, cy - s * 0.01),
+      s * 0.036,
+      eyePaint,
+    );
+    final blush = Paint()
+      ..color = const Color(0xFFFF9DBB).withValues(alpha: 0.7);
     canvas.drawOval(
-      Rect.fromCenter(center: Offset(cx - s * 0.17, cy + s * 0.06), width: s * 0.10, height: s * 0.055),
+      Rect.fromCenter(
+        center: Offset(cx - s * 0.17, cy + s * 0.06),
+        width: s * 0.10,
+        height: s * 0.055,
+      ),
       blush,
     );
     canvas.drawOval(
-      Rect.fromCenter(center: Offset(cx + s * 0.17, cy + s * 0.06), width: s * 0.10, height: s * 0.055),
+      Rect.fromCenter(
+        center: Offset(cx + s * 0.17, cy + s * 0.06),
+        width: s * 0.10,
+        height: s * 0.055,
+      ),
       blush,
     );
 
     // Patitas juntas al frente
     final pawFill = Paint()..color = const Color(0xFFDCE6EC);
     canvas.drawOval(
-      Rect.fromCenter(center: Offset(cx - s * 0.06, cy + s * 0.21), width: s * 0.13, height: s * 0.12),
+      Rect.fromCenter(
+        center: Offset(cx - s * 0.06, cy + s * 0.21),
+        width: s * 0.13,
+        height: s * 0.12,
+      ),
       pawFill,
     );
     canvas.drawOval(
-      Rect.fromCenter(center: Offset(cx + s * 0.06, cy + s * 0.21), width: s * 0.13, height: s * 0.12),
+      Rect.fromCenter(
+        center: Offset(cx + s * 0.06, cy + s * 0.21),
+        width: s * 0.13,
+        height: s * 0.12,
+      ),
       pawFill,
     );
   }
@@ -236,26 +255,48 @@ class _StickerVectorPainter extends CustomPainter {
       ..strokeWidth = s * 0.034;
 
     final bodyRect = RRect.fromRectAndRadius(
-      Rect.fromCenter(center: Offset(cx, cy + s * 0.04), width: s * 0.56, height: s * 0.40),
+      Rect.fromCenter(
+        center: Offset(cx, cy + s * 0.04),
+        width: s * 0.56,
+        height: s * 0.40,
+      ),
       Radius.circular(s * 0.20),
     );
     canvas.drawRRect(bodyRect, fill);
     canvas.drawRRect(bodyRect, outline);
 
     // Corazones flotando arriba
-    _drawMiniHeart(canvas, Offset(cx - s * 0.22, cy - s * 0.22), s * 0.12, const Color(0xFFFF7AA8));
-    _drawMiniHeart(canvas, Offset(cx + s * 0.19, cy - s * 0.25), s * 0.10, const Color(0xFFFF5C94));
+    _drawMiniHeart(
+      canvas,
+      Offset(cx - s * 0.22, cy - s * 0.22),
+      s * 0.12,
+      const Color(0xFFFF7AA8),
+    );
+    _drawMiniHeart(
+      canvas,
+      Offset(cx + s * 0.19, cy - s * 0.25),
+      s * 0.10,
+      const Color(0xFFFF5C94),
+    );
 
     // Carita kawaii
     final dark = Paint()..color = const Color(0xFF3E303D);
     canvas.drawCircle(Offset(cx - s * 0.10, cy + s * 0.02), s * 0.032, dark);
     canvas.drawCircle(Offset(cx + s * 0.10, cy + s * 0.02), s * 0.032, dark);
     canvas.drawOval(
-      Rect.fromCenter(center: Offset(cx - s * 0.17, cy + s * 0.09), width: s * 0.09, height: s * 0.05),
+      Rect.fromCenter(
+        center: Offset(cx - s * 0.17, cy + s * 0.09),
+        width: s * 0.09,
+        height: s * 0.05,
+      ),
       Paint()..color = const Color(0xFFFFA5C7),
     );
     canvas.drawOval(
-      Rect.fromCenter(center: Offset(cx + s * 0.17, cy + s * 0.09), width: s * 0.09, height: s * 0.05),
+      Rect.fromCenter(
+        center: Offset(cx + s * 0.17, cy + s * 0.09),
+        width: s * 0.09,
+        height: s * 0.05,
+      ),
       Paint()..color = const Color(0xFFFFA5C7),
     );
     final smile = Path()
@@ -281,14 +322,22 @@ class _StickerVectorPainter extends CustomPainter {
       ..strokeWidth = s * 0.032
       ..strokeCap = StrokeCap.round;
     canvas.drawArc(
-      Rect.fromCenter(center: Offset(cx - s * 0.10, cy - s * 0.08), width: s * 0.11, height: s * 0.09),
+      Rect.fromCenter(
+        center: Offset(cx - s * 0.10, cy - s * 0.08),
+        width: s * 0.11,
+        height: s * 0.09,
+      ),
       math.pi,
       math.pi,
       false,
       arcPaint,
     );
     canvas.drawArc(
-      Rect.fromCenter(center: Offset(cx + s * 0.10, cy - s * 0.08), width: s * 0.11, height: s * 0.09),
+      Rect.fromCenter(
+        center: Offset(cx + s * 0.10, cy - s * 0.08),
+        width: s * 0.11,
+        height: s * 0.09,
+      ),
       math.pi,
       math.pi,
       false,
@@ -296,18 +345,31 @@ class _StickerVectorPainter extends CustomPainter {
     );
 
     // Corazón abrazado al centro-abajo
-    _drawMiniHeart(canvas, Offset(cx, cy + s * 0.14), s * 0.22, const Color(0xFFFF4D7E));
+    _drawMiniHeart(
+      canvas,
+      Offset(cx, cy + s * 0.14),
+      s * 0.22,
+      const Color(0xFFFF4D7E),
+    );
   }
 
   void _paintVinyl(Canvas canvas, double cx, double cy, double s) {
-    canvas.drawCircle(Offset(cx, cy), s * 0.34, Paint()..color = const Color(0xFF1C2124));
+    canvas.drawCircle(
+      Offset(cx, cy),
+      s * 0.34,
+      Paint()..color = const Color(0xFF1C2124),
+    );
     final groove = Paint()
       ..color = Colors.white.withValues(alpha: 0.14)
       ..style = PaintingStyle.stroke
       ..strokeWidth = s * 0.015;
     canvas.drawCircle(Offset(cx, cy), s * 0.27, groove);
     canvas.drawCircle(Offset(cx, cy), s * 0.21, groove);
-    canvas.drawCircle(Offset(cx, cy), s * 0.13, Paint()..color = const Color(0xFFFF6699));
+    canvas.drawCircle(
+      Offset(cx, cy),
+      s * 0.13,
+      Paint()..color = const Color(0xFFFF6699),
+    );
     canvas.drawCircle(Offset(cx, cy), s * 0.035, Paint()..color = Colors.white);
   }
 
@@ -345,7 +407,11 @@ class _StickerVectorPainter extends CustomPainter {
       ..strokeWidth = s * 0.07
       ..strokeCap = StrokeCap.round;
     canvas.drawArc(
-      Rect.fromCenter(center: Offset(cx, cy + s * 0.04), width: s * 0.50, height: s * 0.52),
+      Rect.fromCenter(
+        center: Offset(cx, cy + s * 0.04),
+        width: s * 0.50,
+        height: s * 0.52,
+      ),
       math.pi,
       math.pi,
       false,
@@ -354,14 +420,22 @@ class _StickerVectorPainter extends CustomPainter {
     final cupPaint = Paint()..color = const Color(0xFF125B9A);
     canvas.drawRRect(
       RRect.fromRectAndRadius(
-        Rect.fromCenter(center: Offset(cx - s * 0.24, cy + s * 0.11), width: s * 0.14, height: s * 0.24),
+        Rect.fromCenter(
+          center: Offset(cx - s * 0.24, cy + s * 0.11),
+          width: s * 0.14,
+          height: s * 0.24,
+        ),
         Radius.circular(s * 0.06),
       ),
       cupPaint,
     );
     canvas.drawRRect(
       RRect.fromRectAndRadius(
-        Rect.fromCenter(center: Offset(cx + s * 0.24, cy + s * 0.11), width: s * 0.14, height: s * 0.24),
+        Rect.fromCenter(
+          center: Offset(cx + s * 0.24, cy + s * 0.11),
+          width: s * 0.14,
+          height: s * 0.24,
+        ),
         Radius.circular(s * 0.06),
       ),
       cupPaint,
@@ -371,7 +445,11 @@ class _StickerVectorPainter extends CustomPainter {
   void _paintPaw(Canvas canvas, double cx, double cy, double s) {
     final pink = Paint()..color = const Color(0xFFFF85B3);
     canvas.drawOval(
-      Rect.fromCenter(center: Offset(cx, cy + s * 0.11), width: s * 0.34, height: s * 0.25),
+      Rect.fromCenter(
+        center: Offset(cx, cy + s * 0.11),
+        width: s * 0.34,
+        height: s * 0.25,
+      ),
       pink,
     );
     for (final offset in [
@@ -380,7 +458,11 @@ class _StickerVectorPainter extends CustomPainter {
       Offset(0.07, -0.17),
       Offset(0.20, -0.06),
     ]) {
-      canvas.drawCircle(Offset(cx + s * offset.dx, cy + s * offset.dy), s * 0.075, pink);
+      canvas.drawCircle(
+        Offset(cx + s * offset.dx, cy + s * offset.dy),
+        s * 0.075,
+        pink,
+      );
     }
   }
 
@@ -399,7 +481,11 @@ class _StickerVectorPainter extends CustomPainter {
     );
     // Reflejo especular típico de Frutiger Aero
     canvas.drawOval(
-      Rect.fromCenter(center: Offset(cx - s * 0.11, cy - s * 0.14), width: s * 0.22, height: s * 0.12),
+      Rect.fromCenter(
+        center: Offset(cx - s * 0.11, cy - s * 0.14),
+        width: s * 0.22,
+        height: s * 0.12,
+      ),
       Paint()..color = Colors.white.withValues(alpha: 0.72),
     );
     canvas.drawCircle(
@@ -411,19 +497,35 @@ class _StickerVectorPainter extends CustomPainter {
 
   void _paintCassette(Canvas canvas, double cx, double cy, double s) {
     final body = RRect.fromRectAndRadius(
-      Rect.fromCenter(center: Offset(cx, cy), width: s * 0.62, height: s * 0.42),
+      Rect.fromCenter(
+        center: Offset(cx, cy),
+        width: s * 0.62,
+        height: s * 0.42,
+      ),
       Radius.circular(s * 0.06),
     );
     canvas.drawRRect(body, Paint()..color = const Color(0xFF7E5CE6));
     canvas.drawRRect(
       RRect.fromRectAndRadius(
-        Rect.fromCenter(center: Offset(cx, cy - s * 0.05), width: s * 0.50, height: s * 0.20),
+        Rect.fromCenter(
+          center: Offset(cx, cy - s * 0.05),
+          width: s * 0.50,
+          height: s * 0.20,
+        ),
         Radius.circular(s * 0.03),
       ),
       Paint()..color = const Color(0xFFFFF6D6),
     );
-    canvas.drawCircle(Offset(cx - s * 0.11, cy - s * 0.04), s * 0.055, Paint()..color = const Color(0xFF2B2440));
-    canvas.drawCircle(Offset(cx + s * 0.11, cy - s * 0.04), s * 0.055, Paint()..color = const Color(0xFF2B2440));
+    canvas.drawCircle(
+      Offset(cx - s * 0.11, cy - s * 0.04),
+      s * 0.055,
+      Paint()..color = const Color(0xFF2B2440),
+    );
+    canvas.drawCircle(
+      Offset(cx + s * 0.11, cy - s * 0.04),
+      s * 0.055,
+      Paint()..color = const Color(0xFF2B2440),
+    );
   }
 
   void _paintMusicNote(Canvas canvas, double cx, double cy, double s) {
@@ -432,19 +534,35 @@ class _StickerVectorPainter extends CustomPainter {
       ..color = const Color(0xFF00AF92)
       ..strokeWidth = s * 0.065
       ..strokeCap = StrokeCap.round;
-    canvas.drawLine(Offset(cx - s * 0.10, cy + s * 0.15), Offset(cx - s * 0.10, cy - s * 0.18), stem);
-    canvas.drawLine(Offset(cx + s * 0.16, cy + s * 0.10), Offset(cx + s * 0.16, cy - s * 0.23), stem);
+    canvas.drawLine(
+      Offset(cx - s * 0.10, cy + s * 0.15),
+      Offset(cx - s * 0.10, cy - s * 0.18),
+      stem,
+    );
+    canvas.drawLine(
+      Offset(cx + s * 0.16, cy + s * 0.10),
+      Offset(cx + s * 0.16, cy - s * 0.23),
+      stem,
+    );
     canvas.drawLine(
       Offset(cx - s * 0.10, cy - s * 0.18),
       Offset(cx + s * 0.16, cy - s * 0.23),
       stem..strokeWidth = s * 0.085,
     );
     canvas.drawOval(
-      Rect.fromCenter(center: Offset(cx - s * 0.17, cy + s * 0.16), width: s * 0.17, height: s * 0.13),
+      Rect.fromCenter(
+        center: Offset(cx - s * 0.17, cy + s * 0.16),
+        width: s * 0.17,
+        height: s * 0.13,
+      ),
       teal,
     );
     canvas.drawOval(
-      Rect.fromCenter(center: Offset(cx + s * 0.09, cy + s * 0.11), width: s * 0.17, height: s * 0.13),
+      Rect.fromCenter(
+        center: Offset(cx + s * 0.09, cy + s * 0.11),
+        width: s * 0.17,
+        height: s * 0.13,
+      ),
       teal,
     );
   }
