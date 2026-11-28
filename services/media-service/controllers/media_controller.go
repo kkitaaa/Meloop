@@ -132,3 +132,53 @@ func (ctrl *MediaController) VerifyMedia(c *gin.Context) {
 
 	httpresponse.SuccessGin(c, http.StatusOK, resp)
 }
+
+// GeneratePresignedDownload genera una URL temporal para leer un objeto multimedia privado.
+func (ctrl *MediaController) GeneratePresignedDownload(c *gin.Context) {
+	userID := c.GetString(ContextUserIDKey)
+	if userID == "" {
+		userID = c.GetHeader("X-User-ID")
+		if userID == "" {
+			userID = c.GetHeader("X-User-Id")
+		}
+	}
+	if strings.TrimSpace(userID) == "" {
+		httpresponse.UnauthorizedGin(c, "No se encontró sesión de usuario autenticada")
+		return
+	}
+
+	objectKey := c.Query("key")
+	if objectKey == "" {
+		objectKey = c.Query("object_key")
+	}
+	resp, err := ctrl.mediaService.CreatePresignedDownload(c.Request.Context(), userID, objectKey)
+	if err != nil {
+		if errors.Is(err, services.ErrUnauthorized) {
+			httpresponse.UnauthorizedGin(c, "No se encontró sesión de usuario autenticada")
+			return
+		}
+		var valErr *services.ValidationError
+		if errors.As(err, &valErr) {
+			httpresponse.ErrorWithDetailsGin(
+				c,
+				http.StatusBadRequest,
+				httpresponse.ErrValidation,
+				valErr.Message,
+				map[string]string{"field": valErr.Field, "issue": valErr.Issue},
+			)
+			return
+		}
+		if errors.Is(err, services.ErrObjectNotFound) {
+			httpresponse.NotFoundGin(c, "El archivo multimedia no existe en el almacenamiento")
+			return
+		}
+		if errors.Is(err, services.ErrStorageUnreachable) {
+			httpresponse.ErrorGin(c, http.StatusBadGateway, httpresponse.ErrInternal, "No se pudo conectar con el almacenamiento MinIO/S3")
+			return
+		}
+		httpresponse.InternalErrorGin(c)
+		return
+	}
+
+	httpresponse.SuccessGin(c, http.StatusOK, resp)
+}

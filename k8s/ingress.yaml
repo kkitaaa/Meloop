@@ -16,3 +16,13 @@ spec:
                 name: backend
                 port:
                   number: 8080
+    - host: minio.meloop.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: minio
+                port:
+                  number: 9000

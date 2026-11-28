@@ -4,8 +4,9 @@ import "strings"
 
 // Constantes de tipos de recursos permitidos para esta tarea (REI-03)
 const (
-	ResourceTypeProfilePhoto = "profile_photo"
-	ResourceTypeBanner       = "banner"
+	ResourceTypeProfilePhoto   = "profile_photo"
+	ResourceTypeBanner         = "banner"
+	ResourceTypePostAttachment = "post_attachment"
 )
 
 // Límites de tamaño en bytes según el MVP y SRS (REI-03)
@@ -39,6 +40,8 @@ func (r *PresignedUploadRequest) GetResourceType() string {
 		return ResourceTypeProfilePhoto
 	case "banner", "banners", "banner_perfil":
 		return ResourceTypeBanner
+	case "post_attachment", "post", "posts", "attachment", "adjunto":
+		return ResourceTypePostAttachment
 	default:
 		return res
 	}
@@ -82,6 +85,13 @@ type PresignedUploadResponse struct {
 	ObjectKey string `json:"object_key"`
 	MediaID   string `json:"media_id"`
 	ExpiresIn int    `json:"expires_in"` // Segundos de validez
+}
+
+// PresignedDownloadResponse proporciona acceso temporal a un objeto privado.
+type PresignedDownloadResponse struct {
+	DownloadURL string `json:"download_url"`
+	ObjectKey   string `json:"object_key"`
+	ExpiresIn   int    `json:"expires_in"`
 }
 
 // VerifyMediaRequest solicita la verificación de existencia de un objeto en MinIO/S3

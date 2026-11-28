@@ -15,8 +15,9 @@ import (
 )
 
 type mockMediaService struct {
-	createPresignedUploadFunc func(ctx context.Context, userID string, req *models.PresignedUploadRequest) (*models.PresignedUploadResponse, error)
-	verifyMediaFunc           func(ctx context.Context, objectKey string) (*models.VerifyMediaResponse, error)
+	createPresignedUploadFunc   func(ctx context.Context, userID string, req *models.PresignedUploadRequest) (*models.PresignedUploadResponse, error)
+	createPresignedDownloadFunc func(ctx context.Context, userID, objectKey string) (*models.PresignedDownloadResponse, error)
+	verifyMediaFunc             func(ctx context.Context, objectKey string) (*models.VerifyMediaResponse, error)
 }
 
 func (m *mockMediaService) CreatePresignedUpload(ctx context.Context, userID string, req *models.PresignedUploadRequest) (*models.PresignedUploadResponse, error) {
@@ -43,6 +44,17 @@ func (m *mockMediaService) VerifyMedia(ctx context.Context, objectKey string) (*
 	}, nil
 }
 
+func (m *mockMediaService) CreatePresignedDownload(ctx context.Context, userID, objectKey string) (*models.PresignedDownloadResponse, error) {
+	if m.createPresignedDownloadFunc != nil {
+		return m.createPresignedDownloadFunc(ctx, userID, objectKey)
+	}
+	return &models.PresignedDownloadResponse{
+		DownloadURL: "http://localhost:9000/meloop-media/" + objectKey + "?signature=test",
+		ObjectKey:   objectKey,
+		ExpiresIn:   900,
+	}, nil
+}
+
 func setupTestRouter(srv services.MediaService) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
@@ -52,6 +64,7 @@ func setupTestRouter(srv services.MediaService) *gin.Engine {
 	r.POST("/v1/media/upload", ctrl.GeneratePresignedUpload)
 	r.POST("/media/verify", ctrl.VerifyMedia)
 	r.GET("/media/verify", ctrl.VerifyMedia)
+	r.GET("/media/download-url", ctrl.GeneratePresignedDownload)
 
 	return r
 }
@@ -180,6 +193,38 @@ func TestMediaController_VerifyMedia_FalloAlmacenamiento_502(t *testing.T) {
 
 	if w.Code != http.StatusBadGateway {
 		t.Fatalf("se esperaba código 502, se obtuvo: %d", w.Code)
+	}
+}
+
+func TestMediaController_GeneratePresignedDownload(t *testing.T) {
+	router := setupTestRouter(&mockMediaService{})
+	req, _ := http.NewRequest(http.MethodGet, "/media/download-url?key=profiles/usr-1/avatar.png", nil)
+	req.Header.Set("X-User-ID", "usr-1")
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("se esperaba código 200, se obtuvo: %d, body: %s", w.Code, w.Body.String())
+	}
+	var response httpresponse.Response
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("error al deserializar respuesta: %v", err)
+	}
+	if !response.Success {
+		t.Fatal("se esperaba success=true")
+	}
+}
+
+func TestMediaController_GeneratePresignedDownload_RequiresUser(t *testing.T) {
+	router := setupTestRouter(&mockMediaService{})
+	req, _ := http.NewRequest(http.MethodGet, "/media/download-url?key=profiles/usr-1/avatar.png", nil)
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("se esperaba código 401, se obtuvo: %d", w.Code)
 	}
 }
 

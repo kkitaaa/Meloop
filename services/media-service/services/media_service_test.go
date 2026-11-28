@@ -11,9 +11,10 @@ import (
 )
 
 type mockStorageRepository struct {
-	presignedUploadURLFunc func(ctx context.Context, objectKey, contentType string, expires time.Duration) (string, error)
-	objectExistsFunc       func(ctx context.Context, objectKey string) (bool, int64, string, error)
-	deleteObjectFunc       func(ctx context.Context, objectKey string) error
+	presignedUploadURLFunc   func(ctx context.Context, objectKey, contentType string, expires time.Duration) (string, error)
+	presignedDownloadURLFunc func(ctx context.Context, objectKey string, expires time.Duration) (string, error)
+	objectExistsFunc         func(ctx context.Context, objectKey string) (bool, int64, string, error)
+	deleteObjectFunc         func(ctx context.Context, objectKey string) error
 }
 
 func (m *mockStorageRepository) GeneratePresignedUploadURL(ctx context.Context, objectKey, contentType string, expires time.Duration) (string, error) {
@@ -21,6 +22,13 @@ func (m *mockStorageRepository) GeneratePresignedUploadURL(ctx context.Context, 
 		return m.presignedUploadURLFunc(ctx, objectKey, contentType, expires)
 	}
 	return "http://localhost:9000/meloop-media/" + objectKey + "?signature=test", nil
+}
+
+func (m *mockStorageRepository) GeneratePresignedDownloadURL(ctx context.Context, objectKey string, expires time.Duration) (string, error) {
+	if m.presignedDownloadURLFunc != nil {
+		return m.presignedDownloadURLFunc(ctx, objectKey, expires)
+	}
+	return "http://localhost:9000/meloop-media/" + objectKey + "?signature=download-test", nil
 }
 
 func (m *mockStorageRepository) ObjectExists(ctx context.Context, objectKey string) (bool, int64, string, error) {
@@ -96,6 +104,24 @@ func TestCreatePresignedUpload_Exitoso_Banner(t *testing.T) {
 
 	if !strings.HasSuffix(resp.ObjectKey, ".jpg") {
 		t.Errorf("extensión de objeto incorrecta: %s, esperaba sufijo '.jpg'", resp.ObjectKey)
+	}
+}
+
+func TestCreatePresignedUpload_Exitoso_AdjuntoPublicacion(t *testing.T) {
+	repo := &mockStorageRepository{}
+	srv := NewMediaService(repo)
+
+	resp, err := srv.CreatePresignedUpload(context.Background(), "usr-789", &models.PresignedUploadRequest{
+		ResourceType: models.ResourceTypePostAttachment,
+		ContentType:  "image/jpeg",
+		FileName:     "adjunto.jpg",
+		FileSize:     1024,
+	})
+	if err != nil {
+		t.Fatalf("se esperaba éxito pero ocurrió error: %v", err)
+	}
+	if !strings.HasPrefix(resp.ObjectKey, "posts/usr-789/") || !strings.HasSuffix(resp.ObjectKey, ".jpg") {
+		t.Errorf("clave de adjunto inesperada: %s", resp.ObjectKey)
 	}
 }
 
@@ -200,6 +226,7 @@ func TestVerifyMedia(t *testing.T) {
 				return true, 2048, "image/jpeg", nil
 			},
 		}
+
 		srv := NewMediaService(repo)
 
 		resp, err := srv.VerifyMedia(context.Background(), "profiles/usr-1/abc.jpg")
@@ -236,6 +263,48 @@ func TestVerifyMedia(t *testing.T) {
 		_, err := srv.VerifyMedia(context.Background(), "profiles/usr-1/abc.jpg")
 		if !errors.Is(err, ErrStorageUnreachable) {
 			t.Fatalf("se esperaba ErrStorageUnreachable, se obtuvo: %v", err)
+		}
+	})
+}
+
+func TestCreatePresignedDownload(t *testing.T) {
+	t.Run("Genera enlace para objeto existente", func(t *testing.T) {
+		repo := &mockStorageRepository{}
+		srv := NewMediaService(repo)
+		resp, err := srv.CreatePresignedDownload(context.Background(), "usr-1", "profiles/usr-1/avatar.png")
+		if err != nil {
+			t.Fatalf("error inesperado: %v", err)
+		}
+		if resp.ObjectKey != "profiles/usr-1/avatar.png" || resp.DownloadURL == "" || resp.ExpiresIn != 900 {
+			t.Fatalf("respuesta de descarga inesperada: %+v", resp)
+		}
+	})
+
+	t.Run("Rechaza claves fuera de los prefijos multimedia", func(t *testing.T) {
+		srv := NewMediaService(&mockStorageRepository{})
+		for _, key := range []string{
+			"private/secrets.txt",
+			"profiles/usr-1/../private.txt",
+			`profiles\usr-1\avatar.png`,
+		} {
+			_, err := srv.CreatePresignedDownload(context.Background(), "usr-1", key)
+			var validationErr *ValidationError
+			if !errors.As(err, &validationErr) || validationErr.Issue != "invalid_path" {
+				t.Errorf("clave %q: se esperaba invalid_path, se obtuvo: %v", key, err)
+			}
+		}
+	})
+
+	t.Run("No genera enlace para objeto inexistente", func(t *testing.T) {
+		repo := &mockStorageRepository{
+			objectExistsFunc: func(context.Context, string) (bool, int64, string, error) {
+				return false, 0, "", nil
+			},
+		}
+		srv := NewMediaService(repo)
+		_, err := srv.CreatePresignedDownload(context.Background(), "usr-1", "posts/usr-1/missing.png")
+		if !errors.Is(err, ErrObjectNotFound) {
+			t.Fatalf("se esperaba ErrObjectNotFound, se obtuvo: %v", err)
 		}
 	})
 }

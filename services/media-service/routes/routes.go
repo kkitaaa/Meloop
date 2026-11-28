@@ -25,6 +25,7 @@ func SetupRoutes(router *gin.Engine, mediaCtrl *controllers.MediaController) {
 		mediaGroup.POST("/presigned-upload-url", mediaCtrl.GeneratePresignedUpload)
 		mediaGroup.POST("/verify", mediaCtrl.VerifyMedia)
 		mediaGroup.GET("/verify", mediaCtrl.VerifyMedia)
+		mediaGroup.GET("/download-url", mediaCtrl.GeneratePresignedDownload)
 	}
 
 	// Rutas versionadas v1 bajo /v1/media
@@ -34,5 +35,6 @@ func SetupRoutes(router *gin.Engine, mediaCtrl *controllers.MediaController) {
 		v1MediaGroup.POST("/presigned-upload-url", mediaCtrl.GeneratePresignedUpload)
 		v1MediaGroup.POST("/verify", mediaCtrl.VerifyMedia)
 		v1MediaGroup.GET("/verify", mediaCtrl.VerifyMedia)
+		v1MediaGroup.GET("/download-url", mediaCtrl.GeneratePresignedDownload)
 	}
 }

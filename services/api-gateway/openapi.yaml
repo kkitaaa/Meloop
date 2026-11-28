@@ -1936,6 +1936,35 @@ paths:
           $ref: '#/components/responses/InternalError'
         '502':
           $ref: '#/components/responses/BadGateway'
+  /media/download-url:
+    get:
+      tags: [Usuarios]
+      operationId: createPresignedDownloadURL
+      summary: Obtener una URL temporal para descargar un objeto privado
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      parameters:
+        - name: key
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: URL de descarga temporal creada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '502':
+          $ref: '#/components/responses/BadGateway'
   /v1/media/upload:
     post:
       tags: [Usuarios]
@@ -2056,7 +2085,35 @@ paths:
           $ref: '#/components/responses/InternalError'
         '502':
           $ref: '#/components/responses/BadGateway'
-
+  /v1/media/download-url:
+    get:
+      tags: [Usuarios]
+      operationId: createPresignedDownloadURLV1
+      summary: Obtener URL de descarga temporal (v1)
+      security:
+        - bearerAuth: []
+      x-required-roles: user
+      parameters:
+        - name: key
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: URL de descarga temporal creada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '502':
+          $ref: '#/components/responses/BadGateway'
   /recommendations/{user_id}:
     get:
       tags: [Social]
@@ -2665,7 +2722,7 @@ components:
       properties:
         resource_type:
           type: string
-          enum: [profile_photo, banner]
+          enum: [profile_photo, banner, post_attachment]
         tipo_recurso:
           type: string
         content_type:

@@ -25,7 +25,7 @@ spec:
             - name: MINIO_ENDPOINT
               value: "minio:9000"
             - name: MINIO_PUBLIC_ENDPOINT
-              value: "http://minio:9000"
+              value: "http://minio.meloop.local"
             - name: MINIO_MEDIA_BUCKET
               value: "meloop-media"
             - name: MINIO_USE_SSL
