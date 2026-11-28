@@ -122,7 +122,7 @@ func setupProfileTestRouter(srv services.ProfileService) *gin.Engine {
 	ctrl := NewProfileController(srv)
 
 	protected := r.Group("/users")
-	protected.Use(AuthRequired())
+	protected.Use(testAuthRequired())
 	{
 		protected.GET("/me/profile", ctrl.GetOwnProfile)
 		protected.GET("/me/perfil", ctrl.GetOwnProfile)
@@ -132,7 +132,7 @@ func setupProfileTestRouter(srv services.ProfileService) *gin.Engine {
 	}
 
 	v1Protected := r.Group("/v1/users")
-	v1Protected.Use(AuthRequired())
+	v1Protected.Use(testAuthRequired())
 	{
 		v1Protected.GET("/me/profile", ctrl.GetOwnProfile)
 		v1Protected.GET("/me/perfil", ctrl.GetOwnProfile)
@@ -349,6 +349,21 @@ func TestProfileController_GetOwnProfile_NotFound_404(t *testing.T) {
 
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("se esperaba código 404, se obtuvo: %d", w.Code)
+	}
+}
+
+func TestProfileController_GetOwnProfile_SocialCounterUnavailable_502(t *testing.T) {
+	router := setupProfileTestRouter(&mockProfileService{
+		getOwnProfileFunc: func(context.Context, string) (*models.UserProfileResponse, error) {
+			return nil, services.ErrSocialCounterUnavailable
+		},
+	})
+	request := httptest.NewRequest(http.MethodGet, "/users/me/profile", nil)
+	request.Header.Set("X-User-ID", "usr-1")
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadGateway)
 	}
 }
 

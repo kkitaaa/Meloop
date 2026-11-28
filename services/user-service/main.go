@@ -22,17 +22,19 @@ func main() {
 
 	dbPool, err := repositories.InitDB(ctx, cfg.DatabaseURL)
 	if err != nil {
-		logger.Warn("database_connection_failed", "error", err, "url", cfg.DatabaseURL)
+		logger.Warn("database_connection_failed", "component", "postgres")
 	} else {
 		defer dbPool.Close()
-		logger.Info("database_connected", "url", cfg.DatabaseURL)
+		logger.Info("database_connected", "component", "postgres")
 	}
 
 	userRepo := repositories.NewUserRepository(dbPool)
+	authClient := services.NewAuthClient(cfg.AuthServiceURL)
 	privacyRepo := repositories.NewPrivacyRepository(dbPool)
 	notifRepo := repositories.NewNotificationConfigRepository(dbPool)
 	inventoryRepo := repositories.NewInventoryRepository(dbPool)
 	profileRepo := repositories.NewProfileRepository(dbPool)
+	userSearchRepo := repositories.NewUserSearchRepository(dbPool)
 
 	mediaVerifier := services.NewHTTPMediaVerifier(cfg.MediaServiceURL)
 
@@ -40,7 +42,8 @@ func main() {
 	privacySrv := services.NewPrivacyService(privacyRepo, userRepo)
 	notifSrv := services.NewNotificationConfigService(notifRepo, userRepo)
 	inventorySrv := services.NewInventoryService(inventoryRepo, userRepo)
-	profileSrv := services.NewProfileService(profileRepo, userRepo, mediaVerifier, privacyRepo)
+	friendCounter := services.NewHTTPSocialFriendCounter(cfg.SocialServiceURL, cfg.SocialServiceInternalToken)
+	profileSrv := services.NewProfileServiceWithFriendCounter(profileRepo, userRepo, mediaVerifier, privacyRepo, friendCounter)
 
 	accountCtrl := controllers.NewAccountController(userSrv)
 	adminCtrl := controllers.NewAdminController(userSrv)
@@ -48,6 +51,7 @@ func main() {
 	notifCtrl := controllers.NewNotificationController(notifSrv)
 	inventoryCtrl := controllers.NewInventoryController(inventorySrv)
 	profileCtrl := controllers.NewProfileController(profileSrv)
+	userSearchCtrl := controllers.NewUserSearchController(services.NewUserSearchService(userSearchRepo))
 
 	router := gin.New()
 	router.Use(logging.GinMiddleware(logger))
@@ -59,15 +63,14 @@ func main() {
 
 	// Rutas protegidas de gestión de cuenta (RF-05, RF-08, RF-09)
 	protected := router.Group("/users")
-	protected.Use(controllers.AuthRequired())
+	protected.Use(controllers.AuthRequired(authClient))
 	{
 		adminRoutes := protected.Group("/admin")
-		adminRoutes.Use(controllers.AdminRequired())
 		{
-			adminRoutes.GET("/users", adminCtrl.ListUsers)
-			adminRoutes.PATCH("/users/:id/suspend", adminCtrl.SuspendUser)
-			adminRoutes.PATCH("/users/:id/reactivate", adminCtrl.ReactivateUser)
-			adminRoutes.PATCH("/users/:id/moderation", adminCtrl.UpdateModeratorRole)
+			adminRoutes.GET("/users", controllers.AdminRequired(userRepo), adminCtrl.ListUsers)
+			adminRoutes.PATCH("/users/:id/suspend", controllers.AdminRequired(userRepo), adminCtrl.SuspendUser)
+			adminRoutes.PATCH("/users/:id/reactivate", controllers.AdminRequired(userRepo), adminCtrl.ReactivateUser)
+			adminRoutes.PATCH("/users/:id/moderation", controllers.AdminOnly(userRepo), adminCtrl.UpdateModeratorRole)
 		}
 
 		// Gestión de inventario y equipamiento (RF-08 / RF-09 / RN-12)
@@ -79,6 +82,7 @@ func main() {
 		protected.GET("/me", accountCtrl.GetAccount)
 		protected.PATCH("/me/username", accountCtrl.UpdateUsername)
 		protected.POST("/me/email", accountCtrl.RequestEmailChange)
+		protected.GET("/search", userSearchCtrl.Search)
 
 		// Consulta y edición de perfil (RF-06, RF-07)
 		protected.GET("/me/profile", profileCtrl.GetOwnProfile)
@@ -108,8 +112,10 @@ func main() {
 
 	// Rutas protegidas versionadas v1 bajo /v1/users (RF-07, RF-08, RF-09)
 	v1Protected := router.Group("/v1/users")
-	v1Protected.Use(controllers.AuthRequired())
+	v1Protected.Use(controllers.AuthRequired(authClient))
 	{
+		v1Protected.GET("/search", userSearchCtrl.Search)
+
 		// Consulta y edición de perfil (RF-06, RF-07)
 		v1Protected.GET("/me/profile", profileCtrl.GetOwnProfile)
 		v1Protected.GET("/me/perfil", profileCtrl.GetOwnProfile)

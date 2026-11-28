@@ -27,6 +27,8 @@ type Post struct {
 	MusicID       *string   `json:"music_id,omitempty"`
 	UrlMultimedia *string   `json:"url_multimedia,omitempty"`
 	CreatedAt     time.Time `json:"created_at"`
+	LikesCount    int       `json:"likes_count"`
+	IsLiked       bool      `json:"is_liked"`
 }
 
 // CreatePostParams agrupa los datos validados para insertar en una transacción
@@ -202,14 +204,36 @@ func (r *SQLPostRepository) DeletePost(ctx context.Context, postID string, autho
 // GetPostByID obtiene un post por su ID
 func (r *SQLPostRepository) GetPostByID(ctx context.Context, postID string, requesterID string) (*Post, error) {
 	query := `
-		SELECT id_publicacion, id_usuario, texto, id_cancion, url_multimedia, fecha_creacion
-		FROM publicacion
-		WHERE id_publicacion = $1
+		SELECT p.id_publicacion, p.id_usuario, p.texto, p.id_cancion, p.url_multimedia, p.fecha_creacion,
+			COALESCE(l.likes_count, 0),
+			EXISTS (
+				SELECT 1 FROM interaccion i
+				WHERE i.id_publicacion = p.id_publicacion
+					AND i.id_usuario = $2
+					AND i.tipo = 'like'
+			)
+		FROM publicacion p
+		LEFT JOIN (
+			SELECT id_publicacion, COUNT(id_interaccion) AS likes_count
+			FROM interaccion
+			WHERE tipo = 'like'
+			GROUP BY id_publicacion
+		) l ON p.id_publicacion = l.id_publicacion
+		WHERE p.id_publicacion = $1
 	`
-	row := r.db.QueryRowContext(ctx, query, postID)
+	row := r.db.QueryRowContext(ctx, query, postID, requesterID)
 
 	var post Post
-	err := row.Scan(&post.ID, &post.AuthorID, &post.Content, &post.MusicID, &post.UrlMultimedia, &post.CreatedAt)
+	err := row.Scan(
+		&post.ID,
+		&post.AuthorID,
+		&post.Content,
+		&post.MusicID,
+		&post.UrlMultimedia,
+		&post.CreatedAt,
+		&post.LikesCount,
+		&post.IsLiked,
+	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrPostNotFound
@@ -223,13 +247,26 @@ func (r *SQLPostRepository) GetPostByID(ctx context.Context, postID string, requ
 // GetPostsByAuthor obtiene los posts de un perfil con paginación
 func (r *SQLPostRepository) GetPostsByAuthor(ctx context.Context, authorID string, requesterID string, limit int, offset int) ([]Post, error) {
 	query := `
-		SELECT id_publicacion, id_usuario, texto, id_cancion, url_multimedia, fecha_creacion
-		FROM publicacion
-		WHERE id_usuario = $1 
-		ORDER BY fecha_creacion DESC
-		LIMIT $2 OFFSET $3
+		SELECT p.id_publicacion, p.id_usuario, p.texto, p.id_cancion, p.url_multimedia, p.fecha_creacion,
+			COALESCE(l.likes_count, 0),
+			EXISTS (
+				SELECT 1 FROM interaccion i
+				WHERE i.id_publicacion = p.id_publicacion
+					AND i.id_usuario = $2
+					AND i.tipo = 'like'
+			)
+		FROM publicacion p
+		LEFT JOIN (
+			SELECT id_publicacion, COUNT(id_interaccion) AS likes_count
+			FROM interaccion
+			WHERE tipo = 'like'
+			GROUP BY id_publicacion
+		) l ON p.id_publicacion = l.id_publicacion
+		WHERE p.id_usuario = $1
+		ORDER BY p.fecha_creacion DESC
+		LIMIT $3 OFFSET $4
 	`
-	rows, err := r.db.QueryContext(ctx, query, authorID, limit, offset)
+	rows, err := r.db.QueryContext(ctx, query, authorID, requesterID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("error al consultar posts por autor: %w", err)
 	}
@@ -238,7 +275,16 @@ func (r *SQLPostRepository) GetPostsByAuthor(ctx context.Context, authorID strin
 	var posts []Post
 	for rows.Next() {
 		var p Post
-		if err := rows.Scan(&p.ID, &p.AuthorID, &p.Content, &p.MusicID, &p.UrlMultimedia, &p.CreatedAt); err != nil {
+		if err := rows.Scan(
+			&p.ID,
+			&p.AuthorID,
+			&p.Content,
+			&p.MusicID,
+			&p.UrlMultimedia,
+			&p.CreatedAt,
+			&p.LikesCount,
+			&p.IsLiked,
+		); err != nil {
 			return nil, err
 		}
 		posts = append(posts, p)
@@ -255,13 +301,26 @@ func (r *SQLPostRepository) SearchPosts(ctx context.Context, searchTerm string, 
 	searchPattern := "%" + searchTerm + "%"
 
 	query := `
-		SELECT id_publicacion, id_usuario, texto, id_cancion, url_multimedia, fecha_creacion
-		FROM publicacion
-		WHERE (texto ILIKE $1 OR id_cancion ILIKE $1)
-		ORDER BY fecha_creacion DESC
-		LIMIT $2 OFFSET $3
+		SELECT p.id_publicacion, p.id_usuario, p.texto, p.id_cancion, p.url_multimedia, p.fecha_creacion,
+			COALESCE(l.likes_count, 0),
+			EXISTS (
+				SELECT 1 FROM interaccion i
+				WHERE i.id_publicacion = p.id_publicacion
+					AND i.id_usuario = $2
+					AND i.tipo = 'like'
+			)
+		FROM publicacion p
+		LEFT JOIN (
+			SELECT id_publicacion, COUNT(id_interaccion) AS likes_count
+			FROM interaccion
+			WHERE tipo = 'like'
+			GROUP BY id_publicacion
+		) l ON p.id_publicacion = l.id_publicacion
+		WHERE (p.texto ILIKE $1 OR p.id_cancion ILIKE $1)
+		ORDER BY p.fecha_creacion DESC
+		LIMIT $3 OFFSET $4
 	`
-	rows, err := r.db.QueryContext(ctx, query, searchPattern, limit, offset)
+	rows, err := r.db.QueryContext(ctx, query, searchPattern, requesterID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("error al buscar posts: %w", err)
 	}
@@ -270,7 +329,16 @@ func (r *SQLPostRepository) SearchPosts(ctx context.Context, searchTerm string, 
 	var posts []Post
 	for rows.Next() {
 		var p Post
-		if err := rows.Scan(&p.ID, &p.AuthorID, &p.Content, &p.MusicID, &p.UrlMultimedia, &p.CreatedAt); err != nil {
+		if err := rows.Scan(
+			&p.ID,
+			&p.AuthorID,
+			&p.Content,
+			&p.MusicID,
+			&p.UrlMultimedia,
+			&p.CreatedAt,
+			&p.LikesCount,
+			&p.IsLiked,
+		); err != nil {
 			return nil, err
 		}
 		posts = append(posts, p)

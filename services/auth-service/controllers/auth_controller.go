@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/meloop/auth-service/models"
 	"github.com/meloop/auth-service/services"
+	"github.com/meloop/services/common/authz"
 	"github.com/meloop/services/common/httpresponse"
 )
 
@@ -141,14 +142,63 @@ func (ctrl *AuthController) Logout(c *gin.Context) {
 
 // Validate handles GET /auth/validate
 func (ctrl *AuthController) Validate(c *gin.Context) {
-	user, exists := c.Get("user")
+	userValue, exists := c.Get("user")
 	if !exists {
 		httpresponse.UnauthorizedGin(c, "No se encontró sesión activa")
 		return
 	}
+	user, ok := userValue.(*models.SessionUser)
+	if !ok || user == nil {
+		httpresponse.UnauthorizedGin(c, "No se encontró sesión activa")
+		return
+	}
 
-	httpcall := httpresponse.SuccessGin
-	httpcall(c, http.StatusOK, user)
+	rawRole, err := ctrl.authService.GetRoleByID(c.Request.Context(), user.ID)
+	if err != nil {
+		if errors.Is(err, services.ErrUserNotFound) {
+			httpresponse.UnauthorizedGin(c, "Sesión inválida o expirada")
+			return
+		}
+		httpresponse.ErrorGin(
+			c,
+			http.StatusServiceUnavailable,
+			"DATABASE_UNAVAILABLE",
+			"Servicio de usuarios no disponible",
+		)
+		return
+	}
+
+	role, valid := authz.NormalizeRole(rawRole)
+	if !valid {
+		role = ""
+	}
+
+	httpresponse.SuccessGin(c, http.StatusOK, models.ValidateResponse{
+		ID:       user.ID,
+		Username: user.Username,
+		Email:    user.Email,
+		Role:     role,
+	})
+}
+
+func (ctrl *AuthController) Refresh(c *gin.Context) {
+	tokenValue, exists := c.Get("session_token")
+	token, isString := tokenValue.(string)
+	if !exists || !isString || token == "" {
+		httpresponse.UnauthorizedGin(c, "No se encontró sesión activa")
+		return
+	}
+
+	res, err := ctrl.authService.RefreshSession(c.Request.Context(), token)
+	if err != nil {
+		if errors.Is(err, services.ErrInvalidSession) {
+			httpresponse.UnauthorizedGin(c, "Sesión inválida o expirada")
+			return
+		}
+		httpresponse.InternalErrorGin(c)
+		return
+	}
+	httpresponse.SuccessGin(c, http.StatusOK, res)
 }
 
 // ChangePassword maneja la petición de cambio de contraseña (POST /auth/change-password)

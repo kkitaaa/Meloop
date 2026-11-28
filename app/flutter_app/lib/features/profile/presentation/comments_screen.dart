@@ -10,7 +10,6 @@ class CommentsScreen extends StatefulWidget {
 }
 
 class _CommentsScreenState extends State<CommentsScreen> {
-  final Color _bgColor = const Color(0xFF0D5C5E);
   final Color _tealAccent = const Color(0xFF1ABC9C);
 
   final TextEditingController _commentController = TextEditingController();
@@ -175,7 +174,7 @@ class _CommentsScreenState extends State<CommentsScreen> {
     final bool isDesktop = screenWidth > 900;
 
     return Scaffold(
-      backgroundColor: _bgColor,
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
         backgroundColor: _tealAccent,
         title: const Text(

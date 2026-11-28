@@ -3,7 +3,14 @@ import 'package:flutter/material.dart';
 /// Chat flotante de demostración para pantallas de escritorio.
 /// No abre WebSockets todavía: los mensajes viven solo durante esta sesión.
 class DesktopChat extends StatefulWidget {
-  const DesktopChat({super.key});
+  const DesktopChat({
+    super.key,
+    this.fullScreen = false,
+    this.onConversationChanged,
+  });
+
+  final bool fullScreen;
+  final ValueChanged<bool>? onConversationChanged;
 
   @override
   State<DesktopChat> createState() => _DesktopChatState();
@@ -65,6 +72,12 @@ class _DesktopChatState extends State<DesktopChat> {
 
   void _openConversation(_Conversation conversation) {
     setState(() => _conversation = conversation);
+    widget.onConversationChanged?.call(true);
+  }
+
+  void _closeConversation() {
+    setState(() => _conversation = null);
+    widget.onConversationChanged?.call(false);
   }
 
   void _sendMessage() {
@@ -82,6 +95,57 @@ class _DesktopChatState extends State<DesktopChat> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.fullScreen) {
+      return PopScope<Object?>(
+        canPop: _conversation == null,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop && _conversation != null) _closeConversation();
+        },
+        child: Material(
+          color: const Color(0xFFFAFAFA),
+          child: SafeArea(
+            child: Column(
+              children: [
+                Container(
+                  height: 56,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  color: _headerColor,
+                  child: Row(
+                    children: [
+                      if (_conversation != null)
+                        IconButton(
+                          tooltip: 'Volver a conversaciones',
+                          onPressed: _closeConversation,
+                          icon: const Icon(
+                            Icons.arrow_back,
+                            color: Colors.white,
+                          ),
+                        ),
+                      const Icon(
+                        Icons.chat_bubble_outline,
+                        color: Colors.white,
+                        size: 19,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        _conversation?.name ?? 'Chat',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(child: _conversation == null ? _inbox() : _chat()),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     return Material(
       color: Colors.transparent,
       elevation: 14,
@@ -127,7 +191,7 @@ class _DesktopChatState extends State<DesktopChat> {
                           color: Colors.white,
                           size: 21,
                         ),
-                        onPressed: () => setState(() => _conversation = null),
+                        onPressed: _closeConversation,
                       ),
                     if (_conversation != null) const SizedBox(width: 10),
                     const Icon(
