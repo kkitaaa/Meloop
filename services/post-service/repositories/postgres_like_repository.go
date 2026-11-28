@@ -1,6 +1,9 @@
 package repositories
 
 import (
+	"errors"
+	"strings"
+
 	"github.com/meloop/post-service/models"
 	"gorm.io/gorm"
 )
@@ -15,13 +18,30 @@ func NewPostgresLikeRepository(db *gorm.DB) *PostgresLikeRepository {
 	}
 }
 
+func isDuplicateKeyError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, gorm.ErrDuplicatedKey) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "23505") || strings.Contains(msg, "duplicate key")
+}
+
 func (r *PostgresLikeRepository) AddLike(like models.Like) error {
 	var existing models.Like
 	err := r.db.Where("id_publicacion = ? AND id_usuario = ?", like.PostID, like.UserID).First(&existing).Error
 	if err == nil {
 		return ErrLikeAlreadyExists
 	}
-	return r.db.Create(&like).Error
+	if err := r.db.Create(&like).Error; err != nil {
+		if isDuplicateKeyError(err) {
+			return ErrLikeAlreadyExists
+		}
+		return err
+	}
+	return nil
 }
 
 func (r *PostgresLikeRepository) RemoveLike(postID, userID string) error {
