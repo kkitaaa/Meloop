@@ -151,7 +151,7 @@ func (s *PostService) EnsureCanInteract(ctx context.Context, userID, postID stri
 }
 
 func (s *PostService) EnsureCanInteractWithUser(ctx context.Context, userID, targetUserID string) error {
-	blocked, err := s.blockedWith(ctx, userID)
+	blocked, err := s.blockedWithFresh(ctx, userID)
 	if err != nil {
 		return err
 	}
@@ -203,6 +203,16 @@ func (s *PostService) SharePost(ctx context.Context, userID, postID string) erro
 func (s *PostService) blockedWith(ctx context.Context, userID string) ([]string, error) {
 	if s.blockedUsers == nil {
 		return nil, errors.New("blocked users provider is not configured")
+	}
+	return s.blockedUsers.BlockedWith(ctx, userID)
+}
+
+func (s *PostService) blockedWithFresh(ctx context.Context, userID string) ([]string, error) {
+	if s.blockedUsers == nil {
+		return nil, errors.New("blocked users provider is not configured")
+	}
+	if provider, ok := s.blockedUsers.(FreshBlockedUsersProvider); ok {
+		return provider.BlockedWithFresh(ctx, userID)
 	}
 	return s.blockedUsers.BlockedWith(ctx, userID)
 }

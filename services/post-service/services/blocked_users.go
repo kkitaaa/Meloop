@@ -19,6 +19,10 @@ type BlockedUsersProvider interface {
 	BlockedWith(ctx context.Context, userID string) ([]string, error)
 }
 
+type FreshBlockedUsersProvider interface {
+	BlockedWithFresh(ctx context.Context, userID string) ([]string, error)
+}
+
 type blockedUsersSource interface {
 	ListUserIDs(ctx context.Context) ([]string, error)
 }
@@ -66,6 +70,27 @@ func (s *RedisBlockedUsers) BlockedWith(ctx context.Context, userID string) ([]s
 		slog.Warn("blocked_users_cache_read_failed", "user_id", userID, "error", err)
 	}
 
+	blocked, err := s.fetchBlockedUsers(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	s.cacheBlockedUsers(ctx, userID, blocked)
+	return blocked, nil
+}
+
+func (s *RedisBlockedUsers) BlockedWithFresh(ctx context.Context, userID string) ([]string, error) {
+	if userID == "" || s.cache == nil || s.users == nil || s.social == nil {
+		return nil, errors.New("blocked users provider is not configured")
+	}
+	blocked, err := s.fetchBlockedUsers(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	s.cacheBlockedUsers(ctx, userID, blocked)
+	return blocked, nil
+}
+
+func (s *RedisBlockedUsers) fetchBlockedUsers(ctx context.Context, userID string) ([]string, error) {
 	candidates, err := s.users.ListUserIDs(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list users for block lookup: %w", err)
@@ -77,14 +102,18 @@ func (s *RedisBlockedUsers) BlockedWith(ctx context.Context, userID string) ([]s
 	if blocked == nil {
 		blocked = []string{}
 	}
+	return blocked, nil
+}
+
+func (s *RedisBlockedUsers) cacheBlockedUsers(ctx context.Context, userID string, blocked []string) {
 	value, err := json.Marshal(blocked)
 	if err != nil {
-		return nil, fmt.Errorf("encode blocked users: %w", err)
+		slog.Error("blocked_users_cache_encode_failed", "user_id", userID, "error", err)
+		return
 	}
-	if err := s.cache.Set(ctx, key, string(value), blockedUsersCacheTTL); err != nil {
+	if err := s.cache.Set(ctx, blockedUsersCacheKey(userID), string(value), blockedUsersCacheTTL); err != nil {
 		slog.Warn("blocked_users_cache_write_failed", "user_id", userID, "error", err)
 	}
-	return blocked, nil
 }
 
 func blockedUsersCacheKey(userID string) string {

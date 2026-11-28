@@ -16,6 +16,9 @@ import (
 func TestPostgresFeedQueriesMatchSupabaseMigrations(t *testing.T) {
 	databaseURL := os.Getenv("TEST_DATABASE_URL")
 	if databaseURL == "" {
+		if os.Getenv("REQUIRE_TEST_DATABASE_URL") == "1" {
+			t.Fatal("TEST_DATABASE_URL is required for PostgreSQL integration tests")
+		}
 		t.Skip("set TEST_DATABASE_URL to run feed integration tests against migrated Supabase PostgreSQL")
 	}
 

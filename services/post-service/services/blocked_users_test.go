@@ -123,6 +123,29 @@ func TestBlockedWithFallsBackToSocialWhenRedisIsUnavailable(t *testing.T) {
 	}
 }
 
+func TestBlockedWithFreshBypassesStaleCacheBeforeInteractions(t *testing.T) {
+	userID := "viewer"
+	key := blockedUsersCacheKey(userID)
+	cache := &blockedUsersCacheFake{values: map[string]string{key: `[]`}}
+	users := &blockedUsersSourceFake{ids: []string{"author", userID}}
+	social := &blockedCandidatesFake{blocked: []string{"author"}}
+	provider := newRedisBlockedUsers(cache, users, social)
+
+	blocked, err := provider.BlockedWithFresh(context.Background(), userID)
+	if err != nil {
+		t.Fatalf("BlockedWithFresh: %v", err)
+	}
+	if !reflect.DeepEqual(blocked, []string{"author"}) {
+		t.Fatalf("fresh blocked users = %v, want [author]", blocked)
+	}
+	if social.calls != 1 || users.calls != 1 {
+		t.Fatalf("social calls = %d and user-list calls = %d, want one each", social.calls, users.calls)
+	}
+	if cache.values[key] != `["author"]` {
+		t.Fatalf("cached blocked users = %q, want refreshed result", cache.values[key])
+	}
+}
+
 func TestBlockedWithReplacesMalformedCacheEntry(t *testing.T) {
 	key := blockedUsersCacheKey("viewer")
 	cache := &blockedUsersCacheFake{values: map[string]string{key: "invalid json"}}

@@ -65,14 +65,43 @@ func (ctrl *InteractionController) GetSavedPosts(c *gin.Context) {
 	if !ctrl.ready(c, userID) {
 		return
 	}
-	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
-	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
+	limit, offset, ok := parseSavedPostsPagination(c)
+	if !ok {
+		return
+	}
 	posts, hasMore, err := ctrl.service.GetSavedPosts(c.Request.Context(), userID, limit, offset)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "no se pudieron cargar las publicaciones guardadas"})
 		return
 	}
 	httpresponse.SuccessGin(c, http.StatusOK, gin.H{"items": posts, "hasMore": hasMore})
+}
+
+const (
+	defaultSavedPostsLimit = 20
+	maxSavedPostsLimit     = 50
+	maxSavedPostsOffset    = 10000
+)
+
+func parseSavedPostsPagination(c *gin.Context) (int, int, bool) {
+	limit, offset := defaultSavedPostsLimit, 0
+	if rawLimit, exists := c.GetQuery("limit"); exists {
+		parsed, err := strconv.Atoi(rawLimit)
+		if err != nil || parsed < 1 || parsed > maxSavedPostsLimit {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "limit debe ser un entero entre 1 y 50"})
+			return 0, 0, false
+		}
+		limit = parsed
+	}
+	if rawOffset, exists := c.GetQuery("offset"); exists {
+		parsed, err := strconv.Atoi(rawOffset)
+		if err != nil || parsed < 0 || parsed > maxSavedPostsOffset {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "offset debe ser un entero entre 0 y 10000"})
+			return 0, 0, false
+		}
+		offset = parsed
+	}
+	return limit, offset, true
 }
 
 func (ctrl *InteractionController) SharePost(c *gin.Context) {

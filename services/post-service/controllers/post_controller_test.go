@@ -24,6 +24,8 @@ type controllerPostRepositoryFake struct {
 	createArgs []any
 	updateArgs []any
 	saveArgs   []any
+	savedArgs  []any
+	savedCalls int
 }
 
 func (repo *controllerPostRepositoryFake) CreatePost(_ context.Context, authorID, content string, mediaURL *string) (*repositories.Post, error) {
@@ -60,7 +62,9 @@ func (repo *controllerPostRepositoryFake) SavePost(_ context.Context, userID, po
 func (*controllerPostRepositoryFake) UnsavePost(context.Context, string, string) error {
 	return nil
 }
-func (*controllerPostRepositoryFake) GetSavedPosts(context.Context, string, []string, int, int) ([]repositories.Post, error) {
+func (repo *controllerPostRepositoryFake) GetSavedPosts(_ context.Context, userID string, excluded []string, limit, offset int) ([]repositories.Post, error) {
+	repo.savedCalls++
+	repo.savedArgs = []any{userID, excluded, limit, offset}
 	return nil, nil
 }
 func (*controllerPostRepositoryFake) RemoveLike(context.Context, string, string) error { return nil }
@@ -99,7 +103,7 @@ func TestCreatePostReturnsPersistedPost(t *testing.T) {
 		post: &repositories.Post{ID: "post-1", AuthorID: "author-1", Content: "hello", UrlMultimedia: &mediaURL},
 	}
 
-	response := newPostControllerRequest(http.MethodPost, "/posts", `{"content":"hello","media_urls":["https://cdn.example/post.png"]}`, "author-1", repo)
+	response := newPostControllerRequest(http.MethodPost, "/posts", `{"content":"hello","user_id":"attacker","media_urls":["https://cdn.example/post.png"]}`, "author-1", repo)
 
 	assert.Equal(t, http.StatusCreated, response.Code, response.Body.String())
 	assert.Contains(t, response.Body.String(), `"id":"post-1"`)
@@ -161,4 +165,40 @@ func TestInteractionControllerSavesAndSharesPost(t *testing.T) {
 	router.ServeHTTP(shareResponse, httptest.NewRequest(http.MethodPost, "/posts/post-1/share", strings.NewReader(`{"platform":"direct"}`)))
 	require.Equal(t, http.StatusOK, shareResponse.Code, shareResponse.Body.String())
 	assert.Contains(t, shareResponse.Body.String(), "https://meloop.app/p/post-1")
+}
+
+func TestGetSavedPostsValidatesPaginationBeforeRepositoryQuery(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo := &controllerPostRepositoryFake{}
+	controller := NewInteractionController(services.NewPostService(repo, testBlockedUsers{}))
+	router := gin.New()
+	router.GET("/v1/me/saved", func(c *gin.Context) {
+		c.Set("userID", "reader-1")
+		controller.GetSavedPosts(c)
+	})
+
+	for _, query := range []string{
+		"?limit=-1",
+		"?limit=51",
+		"?limit=invalid",
+		"?offset=-1",
+		"?offset=10001",
+		"?offset=invalid",
+	} {
+		recorder := httptest.NewRecorder()
+		router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/me/saved"+query, nil))
+		assert.Equal(t, http.StatusBadRequest, recorder.Code, query)
+	}
+	assert.Zero(t, repo.savedCalls, "invalid pagination must not reach the repository")
+
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/me/saved?limit=10&offset=2", nil))
+	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+	assert.Equal(t, 1, repo.savedCalls)
+	assert.Equal(t, []any{"reader-1", []string(nil), 11, 2}, repo.savedArgs)
+
+	recorder = httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/me/saved?limit=50&offset=10000", nil))
+	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+	assert.Equal(t, []any{"reader-1", []string(nil), 51, 10000}, repo.savedArgs)
 }

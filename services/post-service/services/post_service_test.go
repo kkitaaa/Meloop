@@ -114,6 +114,21 @@ func (provider blockedUsersFake) BlockedWith(context.Context, string) ([]string,
 	return provider.ids, provider.err
 }
 
+type freshBlockedUsersFake struct {
+	cachedIDs []string
+	freshIDs  []string
+	calls     int
+}
+
+func (provider *freshBlockedUsersFake) BlockedWith(context.Context, string) ([]string, error) {
+	return provider.cachedIDs, nil
+}
+
+func (provider *freshBlockedUsersFake) BlockedWithFresh(context.Context, string) ([]string, error) {
+	provider.calls++
+	return provider.freshIDs, nil
+}
+
 func TestCreatePostPersistsContentAndMediaURL(t *testing.T) {
 	mediaURL := "https://cdn.example/post.png"
 	wantPost := &repositories.Post{ID: "post-1", AuthorID: "author-1", Content: "hello", UrlMultimedia: &mediaURL}
@@ -172,6 +187,19 @@ func TestLikeSaveAndShareRespectBlockedIdentity(t *testing.T) {
 	require.NoError(t, service.SharePost(ctx, "reader-1", "post-1"))
 	assert.Equal(t, []any{"post-1", "reader-1"}, repo.likeArgs)
 	assert.Equal(t, []any{"reader-1", "post-1"}, repo.saveArgs)
+}
+
+func TestInteractionsUseFreshBlockStatusInsteadOfCachedStatus(t *testing.T) {
+	repo := &postRepositoryFake{authorID: "author-1"}
+	provider := &freshBlockedUsersFake{cachedIDs: []string{}, freshIDs: []string{"author-1"}}
+	service := NewPostService(repo, provider)
+
+	assert.ErrorIs(t, service.AddLike(context.Background(), "post-1", "reader-1"), ErrBlocked)
+	assert.ErrorIs(t, service.SavePost(context.Background(), "reader-1", "post-1"), ErrBlocked)
+	assert.ErrorIs(t, service.SharePost(context.Background(), "reader-1", "post-1"), ErrBlocked)
+	assert.Equal(t, 3, provider.calls)
+	assert.Nil(t, repo.likeArgs)
+	assert.Nil(t, repo.saveArgs)
 }
 
 func TestGetSavedPostsAddsLookaheadAndNormalizesPagination(t *testing.T) {
