@@ -155,6 +155,10 @@ func (ctrl *AuthController) Validate(c *gin.Context) {
 
 	rawRole, err := ctrl.authService.GetRoleByID(c.Request.Context(), user.ID)
 	if err != nil {
+		if errors.Is(err, services.ErrAccountSuspended) {
+			httpresponse.ForbiddenGin(c, "Cuenta suspendida")
+			return
+		}
 		if errors.Is(err, services.ErrUserNotFound) {
 			httpresponse.UnauthorizedGin(c, "Sesión inválida o expirada")
 			return

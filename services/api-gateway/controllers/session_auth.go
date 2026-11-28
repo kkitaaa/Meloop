@@ -77,6 +77,11 @@ func authenticateSession(c *gin.Context) bool {
 		c.Abort()
 		return false
 	}
+	if response.StatusCode == http.StatusForbidden {
+		httpresponse.ForbiddenGin(c, "Cuenta suspendida")
+		c.Abort()
+		return false
+	}
 	if response.StatusCode != http.StatusOK {
 		httpresponse.ErrorGin(c, http.StatusBadGateway, "BAD_GATEWAY", "El servicio de autenticacion no pudo validar la sesion")
 		c.Abort()

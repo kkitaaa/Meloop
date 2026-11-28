@@ -13,6 +13,7 @@ import (
 
 var (
 	ErrInvalidSession         = errors.New("invalid or expired session")
+	ErrAccountSuspended       = errors.New("account suspended")
 	ErrAuthServiceUnavailable = errors.New("auth-service validation unavailable")
 )
 
@@ -57,6 +58,9 @@ func (c *AuthClient) ValidateToken(ctx context.Context, token string) (string, e
 
 	if resp.StatusCode == http.StatusUnauthorized {
 		return "", ErrInvalidSession
+	}
+	if resp.StatusCode == http.StatusForbidden {
+		return "", ErrAccountSuspended
 	}
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("%w: auth-service returned status %d", ErrAuthServiceUnavailable, resp.StatusCode)

@@ -86,6 +86,17 @@ func TestAuthRequiredRejectsInvalidExpiredAndRevokedSessions(t *testing.T) {
 	}
 }
 
+func TestAuthRequiredPropagatesAuthForbidden(t *testing.T) {
+	auth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer auth.Close()
+	response, resolvedID := serveAuthRequest(client.NewAuthClient(auth.URL), "Bearer active-session", "")
+	if response.Code != http.StatusForbidden || resolvedID != "" {
+		t.Fatalf("status = %d, resolved user = %q; want 403 and no handler execution", response.Code, resolvedID)
+	}
+}
+
 func TestAuthRequiredFailsClosedWhenAuthServiceIsUnavailable(t *testing.T) {
 	t.Run("validator error", func(t *testing.T) {
 		validator := &sessionValidatorStub{err: errors.New("connection timeout")}
