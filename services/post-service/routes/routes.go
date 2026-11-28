@@ -44,3 +44,15 @@ func SetupRoutes(
 		api.POST("/:id/comments/:commentId/replies", commentController.CreateReply)
 	}
 }
+
+func SetupFeedRoutes(
+	router *gin.Engine,
+	feedController *controllers.FeedController,
+	validator controllers.SessionValidator,
+) {
+	v1 := router.Group("/v1")
+	v1.Use(controllers.AuthRequired(validator))
+	{
+		v1.GET("/feed", feedController.GetMainFeed)
+	}
+}
