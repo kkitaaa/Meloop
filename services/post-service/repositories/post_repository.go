@@ -285,11 +285,17 @@ func (r *SQLPostRepository) GetPostAuthorID(ctx context.Context, postID string) 
 
 func (r *SQLPostRepository) SavePost(ctx context.Context, userID, postID string) error {
 	_, err := r.db.ExecContext(ctx, `
+		WITH save_request AS (
+			SELECT $1::varchar AS interaction_id, $2::varchar AS user_id, $3::varchar AS post_id
+		)
 		INSERT INTO interaccion (id_interaccion, id_usuario, id_publicacion, tipo, fecha_creacion)
-		SELECT $1, $2, $3, 'save', NOW()
+		SELECT save_request.interaction_id, save_request.user_id, save_request.post_id, 'save', NOW()
+		FROM save_request
 		WHERE NOT EXISTS (
 			SELECT 1 FROM interaccion
-			WHERE id_usuario = $2 AND id_publicacion = $3 AND LOWER(tipo) = 'save'
+			WHERE id_usuario = save_request.user_id
+				AND id_publicacion = save_request.post_id
+				AND LOWER(tipo) = 'save'
 		)
 	`, "save-"+uuid.NewString(), userID, postID)
 	if err != nil {

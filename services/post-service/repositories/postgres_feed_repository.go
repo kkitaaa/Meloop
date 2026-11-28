@@ -42,6 +42,10 @@ func (r *PostgresFeedRepository) ListCandidates(ctx context.Context, userID stri
 	if limit < 1 || limit > maxFeedCandidates {
 		limit = maxFeedCandidates
 	}
+	blockedArray, err := postgresTextArray(blockedAuthorIDs).Value()
+	if err != nil {
+		return nil, fmt.Errorf("encode blocked author IDs: %w", err)
+	}
 
 	query := `
 		SELECT p.id_publicacion AS id, p.id_usuario AS author_id, p.texto AS content,
@@ -115,7 +119,7 @@ func (r *PostgresFeedRepository) ListCandidates(ctx context.Context, userID stri
 
 	recommendedClause := "FALSE"
 	recommendedOrder := "FALSE"
-	args := []any{userID, userID, userID, userID, postgresTextArray(blockedAuthorIDs)}
+	args := []any{userID, userID, userID, userID, blockedArray}
 	if len(recommendedIDs) > 0 {
 		idPlaceholders := strings.TrimSuffix(strings.Repeat("?,", len(recommendedIDs)), ",")
 		recommendedClause = fmt.Sprintf(`
@@ -165,6 +169,10 @@ func (r *PostgresFeedRepository) GetPostsByIDs(ctx context.Context, userID strin
 	}
 	if len(postIDs) > maxFeedCandidates {
 		return nil, fmt.Errorf("feed detail query has %d IDs, maximum is %d", len(postIDs), maxFeedCandidates)
+	}
+	blockedArray, err := postgresTextArray(blockedAuthorIDs).Value()
+	if err != nil {
+		return nil, fmt.Errorf("encode blocked author IDs: %w", err)
 	}
 
 	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(postIDs)), ",")
@@ -235,7 +243,7 @@ func (r *PostgresFeedRepository) GetPostsByIDs(ctx context.Context, userID strin
 	for _, postID := range postIDs {
 		args = append(args, postID)
 	}
-	args = append(args, userID, userID, userID, postgresTextArray(blockedAuthorIDs))
+	args = append(args, userID, userID, userID, blockedArray)
 	if len(args) > postgresMaxParameters {
 		return nil, fmt.Errorf("feed detail query has %d parameters, maximum is %d", len(args), postgresMaxParameters)
 	}
