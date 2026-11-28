@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strings"
 
 	"github.com/meloop/post-service/models"
 	"github.com/meloop/post-service/repositories"
@@ -56,8 +57,10 @@ type PostRepository interface {
 }
 
 type PostService struct {
-	repo         PostRepository
-	blockedUsers BlockedUsersProvider
+	repo                PostRepository
+	blockedUsers        BlockedUsersProvider
+	friendshipValidator FriendshipValidator
+	postShareSender     PostShareSender
 }
 
 func NewPostService(repo PostRepository, blockedUsers ...BlockedUsersProvider) *PostService {
@@ -65,6 +68,18 @@ func NewPostService(repo PostRepository, blockedUsers ...BlockedUsersProvider) *
 	if len(blockedUsers) > 0 {
 		service.blockedUsers = blockedUsers[0]
 	}
+	return service
+}
+
+func NewPostServiceWithSharing(
+	repo PostRepository,
+	blockedUsers BlockedUsersProvider,
+	friendshipValidator FriendshipValidator,
+	postShareSender PostShareSender,
+) *PostService {
+	service := NewPostService(repo, blockedUsers)
+	service.friendshipValidator = friendshipValidator
+	service.postShareSender = postShareSender
 	return service
 }
 
@@ -141,6 +156,16 @@ func (s *PostService) AddLike(ctx context.Context, postID string, userID string)
 }
 
 var ErrBlocked = errors.New("BLOCKED")
+var ErrNotFriend = errors.New("recipient is not a friend")
+var ErrSharingUnavailable = errors.New("sharing dependency is unavailable")
+
+type FriendshipValidator interface {
+	ValidateFriendship(context.Context, string, string, string) error
+}
+
+type PostShareSender interface {
+	SendPostShare(context.Context, string, string, string) (string, error)
+}
 
 func (s *PostService) EnsureCanInteract(ctx context.Context, userID, postID string) error {
 	authorID, err := s.repo.GetPostAuthorID(ctx, postID)
@@ -196,8 +221,29 @@ func (s *PostService) GetSavedPosts(ctx context.Context, userID string, limit, o
 	return posts, hasMore, nil
 }
 
-func (s *PostService) SharePost(ctx context.Context, userID, postID string) error {
-	return s.EnsureCanInteract(ctx, userID, postID)
+func (s *PostService) SharePost(ctx context.Context, userID, postID, friendID, authorization string) (string, error) {
+	userID = strings.TrimSpace(userID)
+	friendID = strings.TrimSpace(friendID)
+	if userID == "" || friendID == "" || friendID == userID {
+		return "", ErrNotFriend
+	}
+	if err := s.EnsureCanInteract(ctx, userID, postID); err != nil {
+		return "", err
+	}
+	if err := s.EnsureCanInteractWithUser(ctx, userID, friendID); err != nil {
+		return "", err
+	}
+	if s.friendshipValidator == nil || s.postShareSender == nil {
+		return "", ErrSharingUnavailable
+	}
+	if err := s.friendshipValidator.ValidateFriendship(ctx, userID, friendID, authorization); err != nil {
+		return "", err
+	}
+	messageID, err := s.postShareSender.SendPostShare(ctx, userID, friendID, postID)
+	if err != nil {
+		return "", err
+	}
+	return messageID, nil
 }
 
 func (s *PostService) blockedWith(ctx context.Context, userID string) ([]string, error) {

@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strconv"
@@ -14,6 +15,10 @@ import (
 
 type FriendshipController struct {
 	service services.FriendshipService
+}
+
+type friendshipValidator interface {
+	ValidateFriendship(context.Context, string, string) error
 }
 
 func NewFriendshipController(service services.FriendshipService) *FriendshipController {
@@ -267,6 +272,40 @@ func (ctrl *FriendshipController) ValidateInteraction(c *gin.Context) {
 	httpresponse.SuccessGin(c, http.StatusOK, models.InteractionValidationResponse{
 		Allowed: true,
 	})
+}
+
+func (ctrl *FriendshipController) ValidateFriendship(c *gin.Context) {
+	var request struct {
+		FriendID string `json:"friend_id" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&request); err != nil {
+		httpresponse.BadRequestGin(c, "El campo friend_id es obligatorio")
+		return
+	}
+	friendID := strings.TrimSpace(request.FriendID)
+	if friendID == "" {
+		httpresponse.BadRequestGin(c, "El campo friend_id es obligatorio")
+		return
+	}
+
+	validator, ok := ctrl.service.(friendshipValidator)
+	if !ok {
+		httpresponse.InternalErrorGin(c)
+		return
+	}
+	err := validator.ValidateFriendship(c.Request.Context(), c.GetString(ContextUserIDKey), friendID)
+	if err != nil {
+		switch {
+		case errors.Is(err, services.ErrBlocked):
+			httpresponse.ForbiddenGin(c, "No se puede compartir con un usuario bloqueado")
+		case errors.Is(err, services.ErrNotFriends):
+			httpresponse.ForbiddenGin(c, "El usuario destinatario no es tu amigo")
+		default:
+			ctrl.handleError(c, err)
+		}
+		return
+	}
+	httpresponse.SuccessGin(c, http.StatusOK, gin.H{"friend_id": friendID, "is_friend": true})
 }
 
 func (ctrl *FriendshipController) GetFriendSuggestions(c *gin.Context) {

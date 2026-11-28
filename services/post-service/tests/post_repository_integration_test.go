@@ -79,9 +79,12 @@ func TestPostgresPostLifecyclePersistsPostAndInteractions(t *testing.T) {
 
 	var likeCount, saveCount int
 	require.NoError(t, db.QueryRowContext(ctx, `
-		SELECT COUNT(*) FILTER (WHERE tipo = 'like'), COUNT(*) FILTER (WHERE tipo = 'save')
-		FROM interaccion WHERE id_publicacion = $1 AND id_usuario = $2
-	`, post.ID, readerID).Scan(&likeCount, &saveCount))
+		SELECT COUNT(*) FROM interaccion
+		WHERE id_publicacion = $1 AND id_usuario = $2 AND tipo = 'like'
+	`, post.ID, readerID).Scan(&likeCount))
+	require.NoError(t, db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM saved_posts WHERE post_id = $1 AND user_id = $2
+	`, post.ID, readerID).Scan(&saveCount))
 	require.Equal(t, 1, likeCount)
 	require.Equal(t, 1, saveCount)
 
@@ -89,6 +92,11 @@ func TestPostgresPostLifecyclePersistsPostAndInteractions(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, savedPosts, 1)
 	require.Equal(t, post.ID, savedPosts[0].ID)
+	require.NoError(t, repository.UnsavePost(ctx, readerID, post.ID))
+	require.NoError(t, repository.UnsavePost(ctx, readerID, post.ID))
+	savedPosts, err = repository.GetSavedPosts(ctx, readerID, nil, 10, 0)
+	require.NoError(t, err)
+	require.Empty(t, savedPosts)
 
 	require.NoError(t, repository.UpdatePost(ctx, post.ID, authorID, "edited post"))
 	err = db.QueryRowContext(ctx, `SELECT texto FROM publicacion WHERE id_publicacion = $1`, post.ID).Scan(&persistedContent)

@@ -55,6 +55,7 @@ type mockFriendshipService struct {
 	listFriendsFunc            func(ctx context.Context, userID string, limit int, query string, cursor *models.FriendCursor) (models.FriendPage, error)
 	removeFriendFunc           func(ctx context.Context, userID, targetID string) error
 	getFriendProfileFunc       func(ctx context.Context, userID, friendID string) (*models.FriendProfile, error)
+	validateFriendshipFunc     func(ctx context.Context, userID, friendID string) error
 	getMutualFriendsFunc       func(ctx context.Context, userID, targetID string, limit int, cursor string) (*models.MutualFriendsResponse, error)
 	blockUserFunc              func(ctx context.Context, blockerID, blockedID string) error
 	unblockUserFunc            func(ctx context.Context, blockerID, blockedID string) error
@@ -172,6 +173,13 @@ func (m *mockFriendshipService) GetFriendProfile(ctx context.Context, userID, fr
 		Experiencia: 1500,
 		IDAmistad:   "1",
 	}, nil
+}
+
+func (m *mockFriendshipService) ValidateFriendship(ctx context.Context, userID, friendID string) error {
+	if m.validateFriendshipFunc != nil {
+		return m.validateFriendshipFunc(ctx, userID, friendID)
+	}
+	return nil
 }
 
 func (m *mockFriendshipService) BlockUser(ctx context.Context, blockerID, blockedID string) error {
@@ -603,6 +611,53 @@ func TestGetFriendProfile_HTTP_Exitoso(t *testing.T) {
 	data := resp["data"].(map[string]interface{})
 	if data["username"] != "friend_user" {
 		t.Errorf("esperado username 'friend_user', obtenido %v", data["username"])
+	}
+}
+
+func TestValidateFriendshipRequiresAcceptedFriendshipWithoutBlocks(t *testing.T) {
+	var receivedUserID, receivedFriendID string
+	service := &mockFriendshipService{
+		validateFriendshipFunc: func(_ context.Context, userID, friendID string) error {
+			receivedUserID, receivedFriendID = userID, friendID
+			return nil
+		},
+	}
+	router := setupTestRouter(service)
+	request := httptest.NewRequest(http.MethodPost, "/friends/validate-friendship", strings.NewReader(`{"friend_id":"friend-1"}`))
+	request.Header.Set("Content-Type", "application/json")
+	setAuthenticatedUser(request, "sender-1")
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", response.Code, http.StatusOK, response.Body.String())
+	}
+	if receivedUserID != "sender-1" || receivedFriendID != "friend-1" {
+		t.Fatalf("validated (%q, %q), want (sender-1, friend-1)", receivedUserID, receivedFriendID)
+	}
+	if !strings.Contains(response.Body.String(), `"is_friend":true`) {
+		t.Fatalf("response must confirm friendship: %s", response.Body.String())
+	}
+}
+
+func TestValidateFriendshipRejectsBlockedOrNonFriend(t *testing.T) {
+	for _, friendshipError := range []error{services.ErrBlocked, services.ErrNotFriends} {
+		router := setupTestRouter(&mockFriendshipService{
+			validateFriendshipFunc: func(context.Context, string, string) error {
+				return friendshipError
+			},
+		})
+		request := httptest.NewRequest(http.MethodPost, "/friends/validate-friendship", strings.NewReader(`{"friend_id":"friend-1"}`))
+		request.Header.Set("Content-Type", "application/json")
+		setAuthenticatedUser(request, "sender-1")
+		response := httptest.NewRecorder()
+
+		router.ServeHTTP(response, request)
+
+		if response.Code != http.StatusForbidden {
+			t.Errorf("error %v: status = %d, want %d", friendshipError, response.Code, http.StatusForbidden)
+		}
 	}
 }
 

@@ -109,11 +109,21 @@ func main() {
 	}
 	postgresTimeout := feedTimeout("FEED_POSTGRES_TIMEOUT", 220*time.Millisecond)
 	socialTimeout := feedTimeout("SOCIAL_BLOCKS_TIMEOUT", 400*time.Millisecond)
+	sharingTimeout := feedTimeout("POST_SHARING_TIMEOUT", 3*time.Second)
 	recommendationTimeout := feedTimeout("FEED_RECOMMENDATION_TIMEOUT", 50*time.Millisecond)
 	authTimeout := feedTimeout("AUTH_SERVICE_TIMEOUT", 5*time.Second)
 	socialClient := services.NewSocialFeedClient(socialServiceURL, socialTimeout)
 	blockedUsers := services.NewRedisBlockedUsers(redisClient, postRepo, socialClient)
-	postService := services.NewPostService(postRepo, blockedUsers)
+	chatServiceURL := os.Getenv("CHAT_SERVICE_URL")
+	if chatServiceURL == "" {
+		chatServiceURL = "http://localhost:8091"
+	}
+	postService := services.NewPostServiceWithSharing(
+		postRepo,
+		blockedUsers,
+		services.NewHTTPFriendshipValidator(socialServiceURL, sharingTimeout),
+		services.NewHTTPPostShareSender(chatServiceURL, os.Getenv("CHAT_SERVICE_INTERNAL_TOKEN"), sharingTimeout),
+	)
 	likeController := controllers.NewLikeController(likeService, postService)
 	commentController := controllers.NewCommentController(commentService, postService, blockedUsers)
 	postController := controllers.NewPostController(postService)

@@ -27,5 +27,9 @@ func SetupInteractionRoutes(router *gin.Engine, ctrl *controllers.InteractionCon
 	}
 
 	versionedPosts := router.Group("/v1/posts", authMiddleware)
-	versionedPosts.POST("/:id/share", ctrl.SharePost)
+	{
+		versionedPosts.POST("/:id/save", ctrl.SavePost)
+		versionedPosts.DELETE("/:id/save", ctrl.UnsavePost)
+		versionedPosts.POST("/:id/share", ctrl.SharePost)
+	}
 }

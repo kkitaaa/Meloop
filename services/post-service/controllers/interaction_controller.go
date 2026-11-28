@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/meloop/post-service/repositories"
@@ -110,33 +111,33 @@ func (ctrl *InteractionController) SharePost(c *gin.Context) {
 		return
 	}
 	var req struct {
-		TargetUserID string `json:"target_user_id"`
-		RecipientID  string `json:"recipient_id"`
-		Platform     string `json:"platform"`
+		FriendID string `json:"friend_id" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Cuerpo de petición inválido"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "friend_id es obligatorio"})
 		return
 	}
-	if err := ctrl.service.SharePost(c.Request.Context(), userID, c.Param("id")); err != nil {
+	req.FriendID = strings.TrimSpace(req.FriendID)
+	if req.FriendID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "friend_id es obligatorio"})
+		return
+	}
+	messageID, err := ctrl.service.SharePost(
+		c.Request.Context(),
+		userID,
+		c.Param("id"),
+		req.FriendID,
+		c.GetHeader("Authorization"),
+	)
+	if err != nil {
 		writeInteractionError(c, err)
 		return
 	}
-	targetUserID := req.TargetUserID
-	if targetUserID == "" {
-		targetUserID = req.RecipientID
-	}
-	if targetUserID != "" {
-		if err := ctrl.service.EnsureCanInteractWithUser(c.Request.Context(), userID, targetUserID); err != nil {
-			writeInteractionError(c, err)
-			return
-		}
-	}
 	httpresponse.SuccessGin(c, http.StatusOK, gin.H{
-		"message":    "Referencia compartida generada",
+		"message":    "Publicación compartida por chat",
 		"post_id":    c.Param("id"),
-		"share_link": "https://meloop.app/p/" + c.Param("id"),
-		"shared_via": req.Platform,
+		"friend_id":  req.FriendID,
+		"message_id": messageID,
 	})
 }
 
@@ -155,6 +156,14 @@ func (ctrl *InteractionController) ready(c *gin.Context, userID string) bool {
 func writeInteractionError(c *gin.Context, err error) {
 	if errors.Is(err, services.ErrBlocked) {
 		writeBlockedError(c)
+		return
+	}
+	if errors.Is(err, services.ErrNotFriend) {
+		httpresponse.ForbiddenGin(c, "Solo puedes compartir publicaciones con un amigo sin bloqueo")
+		return
+	}
+	if errors.Is(err, services.ErrSharingUnavailable) {
+		httpresponse.ErrorGin(c, http.StatusServiceUnavailable, "SHARING_UNAVAILABLE", "No se pudo completar la compartición")
 		return
 	}
 	if errors.Is(err, repositories.ErrPostNotFound) || errors.Is(err, sql.ErrNoRows) {

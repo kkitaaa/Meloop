@@ -97,6 +97,42 @@ type testBlockedUsers struct{}
 
 func (testBlockedUsers) BlockedWith(context.Context, string) ([]string, error) { return nil, nil }
 
+type testBlockedUsersList []string
+
+func (users testBlockedUsersList) BlockedWith(context.Context, string) ([]string, error) {
+	return users, nil
+}
+
+func (users testBlockedUsersList) BlockedWithFresh(context.Context, string) ([]string, error) {
+	return users, nil
+}
+
+type testFriendshipValidator struct {
+	userID        string
+	friendID      string
+	authorization string
+}
+
+func (validator *testFriendshipValidator) ValidateFriendship(_ context.Context, userID, friendID, authorization string) error {
+	validator.userID = userID
+	validator.friendID = friendID
+	validator.authorization = authorization
+	return nil
+}
+
+type testPostShareSender struct {
+	senderID    string
+	recipientID string
+	postID      string
+}
+
+func (sender *testPostShareSender) SendPostShare(_ context.Context, senderID, recipientID, postID string) (string, error) {
+	sender.senderID = senderID
+	sender.recipientID = recipientID
+	sender.postID = postID
+	return "message-1", nil
+}
+
 func TestCreatePostReturnsPersistedPost(t *testing.T) {
 	mediaURL := "https://cdn.example/post.png"
 	repo := &controllerPostRepositoryFake{
@@ -144,7 +180,9 @@ func TestUpdatePostDelegatesAndMapsAuthorizationError(t *testing.T) {
 func TestInteractionControllerSavesAndSharesPost(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	repo := &controllerPostRepositoryFake{}
-	service := services.NewPostService(repo, testBlockedUsers{})
+	friendshipValidator := &testFriendshipValidator{}
+	shareSender := &testPostShareSender{}
+	service := services.NewPostServiceWithSharing(repo, testBlockedUsers{}, friendshipValidator, shareSender)
 	controller := NewInteractionController(service)
 	router := gin.New()
 	router.POST("/posts/:id/save", func(c *gin.Context) {
@@ -162,9 +200,40 @@ func TestInteractionControllerSavesAndSharesPost(t *testing.T) {
 	assert.Equal(t, []any{"reader-1", "post-1"}, repo.saveArgs)
 
 	shareResponse := httptest.NewRecorder()
-	router.ServeHTTP(shareResponse, httptest.NewRequest(http.MethodPost, "/posts/post-1/share", strings.NewReader(`{"platform":"direct"}`)))
+	shareRequest := httptest.NewRequest(http.MethodPost, "/posts/post-1/share", strings.NewReader(`{"friend_id":"friend-1"}`))
+	shareRequest.Header.Set("Authorization", "Bearer session-token")
+	router.ServeHTTP(shareResponse, shareRequest)
 	require.Equal(t, http.StatusOK, shareResponse.Code, shareResponse.Body.String())
-	assert.Contains(t, shareResponse.Body.String(), "https://meloop.app/p/post-1")
+	assert.Contains(t, shareResponse.Body.String(), `"message_id":"message-1"`)
+	assert.NotContains(t, shareResponse.Body.String(), "share_link")
+	assert.Equal(t, []string{"reader-1", "friend-1", "Bearer session-token"}, []string{
+		friendshipValidator.userID,
+		friendshipValidator.friendID,
+		friendshipValidator.authorization,
+	})
+	assert.Equal(t, []string{"reader-1", "friend-1", "post-1"}, []string{
+		shareSender.senderID,
+		shareSender.recipientID,
+		shareSender.postID,
+	})
+}
+
+func TestSaveBlockedPostReturnsForbidden(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo := &controllerPostRepositoryFake{}
+	service := services.NewPostService(repo, testBlockedUsersList{"author-1"})
+	controller := NewInteractionController(service)
+	router := gin.New()
+	router.POST("/posts/:id/save", func(c *gin.Context) {
+		c.Set("userID", "reader-1")
+		controller.SavePost(c)
+	})
+
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/posts/post-1/save", nil))
+
+	assert.Equal(t, http.StatusForbidden, response.Code, response.Body.String())
+	assert.Empty(t, repo.saveArgs, "blocked post must not reach persistence")
 }
 
 func TestGetSavedPostsValidatesPaginationBeforeRepositoryQuery(t *testing.T) {

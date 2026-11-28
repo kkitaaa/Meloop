@@ -63,7 +63,21 @@ func TestAdditionalRouteRegistrarsRequireAuthentication(t *testing.T) {
 		router := gin.New()
 		SetupInteractionRoutes(router, nil, authMiddleware)
 		assertAllRoutesRequireAuthentication(t, router)
+		assertHasRoute(t, router, http.MethodPost, "/v1/posts/:id/save")
+		assertHasRoute(t, router, http.MethodDelete, "/v1/posts/:id/save")
+		assertHasRoute(t, router, http.MethodPost, "/v1/posts/:id/share")
+		assertHasRoute(t, router, http.MethodGet, "/v1/me/saved")
 	})
+}
+
+func assertHasRoute(t *testing.T, router *gin.Engine, method, path string) {
+	t.Helper()
+	for _, route := range router.Routes() {
+		if route.Method == method && route.Path == path {
+			return
+		}
+	}
+	t.Fatalf("route %s %s was not registered", method, path)
 }
 
 func assertAllRoutesRequireAuthentication(t *testing.T, router *gin.Engine) {

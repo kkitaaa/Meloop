@@ -285,19 +285,10 @@ func (r *SQLPostRepository) GetPostAuthorID(ctx context.Context, postID string) 
 
 func (r *SQLPostRepository) SavePost(ctx context.Context, userID, postID string) error {
 	_, err := r.db.ExecContext(ctx, `
-		WITH save_request AS (
-			SELECT $1::varchar AS interaction_id, $2::varchar AS user_id, $3::varchar AS post_id
-		)
-		INSERT INTO interaccion (id_interaccion, id_usuario, id_publicacion, tipo, fecha_creacion)
-		SELECT save_request.interaction_id, save_request.user_id, save_request.post_id, 'save', NOW()
-		FROM save_request
-		WHERE NOT EXISTS (
-			SELECT 1 FROM interaccion
-			WHERE id_usuario = save_request.user_id
-				AND id_publicacion = save_request.post_id
-				AND LOWER(tipo) = 'save'
-		)
-	`, "save-"+uuid.NewString(), userID, postID)
+		INSERT INTO saved_posts (user_id, post_id, saved_at)
+		VALUES ($1, $2, NOW())
+		ON CONFLICT (user_id, post_id) DO NOTHING
+	`, userID, postID)
 	if err != nil {
 		return fmt.Errorf("save post: %w", err)
 	}
@@ -306,8 +297,8 @@ func (r *SQLPostRepository) SavePost(ctx context.Context, userID, postID string)
 
 func (r *SQLPostRepository) UnsavePost(ctx context.Context, userID, postID string) error {
 	_, err := r.db.ExecContext(ctx, `
-		DELETE FROM interaccion
-		WHERE id_usuario = $1 AND id_publicacion = $2 AND LOWER(tipo) = 'save'
+		DELETE FROM saved_posts
+		WHERE user_id = $1 AND post_id = $2
 	`, userID, postID)
 	if err != nil {
 		return fmt.Errorf("unsave post: %w", err)
@@ -325,18 +316,17 @@ func (r *SQLPostRepository) GetSavedPosts(ctx context.Context, userID string, ex
 					AND liked.id_usuario = $1
 					AND LOWER(liked.tipo) = 'like'
 			)
-		FROM interaccion saved
-		JOIN publicacion p ON p.id_publicacion = saved.id_publicacion
+		FROM saved_posts saved
+		JOIN publicacion p ON p.id_publicacion = saved.post_id
 		LEFT JOIN (
 			SELECT id_publicacion, COUNT(*) AS likes_count
 			FROM interaccion
 			WHERE LOWER(tipo) = 'like'
 			GROUP BY id_publicacion
 		) l ON l.id_publicacion = p.id_publicacion
-		WHERE saved.id_usuario = $1
-			AND LOWER(saved.tipo) = 'save'
+		WHERE saved.user_id = $1
 			AND p.id_usuario::text <> ALL($2::text[])
-		ORDER BY saved.fecha_creacion DESC
+		ORDER BY saved.saved_at DESC, saved.post_id DESC
 		LIMIT $3 OFFSET $4
 	`, userID, postgresTextArray(excludedAuthorIDs), limit, offset)
 	if err != nil {

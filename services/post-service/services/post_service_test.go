@@ -120,6 +120,27 @@ type freshBlockedUsersFake struct {
 	calls     int
 }
 
+type friendshipValidatorFake struct {
+	args []any
+	err  error
+}
+
+func (validator *friendshipValidatorFake) ValidateFriendship(_ context.Context, userID, friendID, authorization string) error {
+	validator.args = []any{userID, friendID, authorization}
+	return validator.err
+}
+
+type postShareSenderFake struct {
+	args      []any
+	messageID string
+	err       error
+}
+
+func (sender *postShareSenderFake) SendPostShare(_ context.Context, senderID, friendID, postID string) (string, error) {
+	sender.args = []any{senderID, friendID, postID}
+	return sender.messageID, sender.err
+}
+
 func (provider *freshBlockedUsersFake) BlockedWith(context.Context, string) ([]string, error) {
 	return provider.cachedIDs, nil
 }
@@ -179,12 +200,19 @@ func TestLikeSaveAndShareRespectBlockedIdentity(t *testing.T) {
 	assert.Nil(t, repo.likeArgs)
 	assert.ErrorIs(t, service.SavePost(ctx, "reader-1", "post-1"), ErrBlocked)
 	assert.Nil(t, repo.saveArgs)
-	assert.ErrorIs(t, service.SharePost(ctx, "reader-1", "post-1"), ErrBlocked)
+	_, err := service.SharePost(ctx, "reader-1", "post-1", "friend-1", "Bearer token")
+	assert.ErrorIs(t, err, ErrBlocked)
 
-	service = NewPostService(repo, blockedUsersFake{})
+	validator := &friendshipValidatorFake{}
+	sender := &postShareSenderFake{messageID: "message-1"}
+	service = NewPostServiceWithSharing(repo, blockedUsersFake{}, validator, sender)
 	require.NoError(t, service.AddLike(ctx, "post-1", "reader-1"))
 	require.NoError(t, service.SavePost(ctx, "reader-1", "post-1"))
-	require.NoError(t, service.SharePost(ctx, "reader-1", "post-1"))
+	messageID, err := service.SharePost(ctx, "reader-1", "post-1", "friend-1", "Bearer token")
+	require.NoError(t, err)
+	assert.Equal(t, "message-1", messageID)
+	assert.Equal(t, []any{"reader-1", "friend-1", "Bearer token"}, validator.args)
+	assert.Equal(t, []any{"reader-1", "friend-1", "post-1"}, sender.args)
 	assert.Equal(t, []any{"post-1", "reader-1"}, repo.likeArgs)
 	assert.Equal(t, []any{"reader-1", "post-1"}, repo.saveArgs)
 }
@@ -196,7 +224,8 @@ func TestInteractionsUseFreshBlockStatusInsteadOfCachedStatus(t *testing.T) {
 
 	assert.ErrorIs(t, service.AddLike(context.Background(), "post-1", "reader-1"), ErrBlocked)
 	assert.ErrorIs(t, service.SavePost(context.Background(), "reader-1", "post-1"), ErrBlocked)
-	assert.ErrorIs(t, service.SharePost(context.Background(), "reader-1", "post-1"), ErrBlocked)
+	_, err := service.SharePost(context.Background(), "reader-1", "post-1", "friend-1", "Bearer token")
+	assert.ErrorIs(t, err, ErrBlocked)
 	assert.Equal(t, 3, provider.calls)
 	assert.Nil(t, repo.likeArgs)
 	assert.Nil(t, repo.saveArgs)
